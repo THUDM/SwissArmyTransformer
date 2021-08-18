@@ -15,6 +15,7 @@
 
 
 import torch
+import math
 
 
 def ensure_divisibility(numerator, denominator):
@@ -78,3 +79,6 @@ def split_out_sums(x, BLOCK_SIZE=32, all_ret=False):
         return oris.reshape(b, -1, *rs), sums.reshape(b, -1, *rs)
     else: 
         return sums.reshape(b, -1, *rs)
+
+def sqrt(x):
+    return int(math.sqrt(x) + 1e-4)
