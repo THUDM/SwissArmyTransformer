@@ -17,6 +17,7 @@
 
 import torch
 import torch.nn.functional as F
+import argparse
 
 import mpu
 
@@ -70,11 +71,10 @@ class GPT2Model(torch.nn.Module):
                  max_sequence_length,
                  max_memory_length,
                  checkpoint_activations,
+                 sandwich_ln,
                  checkpoint_num_layers=1,
                  parallel_output=True,
-                 query_window=128,
-                 key_window_times=6,
-                 num_pivot=768
+                 sparse_config=argparse.Namespace(sparse_type='standard')
                  ):
 
         super(GPT2Model, self).__init__()
@@ -98,18 +98,17 @@ class GPT2Model(torch.nn.Module):
                                                        output_dropout_prob,
                                                        checkpoint_activations,
                                                        checkpoint_num_layers,
-                                                       query_window=query_window,
-                                                       key_window_times=key_window_times,
-                                                       num_pivot=num_pivot
+                                                       sandwich_ln=sandwich_ln,
+                                                       sparse_config=sparse_config
                                                        )
 
-    def forward(self, input_ids, position_ids, attention_mask, txt_indices_bool, img_indices_bool, is_sparse, *mems):
+    def forward(self, input_ids, position_ids, attention_mask, *mems):
         # Embeddings.
         words_embeddings = self.word_embeddings(input_ids)
         embeddings = words_embeddings
 
         # Transformer.
-        transformer_output = self.transformer(embeddings, position_ids, attention_mask, txt_indices_bool, img_indices_bool, is_sparse, *mems)
+        transformer_output = self.transformer(embeddings, position_ids, attention_mask, *mems)
         logits, *hidden_layers = transformer_output
         # Parallel logits.
         logits_parallel = mpu.copy_to_model_parallel_region(

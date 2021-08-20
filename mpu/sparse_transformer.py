@@ -39,7 +39,7 @@ from .utils import split_tensor_along_last_dim
 import torch.distributed as dist
 
 class LayerNorm(FusedLayerNorm):
-    def __init__(self, pb_relax=False, *args, **kwargs):
+    def __init__(self, *args, pb_relax=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.pb_relax = pb_relax
     def forward(self, x):
@@ -131,40 +131,52 @@ class GPT2ParallelSelfAttention(torch.nn.Module):
 
         # if mem is None:
         mixed_raw_layer = self.query_key_value(hidden_states)
-        if mem is None:
-            mixed_x_layer = mixed_raw_layer
-        else:
-            mixed_x_layer = torch.cat((mem, mixed_raw_layer), dim=1)
+
         (mixed_query_layer,
             mixed_key_layer,
-            mixed_value_layer) = split_tensor_along_last_dim(mixed_x_layer, 3)
+            mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, 3)
+        if mem is not None:
+            memk, memv = split_tensor_along_last_dim(mem, 2)
+            mixed_key_layer = torch.cat((memk, mixed_key_layer), dim=1)
+            mixed_value_layer = torch.cat((memv, mixed_value_layer), dim=1)
+
+        dropout_fn = self.attention_dropout if self.training else None
 
         if sparse_config.sparse_type in ['standard', 'torch_1d']:
             # Reshape and transpose [b, np, s, hn]
             query_layer = self._transpose_for_scores(mixed_query_layer)
+            
             key_layer = self._transpose_for_scores(mixed_key_layer)
             value_layer = self._transpose_for_scores(mixed_value_layer)
+            
             if sparse_config.sparse_type == 'standard':
-                context_layer = standard_attention(query_layer, key_layer, value_layer, mask, self.attention_dropout)
+                context_layer = standard_attention(query_layer, key_layer, value_layer, mask, dropout_fn)
             else:
                 context_layer = sparse_attention(query_layer, key_layer, value_layer, sparse_config.pivot_idx, 
-                    mask, sparse_config.query_window, sparse_config.key_window_times, self.attention_dropout)
+                    mask, sparse_config.query_window, sparse_config.key_window_times, dropout_fn)
                 # inference: context_layer = sparse_attention_inference(query_layer, key_layer, value_layer, pivot_idx)
+            
             context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
             new_context_layer_shape = context_layer.size()[:-2] + \
                                     (self.hidden_size_per_partition,)
             # [b, s, hp]
             context_layer = context_layer.view(*new_context_layer_shape)
-
+            
         elif sparse_config.sparse_type == 'cuda_2d':
             context_layer = sparse_attention_2d(mixed_query_layer, mixed_key_layer, mixed_value_layer, self.num_attention_heads_per_partition,
-                 sparse_config.layout, mask, sparse_config.kernel_size, sparse_config.kernel_size2, attention_dropout=self.attention_dropout)
+                 sparse_config.layout, mask, sparse_config.kernel_size, sparse_config.kernel_size2, attention_dropout=dropout_fn)
 
         # Output. [b, s, h]
         output = self.dense(context_layer)
-        output = self.output_dropout(output)
-
-        return output, mixed_raw_layer.detach()
+        
+        if self.training:
+            output = self.output_dropout(output)
+        
+        if mem is not None:
+            new_mem = mixed_raw_layer.detach()[..., -(mixed_raw_layer.shape[-1] // 3 * 2):].contiguous()
+        else:
+            new_mem = None
+        return output, new_mem
 
 
 @torch.jit.script
@@ -221,7 +233,8 @@ class GPT2ParallelMLP(torch.nn.Module):
 
         # [b, s, h]
         output = self.dense_4h_to_h(intermediate_parallel)
-        output = self.dropout(output)
+        if self.training:
+            output = self.dropout(output)
         return output
 
 
@@ -306,7 +319,6 @@ class GPT2ParallelTransformerLayer(torch.nn.Module):
 
         # Layer norm at the begining of the transformer layer.
         layernorm_output1 = self.input_layernorm(hidden_states)
-        mem = self.input_layernorm(mem) if mem is not None else None
         # Self attention.
         attention_output, qkv = self.attention(layernorm_output1, ltor_mask, self.sparse_config, mem)
 
@@ -478,7 +490,6 @@ class GPT2ParallelTransformer(torch.nn.Module):
         # hidden_states = hidden_states + txt_indices_bool.unsqueeze(-1) * self.txt_type_embeddings.view(1, 1, -1) + \
         #     img_indices_bool.unsqueeze(-1) * self.img_type_embeddings.expand(extend_len, 64, -1).reshape(extend_len * 64, -1)[memory_length: key_length]
         # ===================== END OF BLOCK ======================= #
-
         position_embeddings = self.position_embeddings(position_ids)
         hidden_states = hidden_states + position_embeddings
         hidden_states = self.embedding_dropout(hidden_states)
@@ -487,7 +498,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
         def custom(start, end):
             def custom_forward(*inputs):
                 layers_ = self.layers[start:end]
-                x_, mask, mems_ = inputs[0], inputs[1], inputs[1:]
+                x_, mask, mems_ = inputs[0], inputs[1], inputs[2:]
             
                 for i, layer in enumerate(layers_):
                     mem_i_ = mems_[i] if mems_ else None
@@ -573,19 +584,23 @@ def standard_attention(query_layer, key_layer, value_layer, attention_mask, atte
         attention_mask = attention_mask.unsqueeze(1)
     # Raw attention scores. [b, np, s, s]
     attention_scores = torch.matmul(query_layer / math.sqrt(query_layer.shape[-1]), key_layer.transpose(-1, -2))
-
+    
     # Apply the left to right attention mask.
-    attention_scores = torch.mul(attention_scores, attention_mask) - \
+    if attention_mask.shape[2] > 1:
+        attention_scores = torch.mul(attention_scores, attention_mask) - \
                     10000.0 * (1.0 - attention_mask)
+    
     # Attention probabilities. [b, np, s, s]
-    attention_probs = torch.nn.Softmax(dim=-1)(attention_scores)
-
+    attention_probs = F.softmax(attention_scores, dim=-1)
+    
     if attention_dropout is not None:
         with get_cuda_rng_tracker().fork():
             attention_probs = attention_dropout(attention_probs)
     # Context layer.
     # [b, np, s, hn]
+    
     context_layer = torch.matmul(attention_probs, value_layer)
+    
     return context_layer
 
 def sparse_attention_1d(q, k, v, pivot_idx, pivot_attention_mask, query_window=128, key_window_times=6, attention_dropout=None):

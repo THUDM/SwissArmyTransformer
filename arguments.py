@@ -60,7 +60,8 @@ def add_model_config_args(parser):
     
     group.add_argument('--max-position-embeddings-finetune', type=int, default=-1,
                        help='maximum number of position embeddings to use in finetune')
-
+    group.add_argument('--sandwich-ln', action='store_true',
+                       help='add sandwich ln in cogview.')
     return parser
 
 
@@ -261,7 +262,8 @@ def add_data_args(parser):
                        default='TokenizedDataset',
                        choices=['TokenizedDataset',
                                 'TextCodeDataset',
-                                'CompactBinaryDataset'
+                                'CompactBinaryDataset',
+                                'BinaryDataset'
                                 ],
                        help='what type of dataset to use')
 
@@ -290,13 +292,30 @@ def add_sparse_args(parser):
     """sparse attention arguments."""
 
     group = parser.add_argument_group('Sparse Attention', 'sparse configurations')
-    group.add_argument('--is-sparse', type=int, default=0,
-                       choices=[0, 1, 2],
-                       help='whether use sparse attention. 0 not 1 train 2 inference') # TODO: Temporally not using is-sparse==2 (not optimized), use 0 for inference.
+    group.add_argument('--sparse-type', type=str, default='standard',
+                       choices=['standard', 'torch_1d', 'cuda_2d'],
+                       help='whether use sparse attention.') # TODO: Temporally not using is-sparse==2 (not optimized), use 0 for inference.
+    # for torch_1d
     group.add_argument("--query-window", type=int, default=128)
     group.add_argument("--key-window-times", type=int, default=6)
     group.add_argument("--num-pivot", type=int, default=768)
+    # for cuda_2d
+    group.add_argument("--kernel-size", type=int, default=9)
+    group.add_argument("--kernel-size2", type=int, default=7)
+    group.add_argument("--layout", type=str, default='0,64,1088,5184')
     return parser
+
+def make_sparse_config(args):
+    sparse_config = argparse.Namespace(sparse_type=args.sparse_type)
+    if args.sparse_type == 'standard':
+        pass
+    elif args.sparse_type == 'cuda_2d':
+        sparse_config.kernel_size = args.kernel_size
+        sparse_config.kernel_size2 = args.kernel_size2
+        sparse_config.layout = [int(x) for x in args.layout.split(',')]
+    elif args.sparse_type == 'torch_1d':
+        raise NotImplementedError
+    args.sparse_config = sparse_config
 
 def get_args():
     """Parse all the args."""
@@ -315,10 +334,11 @@ def get_args():
     parser = deepspeed.add_config_arguments(parser)
 
     args = parser.parse_args()
+    make_sparse_config(args)
+
     if not args.train_data:
         print('WARNING: No training data specified')
-        assert args.is_sparse != 1, 'use is-sparse == 2 for inference'
-    elif args.is_sparse == 1 and (args.max_position_embeddings - 1) % args.query_window != 0:
+    elif args.sparse_type == 'torch_1d' and (args.max_position_embeddings - 1) % args.query_window != 0:
         raise ValueError('During sparse training, the sequence length must be exactly divided by window_size.') 
 
     args.cuda = torch.cuda.is_available()

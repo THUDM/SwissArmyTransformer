@@ -17,27 +17,30 @@ HOST_FILE_PATH="hostfile_single"
 
 config_json="$script_dir/ds_config.json"
 gpt_options=" \
-       --experiment-name cogview-bird_animal_tutorial-12-1024-16 \
+       --experiment-name cogview-testlocal \
        --img-tokenizer-num-tokens 8192 \
-       --dataset-type CompactBinaryDataset \
+       --dataset-type BinaryDataset \
        --model-parallel-size ${MP_SIZE} \
        --num-layers 12 \
-       --hidden-size 1024 \
-       --num-attention-heads 16 \
+       --hidden-size 2560 \
+       --num-attention-heads 40 \
        --save $main_dir/data/checkpoints \
-       --train-iters 20000 \
+       --train-iters 100000 \
        --resume-dataloader \
-       --train-data ./data/bird_animal.bin \
+       --train-data /dataset/fd5061f6/cogview/cogdata_new/cogdata_task_3leveltokens/merge.bin \
        --split 949,50,1 \
        --distributed-backend nccl \
        --lr-decay-style cosine \
        --warmup .1 \
        --checkpoint-activations \
        --deepspeed-activation-checkpointing \
-       --max-position-embeddings 1089 \
+       --max-position-embeddings 5184 \
        --max-memory-length 0 \
        --fp16 \
-       --txt-loss-scale 5 \
+       --txt-loss-scale 2 \
+       --sandwich-ln \
+       --sparse-type cuda_2d \
+       --save-interval 2500 
 "
 
 gpt_options="${gpt_options}

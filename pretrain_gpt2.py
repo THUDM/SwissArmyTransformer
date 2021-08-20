@@ -74,9 +74,8 @@ def get_model(args):
                       checkpoint_activations=args.checkpoint_activations,
                       checkpoint_num_layers=args.checkpoint_num_layers,
                       parallel_output=True,
-                      query_window=args.query_window,
-                      key_window_times=args.key_window_times,
-                      num_pivot=args.num_pivot
+                      sparse_config=args.sparse_config,
+                      sandwich_ln=args.sandwich_ln
                       )
 
     if mpu.get_data_parallel_rank() == 0:
@@ -210,19 +209,33 @@ def setup_model_and_optimizer(args):
 def get_masks_and_position_ids(data,
                             loss_mask=None,
                             attention_mask=None, args=None):
+    assert args is not None
     # Extract batch size and sequence length.
     batch_size, seq_length = data.size()
 
     # Attention mask (lower triangular).
     if attention_mask is None:
         # single direction, [PAD]s are at the end of the seq, so doesn't matter.
-        attention_mask = torch.ones((1, seq_length, seq_length), device=data.device)
-        attention_mask = torch.tril(attention_mask)
-        attention_mask = attention_mask.unsqueeze(1)
+        if args.sparse_config.sparse_type == 'cuda_2d':
+            layout = args.sparse_config.layout
+            unpad_indices = (data[:, :layout[1]] >= 0) * 10000.
+            starts = (torch.arange(layout[1], device=data.device).expand_as(unpad_indices) + unpad_indices).min(dim=-1)[1]
+            layout[0] = starts.max().item()
+            attention_mask = torch.ones((batch_size, seq_length, layout[0]), device=data.device)
+            for i in range(batch_size):
+                attention_mask[i, :, starts[i]:layout[1]] = 0
+            attention_mask[:, :layout[0]].tril_()
+            attention_mask = attention_mask.unsqueeze(1)
+        elif args.sparse_config.sparse_type == 'standard':
+            attention_mask = torch.ones((batch_size, seq_length, seq_length), device=data.device)
+            attention_mask.tril_()
+            attention_mask = attention_mask.unsqueeze(1)
+        elif args.sparse_config.sparse_type == 'torch_1d':
+            raise NotImplementedError
 
     # Loss mask.
     if loss_mask is None:
-        loss_mask = torch.ones(data.size(), dtype=torch.float, device=data.device)
+        loss_mask = torch.ones(data.size(), dtype=data.dtype, device=data.device)
 
     # Position ids.
     if args is not None and args.finetune and args.max_position_embeddings < args.max_position_embeddings_finetune:
@@ -270,10 +283,19 @@ def get_batch(data_iterator, args, timers):
     # Unpack.
     tokens_ = data_b['text'].long()
     loss_mask = data_b['loss_mask'].float()
-    labels = tokens_[:, 1:].contiguous()
-    loss_mask = loss_mask[:, 1:].contiguous()
-    tokens = tokens_[:, :-1].contiguous()
-    attention_mask = None
+    if args.dataset_type == 'BinaryDataset':
+        labels = tokens_.contiguous()
+        loss_mask = loss_mask.contiguous()
+        tokenizer = get_tokenizer()
+        cls_token = torch.zeros(tokens_.shape[0], 1, dtype=tokens_.dtype, device=tokens_.device) + tokenizer['[CLS]']
+        tokens = torch.cat((cls_token, tokens_[:, :-1]), dim=1)
+        tokens[:, 64] = tokenizer['[BASE]']
+    else:
+        labels = tokens_[:, 1:].contiguous()
+        loss_mask = loss_mask[:, 1:].contiguous()
+        tokens = tokens_[:, :-1].contiguous()
+    
+    attention_mask = None        
 
     # Get the masks and postition ids.
     attention_mask, loss_mask, position_ids = get_masks_and_position_ids(
@@ -302,24 +324,16 @@ def forward_step(data_iterator, model, args, timers, mems):
     # split img & txt positions, [PAD] not included # TODO check enough
     tokenizer = get_tokenizer()
     img_txt_sep = tokenizer.img_tokenizer.num_tokens
-    img_indices_bool = (tokens.detach() < img_txt_sep)
+    img_indices_bool = (tokens.detach() < img_txt_sep) & (loss_mask > 0)
     txt_indices_bool = (~img_indices_bool) & (loss_mask > 0)
  
     # Forward model.
-    logits, *mems = model(tokens, position_ids, attention_mask, txt_indices_bool, img_indices_bool, args.is_sparse, *mems)
+    logits, *mems = model(tokens, position_ids, attention_mask, *mems)
     losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(),
                                               labels)
     # scaling loss mask
     loss_mask[txt_indices_bool] *= args.txt_loss_scale
-    loss_mask = loss_mask.view(-1)    
-
-    # precalc outlier point, uncomment this if needed
-    # if args.iteration > 10000:
-    #     outliers = (losses.detach().view(-1) * loss_mask) > 20.
-    #     if outliers.sum() > 0:
-    #         print(f'Remove {outliers.sum()} outliers.')
-    #         loss_mask[outliers] = 1e-4
-
+    loss_mask = loss_mask.view(-1)  
 
     losses = losses.view(-1) * loss_mask
     loss = torch.sum(losses) / loss_mask.sum()
@@ -571,8 +585,6 @@ def evaluate(data_iterator, model, args, timers, verbose=False):
 
     # Turn on evaluation mode which disables dropout.
     model.eval()
-    is_sparse_raw = args.is_sparse
-    args.is_sparse = 0
 
     total_lm_loss = 0
     mems = []
@@ -601,7 +613,6 @@ def evaluate(data_iterator, model, args, timers, verbose=False):
 
     # Move model back to the train mode.
     model.train()
-    args.is_sparse = is_sparse_raw
 
     total_lm_loss /= args.eval_iters
     return total_lm_loss

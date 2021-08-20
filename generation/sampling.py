@@ -58,7 +58,7 @@ def get_batch(context_tokens, device, args):
 
     # Get the masks and postition ids.
     attention_mask, loss_mask, position_ids = get_masks_and_position_ids(
-        tokens)
+        tokens, args=args)
     return tokens, attention_mask, position_ids
 
 def filling_sequence(
@@ -101,16 +101,6 @@ def filling_sequence(
     if mems is None:
         mems = []
     score = [0] # sum log likelihood for beams
-
-    if args.is_sparse == 2:
-        tokenizer = get_tokenizer()
-        img_txt_sep = tokenizer.img_tokenizer.num_tokens
-        img_indices_bool = (tokens < img_txt_sep)
-        txt_indices_bool = (~img_indices_bool)
-    elif args.is_sparse == 0:
-        txt_indices_bool = img_indices_bool = None
-    else:
-        raise ValueError('set is_sparse==2 for inference.')
     
     while counter < (out_seq_length - 1):
         # Now, we want to generate seq[counter + 1]
@@ -125,7 +115,7 @@ def filling_sequence(
 
         if index == 0: # first 
             position_ids[position_ids > offset] -= offset
-            logits, *mems = model(tokens, position_ids, attention_mask, txt_indices_bool, img_indices_bool, is_sparse=args.is_sparse, *mems)
+            logits, *mems = model(tokens, position_ids, attention_mask, *mems)
             index = counter
         elif seq[counter + 1] >= 0: # provided
             if seq[counter + 1] == tokenizer['[ROI2]']:
@@ -134,9 +124,6 @@ def filling_sequence(
             nb = 1
             counter += 1
             tokens = torch.cat((tokens, seq[counter: counter+1].expand(tokens.shape[0], 1)), dim=1)
-            if args.is_sparse == 2:
-                img_indices_bool = (tokens < img_txt_sep)
-                txt_indices_bool = (~img_indices_bool)
             continue
         else:
             assert tokens.shape[1] == counter + 1 
@@ -147,7 +134,6 @@ def filling_sequence(
             logits, *mems = model(tokens[:, index: ], 
                 position_ids,
                 0, # rebuild in transformers (sep version)
-                txt_indices_bool, img_indices_bool, args.is_sparse,
                 *mems)
             index = counter
         nb = -seq[counter + 1]
@@ -178,9 +164,6 @@ def filling_sequence(
                 score[idx] += score_plus[idx]
         
         tokens = torch.cat((tokens, prev.view(tokens.shape[0], 1)), dim=1)
-        if args.is_sparse == 2: # update indices
-            img_indices_bool = (tokens < img_txt_sep)
-            txt_indices_bool = (~img_indices_bool)
 
     output_tokens_list = tokens.view(tokens.shape[0], -1).contiguous()
     return output_tokens_list
@@ -220,7 +203,7 @@ def inverse_prompt_score(model, seq, args):
     assert tokenizer['[ROI1]'] == seq[0][botext]
 
     tokens, attention_mask, position_ids = get_batch(seq, device, args)
-    logits, *mems = model(tokens, position_ids, attention_mask, None, None, is_sparse=args.is_sparse)
+    logits, *mems = model(tokens, position_ids, attention_mask)
     logits[..., :tokenizer.img_tokenizer.num_tokens] = -float('Inf')
     log_probs = torch.log(F.softmax(logits, dim=-1))
 

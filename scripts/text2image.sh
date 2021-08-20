@@ -35,17 +35,15 @@ MASTER_PORT=${MASTER_PORT} python generate_samples.py \
        --temperature $TEMP \
        --top_k $TOPK \
        --top_p $TOPP \
+       --sandwich-ln \
        --img-tokenizer-path pretrained/vqvae/vqvae_hard_biggerset_011.pt \
-       --query-window 64 \
-       --key-window-times 4 \
-       --num-pivot 256 \
-       --is-sparse 0 \
+       --sparse-type standard \
        --max-position-embeddings-finetune $MAXSEQLEN \
        --generation-task text2image \
        --input-source ./input.txt \
        --output-path samples_text2image \
-       --batch-size 4 \
-       --max-inference-batch-size 4 \
+       --batch-size 8 \
+       --max-inference-batch-size 8 \
        --device 0 \
        $@
 

@@ -163,8 +163,16 @@ def generate_images_once(model, args, raw_text, seq=None, num=8, query_template=
         assert num < mbz or num % mbz == 0
         output_tokens_list = []
         for tim in range(max(num // mbz, 1)):
+            import line_profiler
+            from mpu.sparse_transformer import standard_attention
+            # profile = line_profiler.LineProfiler(model.module.forward)
+            # profile = line_profiler.LineProfiler(standard_attention)
+            # profile.enable()
             output_tokens_list.append(filling_sequence(model, seq.clone(), args))
-            torch.cuda.empty_cache()
+            # torch.cuda.empty_cache()
+            # profile.disable()  # 停止分析
+            # import sys
+            # profile.print_stats(sys.stdout)
 
         output_tokens_list = torch.cat(output_tokens_list, dim=0)
         

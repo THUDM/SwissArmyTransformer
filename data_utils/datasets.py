@@ -61,7 +61,7 @@ class LMDBDataset(Dataset):
             return self.process_fn(row)
 
 class BinaryDataset(Dataset):
-    def __init__(self, path, process_fn, length_per_sample=64+1024, dtype='int32', preload=False, **kwargs):
+    def __init__(self, path, process_fn, length_per_sample=64+1024+4096, dtype='int32', preload=False, **kwargs): # TODO ARGS
         assert length_per_sample is not None
         self.length_per_sample = length_per_sample
         self.dtype = np.dtype(dtype)
@@ -125,6 +125,13 @@ def get_dataset_by_type(dataset_type, path: str, args, DS_CLASS=LMDBDataset):
             ret, attention_mask_sep = pad_to_len(ret)
             return {'text': ret, 
                 'loss_mask':  np.array([1] * attention_mask_sep + [0] * (len(ret) - attention_mask_sep))
+                }
+    elif dataset_type == 'BinaryDataset':
+        DS_CLASS = BinaryDataset
+        def process_fn(row):
+            loss_mask = (row >= 0).astype(np.int64)
+            return {'text': row.astype(np.int64), 
+                'loss_mask':  loss_mask
                 }
 
     return DS_CLASS(path, process_fn)
