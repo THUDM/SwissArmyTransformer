@@ -1,6 +1,6 @@
 {
-  "train_micro_batch_size_per_gpu": 4,
-  "gradient_accumulation_steps": 1,
+  "train_micro_batch_size_per_gpu": 6,
+  "gradient_accumulation_steps": 5,
   "steps_per_print": 1,
   "gradient_clipping": 0.1,
   "zero_optimization": {
@@ -23,7 +23,7 @@
   "optimizer": {
     "type": "Adam",
     "params": {
-      "lr": 0.00005,
+      "lr": 0.0005,
       "betas": [
         0.9,
         0.95

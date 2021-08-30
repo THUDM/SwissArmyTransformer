@@ -13,19 +13,20 @@ import math
 import random
 import base64
 
-if __name__ == "__main__":
+def main(ip_list, port=2222):
     ssh_config = ''
-    line_format = 'Host node{}\n\tUser root\n\tPort 2222\n\tHostname {}\n'
-    for i, ip in enumerate(sys.argv[1:]):
-        ssh_config += line_format.format(i, ip)
+    line_format = 'Host node{}\n\tUser root\n\tPort {}\n\tHostname {}\n'
+    for i, ip in enumerate(ip_list):
+        ssh_config += line_format.format(i, port, ip)
     
     ret = os.system(f'echo \"{ssh_config}\" > ~/.ssh/config && chmod 600 ~/.ssh/config')
     assert ret == 0
 
     hostfile_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'hostfile')
     with open(hostfile_path, 'w') as fout:
-        for i, ip in enumerate(sys.argv[1:]):
+        for i, ip in enumerate(ip_list):
             fout.write(f'node{i} slots=8\n')
     print(f'Successfully generating hostfile \'{hostfile_path}\'!')
 
-
+if __name__ == "__main__":
+    main(sys.argv[1:])

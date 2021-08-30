@@ -20,7 +20,6 @@ import torch.nn.functional as F
 from pretrain_gpt2 import get_masks_and_position_ids
 from data_utils import get_tokenizer
 
-
 def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-float('Inf')):
     # This function has been mostly taken from huggingface conversational ai code at
     # https://medium.com/huggingface/how-to-build-a-state-of-the-art-conversational-ai-with-transfer-learning-2d818ac26313
@@ -60,6 +59,19 @@ def get_batch(context_tokens, device, args):
     attention_mask, loss_mask, position_ids = get_masks_and_position_ids(
         tokens, args=args)
     return tokens, attention_mask, position_ids
+
+def update_mems(hiddens, mems, max_memory_length=10000):
+    memory_length = mems[0].size(1) if mems else 0
+    query_length = hiddens[0].size(1)
+    new_memory_length = min(max_memory_length, memory_length + query_length)
+    new_mems = []
+    with torch.no_grad():
+        for i in range(len(hiddens)):
+            if new_memory_length <= query_length:
+                new_mems.append(hiddens[i][:, -new_memory_length:])
+            else:
+                new_mems.append(torch.cat((mems[i][:, -new_memory_length+query_length:], hiddens[i]), dim=1))
+    return new_mems
 
 def filling_sequence(
         model, 
@@ -115,8 +127,15 @@ def filling_sequence(
 
         if index == 0: # first 
             position_ids[position_ids > offset] -= offset
-            logits, *mems = model(tokens, position_ids, attention_mask, *mems)
+            logits, *qkv = model(tokens, position_ids, attention_mask, *mems)
+            mems = update_mems(qkv, mems)
+
+            tmp = -F.log_softmax(logits, dim=-1)
+            tmp = tmp[0,:-1].gather(dim=-1,index=tokens[0,1:].unsqueeze(-1))[4:,0]
+            for i in range(1,len(tmp)):
+                print(i, tmp[i].item())
             index = counter
+            print(tmp[1:].mean(), file=sys.stderr)
         elif seq[counter + 1] >= 0: # provided
             if seq[counter + 1] == tokenizer['[ROI2]']:
                 offset = counter + 1
@@ -131,14 +150,17 @@ def filling_sequence(
             position_ids[position_ids > offset] -= offset
             # TODO each time, the feed input cannot be too long (window size), or it will have a discrepcy from sparse training, but this is not very important. 
             tokens, mems, score = shrink_beams(tokens, mems, -seq[counter + 1], score)
-            logits, *mems = model(tokens[:, index: ], 
+            logits, *qkv = model(tokens[:, index: ], 
                 position_ids,
                 0, # rebuild in transformers (sep version)
                 *mems)
+            mems = update_mems(qkv, mems)
+
             index = counter
         nb = -seq[counter + 1]
         counter += 1
         index += 1
+
 
         logits = logits[:, -1] # [batch size, vocab size]
 
@@ -180,7 +202,7 @@ def shrink_beams(tokens, mems, nb, score):
     new_mems = [mem[max_idx: max_idx + 1] for mem in mems]
     return tokens, new_mems, score
 
-def add_interlacing_beam_marks(seq, nb=12, period=3000):
+def add_interlacing_beam_marks(seq, nb=12, period=30000):
     assert isinstance(seq, list) or len(seq.shape) == 1
     blk_cnt = 0
     for i in range(len(seq)):
@@ -203,7 +225,9 @@ def inverse_prompt_score(model, seq, args):
     assert tokenizer['[ROI1]'] == seq[0][botext]
 
     tokens, attention_mask, position_ids = get_batch(seq, device, args)
-    logits, *mems = model(tokens, position_ids, attention_mask)
+    logits, *qkv = model(tokens, position_ids, attention_mask)
+    mems = update_mems(qkv, mems)
+
     logits[..., :tokenizer.img_tokenizer.num_tokens] = -float('Inf')
     log_probs = torch.log(F.softmax(logits, dim=-1))
 

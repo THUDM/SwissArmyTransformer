@@ -41,14 +41,13 @@ from pretrain_gpt2 import get_model
 import math
 from copy import deepcopy
 from tqdm import tqdm
-from generation import get_batch, filling_sequence, add_interlacing_beam_marks, magnify, inverse_prompt_score
+from generation import get_batch, filling_sequence, add_interlacing_beam_marks, magnify, inverse_prompt_score, filling_sequence_local
 from torchvision.utils import save_image
 import torch.distributed as dist
 
 
 def setup_model(args):
     """Setup model and optimizer."""
-
     model = get_model(args)
 
     if args.load is not None:
@@ -163,12 +162,13 @@ def generate_images_once(model, args, raw_text, seq=None, num=8, query_template=
         assert num < mbz or num % mbz == 0
         output_tokens_list = []
         for tim in range(max(num // mbz, 1)):
-            import line_profiler
-            from mpu.sparse_transformer import standard_attention
+            # import line_profiler
+            # from mpu.sparse_transformer import standard_attention
             # profile = line_profiler.LineProfiler(model.module.forward)
             # profile = line_profiler.LineProfiler(standard_attention)
             # profile.enable()
-            output_tokens_list.append(filling_sequence(model, seq.clone(), args))
+            fill_fn = filling_sequence_local if args.generation_task == 'cuda-2d generation' else filling_sequence
+            output_tokens_list.append(fill_fn(model, seq.clone(), args))
             # torch.cuda.empty_cache()
             # profile.disable()  # 停止分析
             # import sys
@@ -182,8 +182,11 @@ def generate_images_once(model, args, raw_text, seq=None, num=8, query_template=
         for seq in output_tokens_list:
             decoded_txts, decoded_imgs = tokenizer.DecodeIds(seq.tolist())
             for i in range(len(decoded_imgs)):
-                if decoded_imgs[i].shape[-1] == 128:
-                    decoded_imgs[i] = torch.nn.functional.interpolate(decoded_imgs[i], size=(256, 256))
+                if decoded_imgs[i].shape[-1] < 512:
+                    decoded_imgs[i] = torch.nn.functional.interpolate(decoded_imgs[i], size=(512, 512))
+                # decoded_imgs[i].view(3, 32, 16, 32, 16)[:, :, :4, :, :4] = 0
+                # decoded_imgs[i].view(3, 32, 16, 32, 16)[0, :, :4, :, :4] = 1
+                # decoded_imgs[i].view(3, 32, 16, 32, 16)[1, :12, :4, :16, :4] = 1
             if args.debug:
                 imgs.extend(decoded_imgs)
             else:
@@ -209,7 +212,7 @@ def generate_images_once(model, args, raw_text, seq=None, num=8, query_template=
 
 def generate_images_continually(model, args):
     if args.generation_task == 'text2image':
-        query_template = '[ROI1] {} [BASE] [BOI1] [MASK]*1024'
+        query_template = '[ROI1] {} [BASE] [BOI1] [Image200]bao.jpeg'
     elif args.generation_task == 'image2text':
         query_template = '[BASE] [BOI1] [Image]{} [EOI1] [ROI1] [MASK]*20'
     elif args.generation_task == 'low-level super-resolution':
@@ -218,6 +221,8 @@ def generate_images_continually(model, args):
         query_template = '[ROI1] {} [BASE] [BOI1] [Image]{}'
     elif args.generation_task == 'post-selection':
         query_template = '[BASE] [BOI1] [Image]{} [EOI1] [ROI1] {}'
+    elif args.generation_task == 'cuda-2d generation':
+        query_template = '[CLS] {} [BASE] [Image200]bao.jpeg [MASK]*4096'
     else:
         raise NotImplementedError
     for raw_text, seq, output_path in get_context(args, query_template):

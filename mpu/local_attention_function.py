@@ -28,6 +28,7 @@ class similarFunction(Function):
         x_ori, x_loc = ctx.saved_tensors
         kH, kW = ctx.kHW
         casual_mask = ctx.casual_mask
+        grad_outputs = grad_outputs.contiguous()
         grad_ori = similar_backward(x_ori, x_loc, grad_outputs, kH, kW, True, casual_mask)
         grad_loc = similar_backward(x_ori, x_loc, grad_outputs, kH, kW, False, casual_mask)
 
@@ -50,6 +51,7 @@ class weightingFunction(Function):
         x_ori, x_weight = ctx.saved_tensors
         kH, kW = ctx.kHW
         casual_mask = ctx.casual_mask
+        grad_outputs = grad_outputs.contiguous()
         grad_ori = weighting_backward_ori(x_ori, x_weight, grad_outputs, kH, kW, casual_mask)
         grad_weight = weighting_backward_weight(x_ori, x_weight, grad_outputs, kH, kW, casual_mask)
 
@@ -139,11 +141,3 @@ class TorchLocalAttention(nn.Module):
 
         return out
     
-    
-if __name__ == '__main__':
-    b, c, h, w = 8, 3, 32, 32
-    kH, kW = 5, 5
-    x = torch.rand(b, c, h, w).cuda()
-    m = LocalAttention(c, c, kH, kW)
-    m.cuda()
-    y = m(x)

@@ -1,23 +1,18 @@
 #!/bin/bash
 
-# ==== tutorial settings: =====
-# CHECKPOINT_PATH=data/checkpoints/cogview-bird_animal_tutorial-12-1024-1608-10-09-38
-# NLAYERS=12
-# NHIDDEN=1024
-# NATT=16
-
-CHECKPOINT_PATH=pretrained/cogview/cogview-base
-NLAYERS=48
-NHIDDEN=2560
-NATT=40
-MAXSEQLEN=1089
+CHECKPOINT_PATH=data/checkpoints/cogview-fixgrad-small08-25-09-38
+# CHECKPOINT_PATH=data/checkpoints/cogview-compare
+NLAYERS=16
+NHIDDEN=1024
+NATT=16
+MAXSEQLEN=5184
 MASTER_PORT=$(shuf -n 1 -i 10000-65535)
 MPSIZE=1
 
 #SAMPLING ARGS
-TEMP=1.
+TEMP=1.05
 #If TOPK/TOPP are 0 it defaults to greedy sampling, top-k will also override top-p
-TOPK=200
+TOPK=100
 TOPP=0
 
 script_path=$(realpath $0)
@@ -30,7 +25,7 @@ MASTER_PORT=${MASTER_PORT} python generate_samples.py \
        --hidden-size $NHIDDEN \
        --load $CHECKPOINT_PATH \
        --num-attention-heads $NATT \
-       --max-position-embeddings 1089 \
+       --max-position-embeddings 5184 \
        --fp16 \
        --temperature $TEMP \
        --top_k $TOPK \
@@ -39,12 +34,13 @@ MASTER_PORT=${MASTER_PORT} python generate_samples.py \
        --img-tokenizer-path pretrained/vqvae/vqvae_hard_biggerset_011.pt \
        --sparse-type standard \
        --max-position-embeddings-finetune $MAXSEQLEN \
-       --generation-task text2image \
+       --generation-task "cuda-2d generation" \
        --input-source ./input.txt \
        --output-path samples_text2image \
-       --batch-size 4 \
+       --batch-size 2 \
        --max-inference-batch-size 4 \
        --device 0 \
+       --sparse-type standard \
        $@
 
 

@@ -373,7 +373,7 @@ def load_checkpoint(model, optimizer, lr_scheduler, args, load_optimizer_states=
 
     if mpu.get_data_parallel_rank() == 0:
         print('  successfully loaded {}'.format(checkpoint_name))
-
+    del sd
     return iteration
 
 

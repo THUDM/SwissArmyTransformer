@@ -37,12 +37,13 @@ def make_data_loader(dataset, batch_size, num_iters, args):
     drop_last = distributed
     # the GPUs in the same model parallel group receive the same data
     if distributed:
+        gradient_accumulation_steps = getattr(args, 'gradient_accumulation_steps', 1)
         batch_sampler = DistributedBatchSampler(sampler,
                                                                     batch_size,
                                                                     drop_last,
                                                                     rank,
                                                                     world_size,
-                                                                    gradient_accumulation_steps=args.gradient_accumulation_steps)
+                                                                    gradient_accumulation_steps=gradient_accumulation_steps)
     else:
         batch_sampler = torch.utils.data.BatchSampler(sampler,
                                                         batch_size,
