@@ -73,7 +73,8 @@ def get_model(args, sparse_config=None):
                       checkpoint_num_layers=args.checkpoint_num_layers,
                       parallel_output=True,
                       sparse_config=sparse_config if sparse_config is not None else args.sparse_config,
-                      sandwich_ln=args.sandwich_ln
+                      sandwich_ln=args.sandwich_ln,
+                      finetune=args.finetune
                       )
 
     if mpu.get_data_parallel_rank() == 0:
@@ -163,7 +164,7 @@ def get_learning_rate_scheduler(optimizer, args):
         num_iters = args.lr_decay_iters
     else:
         num_iters = args.train_iters
-    num_iters = max(1, num_iters)
+    num_iters = max(1, num_iters - args.restart_iter)
     init_step = -1
     warmup_iter = args.warmup * num_iters
     lr_scheduler = AnnealingLR(optimizer,
@@ -172,7 +173,9 @@ def get_learning_rate_scheduler(optimizer, args):
                                num_iters=num_iters,
                                decay_style=args.lr_decay_style,
                                last_iter=init_step,
-                               decay_ratio=args.lr_decay_ratio)
+                               decay_ratio=args.lr_decay_ratio,
+                               restart_iter=args.restart_iter
+                               )
 
     return lr_scheduler
 
@@ -181,6 +184,12 @@ def setup_model_and_optimizer(args):
     """Setup model and optimizer."""
 
     model = get_model(args)
+
+    if args.finetune:
+        model.requires_grad_(False)
+        for name, param in model.named_parameters():
+            if name.find('_plus') > 0:
+                param.requires_grad_(True)
 
     param_groups = get_optimizer_param_groups(model)
 
@@ -213,38 +222,18 @@ def get_masks_and_position_ids(data,
 
     # Attention mask (lower triangular).
     if attention_mask is None:
-        # single direction, [PAD]s are at the end of the seq, so doesn't matter.
         if args.sparse_config.sparse_type == 'cuda_2d':
-            layout = args.sparse_config.layout
-            unpad_indices = (data[:, :layout[1]+1] >= 0) * 10000.
-            unpad_indices[:, -1] = 9000.
-            starts = (torch.arange(layout[1]+1, device=data.device).expand_as(unpad_indices) + unpad_indices).min(dim=-1)[1]
-            layout[0] = starts.max().item()
-            attention_mask = torch.ones((batch_size, seq_length, layout[0]), device=data.device)
+            # single direction, [PAD]s are at the start of the seq.
+            assert loss_mask is not None
+            # loss_mask has n_pad(+1 CLS and [1:] then) zeros, so it is the same as attention_mask, reuse.
+            attention_mask = loss_mask[:, :args.layout[1]].unsqueeze(-2).expand(batch_size, args.layout[1], args.layout[1]).tril()
             for i in range(batch_size):
-                attention_mask[i, :, starts[i]:layout[1]] = 0
-            attention_mask[:, :layout[0]].tril_()
+                attention_mask[i].fill_diagonal_(1)
             attention_mask = attention_mask.unsqueeze(1)
         elif args.sparse_config.sparse_type == 'standard':
             attention_mask = torch.ones((batch_size, seq_length, seq_length), device=data.device)
             attention_mask.tril_()
-            # attention_mask = torch.zeros((seq_length, seq_length), device=data.device)
-            # h = w = 32
-            # k1=9
-            # layout = [10, 64, 64+h*w, 64+h*w*5]
-            # for i in range(layout[1]):
-            #     attention_mask[i, :i+1] = 1
-            # for i in range(layout[1], layout[2]):
-            #     x = (i - layout[1]) // w
-            #     y = (i - layout[1]) % w
-            #     lx = max(0, x - k1 // 2)
-            #     ly = max(0, y - k1 // 2)
-            #     rx = min(h-1, x + k1 // 2)
-            #     ry = min(w-1, y + k1 // 2)
-            #     attention_mask[i, layout[1]:layout[2]].view(h, w)[lx:x, ly:ry+1] = 1
-            #     attention_mask[i, layout[1]:layout[2]].view(h, w)[x, ly:y+1] = 1
-            # attention_mask = attention_mask.unsqueeze(0).unsqueeze(0)
-        elif args.sparse_config.sparse_type == 'torch_1d':
+        else:
             raise NotImplementedError
 
     # Loss mask.
@@ -252,26 +241,19 @@ def get_masks_and_position_ids(data,
         loss_mask = torch.ones(data.size(), dtype=data.dtype, device=data.device)
 
     # Position ids.
-    if args is not None and args.finetune and args.max_position_embeddings < args.max_position_embeddings_finetune:
-        # for each sample, find [ROI2] and split
-        # ([ROI1] text... [BOI1] img... [EOI1] [ROI2]<pos_id==1089> ...)
-        start_token = get_tokenizer()['[ROI2]']
-        tmp = torch.nonzero(data == start_token, as_tuple=False)
-        start_token_poses = [100000] * batch_size
-        for x, y in tmp:
-            start_token_poses[x] = min(start_token_poses[x], y)
-        assert 100000 not in start_token_poses, 'Some samples do not have [ROI2]!'
+    if args.sparse_config.sparse_type == 'cuda_2d':
+        assert loss_mask is not None
+        layout = args.layout
+        assert seq_length == layout[-1]
+        n_pads = seq_length - loss_mask.sum(dim=-1).long()
         position_ids = torch.zeros(batch_size, seq_length, dtype=torch.long,
                                     device=data.device)
         for i in range(batch_size):
-            sep = start_token_poses[i]
-            torch.arange(start=0, end=sep, out=position_ids[i, :sep], 
+            torch.arange(layout[1] - n_pads[i], out=position_ids[i, n_pads[i]:layout[1]], 
                 dtype=torch.long, device=data.device)
-            second_pos = 0 # reuse
-            torch.arange(start=second_pos, end=second_pos + seq_length - sep, 
-                out=position_ids[i, sep:], 
+            torch.arange(layout[2] - layout[1], 
+                out=position_ids[i, layout[1]:],
                 dtype=torch.long, device=data.device)
-        position_ids[position_ids >= args.max_position_embeddings] = args.max_position_embeddings - 1
     else:
         position_ids = torch.arange(seq_length, dtype=torch.long,
                                     device=data.device)
@@ -298,28 +280,9 @@ def get_batch(data_iterator, args, timers):
     tokens_ = data_b['text'].long()
     loss_mask = data_b['loss_mask'].float()
 
-    #FIXME change order
-    if args.sparse_config.sparse_type == 'cuda_2d':
-        assert args.sparse_config.layout[-1] == 64+32**2+64**2
-    tokens_new = tokens_.clone()
-    tokens_new[:, 64:64+32**2] = tokens_[:, 64+64**2:]
-    tokens_new[:, 64+32**2:] = tokens_[:, 64:64+64**2]
-    tokens_ = tokens_new
-    # only 32# 
-    # tokens_ = tokens_[:, :64+32**2]
-    # loss_mask = loss_mask[:, :64+32**2]
-    
-    if args.dataset_type == 'BinaryDataset':
-        labels = tokens_.contiguous()
-        loss_mask = loss_mask.contiguous()
-        tokenizer = get_tokenizer()
-        cls_token = torch.zeros(tokens_.shape[0], 1, dtype=tokens_.dtype, device=tokens_.device) + tokenizer['[CLS]']
-        tokens = torch.cat((cls_token, tokens_[:, :-1]), dim=1)
-        tokens[:, 64] = tokenizer['[BASE]']
-    else:
-        labels = tokens_[:, 1:].contiguous()
-        loss_mask = loss_mask[:, 1:].contiguous()
-        tokens = tokens_[:, :-1].contiguous()
+    labels = tokens_[:, 1:].contiguous()
+    loss_mask = loss_mask[:, 1:].contiguous()
+    tokens = tokens_[:, :-1].contiguous()
     
     attention_mask = None        
 
@@ -344,7 +307,6 @@ def forward_step(data_iterator, model, args, timers, mems):
     timers('batch generator').start()
     tokens, labels, loss_mask, attention_mask, position_ids = get_batch(
         data_iterator, args, timers)
-
     timers('batch generator').stop()
 
     # split img & txt positions, [PAD] not included # TODO check enough
@@ -352,7 +314,6 @@ def forward_step(data_iterator, model, args, timers, mems):
     img_txt_sep = tokenizer.img_tokenizer.num_tokens
     img_indices_bool = (tokens.detach() < img_txt_sep) & (loss_mask > 0)
     txt_indices_bool = (~img_indices_bool) & (loss_mask > 0)
-
     # Forward model.
     logits, *mems = model(tokens, position_ids, attention_mask, *mems)
     losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(),
@@ -363,15 +324,14 @@ def forward_step(data_iterator, model, args, timers, mems):
 
     losses = losses.view(-1) * loss_mask
     loss = torch.sum(losses) / loss_mask.sum()
-
     # =====================   Log partial losses   ======================== #
     if args.sparse_config.sparse_type == 'cuda_2d':
         img_indices_bool2 = img_indices_bool.clone()
-        img_indices_bool2[:, :args.sparse_config.layout[2]] = False
+        img_indices_bool2[:, :args.sparse_config.layout[1]] = False
         img_loss2 = losses[img_indices_bool2.view(-1)].detach().sum() / max(img_indices_bool2.sum(), 1)
         torch.distributed.all_reduce(img_loss2.data)
         img_loss2.data = img_loss2.data / args.world_size
-        img_indices_bool[:, args.sparse_config.layout[2]:] = False
+        img_indices_bool[:, args.sparse_config.layout[1]:] = False
     else:
         img_loss2 = 0
     img_indices_bool = img_indices_bool.view(-1)
@@ -386,9 +346,6 @@ def forward_step(data_iterator, model, args, timers, mems):
     txt_loss.data = txt_loss.data / args.world_size
 
     # ===================== END OF BLOCK ======================= #
-    # import pdb;pdb.set_trace()
-    # with open('tmp_save.bin', 'wb') as fout:
-    #     torch.save(tokens, fout)
     return loss, mems, img_loss, txt_loss, img_loss2
 
 
@@ -471,7 +428,6 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
         timers('backward').start()
         lm_loss_reduced = backward_step(optimizer, model, lm_loss, args, timers)
         timers('backward').stop()
-
         # Update parameters.
         skipped_iter, complete = 0, False
         timers('optimizer').start()
@@ -674,7 +630,14 @@ def evaluate(data_iterator, model, args, timers, verbose=False):
 def evaluate_and_print_results(prefix, data_iterator, model,
                                args, timers, verbose=False, step=None, summary_writer=None):
     """Helper function to evaluate and dump results on screen."""
+    # import line_profiler
+    # profile = line_profiler.LineProfiler(model.module.module.transformer.layers[0].forward)
+    # profile.enable()
+    # torch.cuda.empty_cache()
     lm_loss = evaluate(data_iterator, model, args, timers, verbose)
+    # profile.disable()  # 停止分析
+    # import sys
+    # profile.print_stats(sys.stdout)
     lm_ppl = math.exp(min(20, lm_loss))
     report_evaluate_metrics(summary_writer, prefix, lm_loss, lm_ppl, step)
 

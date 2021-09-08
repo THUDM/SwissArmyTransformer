@@ -41,15 +41,14 @@ def gpt2_get_params_for_weight_decay_optimization(module):
         if isinstance(module_, (mpu.LayerNorm, torch.nn.LayerNorm)):
             no_weight_decay_params['params'].extend(
                 [p for p in list(module_._parameters.values())
-                 if p is not None])
+                 if p is not None and p.requires_grad])
         else:
             weight_decay_params['params'].extend(
                 [p for n, p in list(module_._parameters.items())
-                 if p is not None and n != 'bias'])
+                 if p is not None and n != 'bias' and p.requires_grad])
             no_weight_decay_params['params'].extend(
                 [p for n, p in list(module_._parameters.items())
-                 if p is not None and n == 'bias'])
-
+                 if p is not None and n == 'bias' and p.requires_grad])
     return weight_decay_params, no_weight_decay_params
 
 
@@ -74,7 +73,8 @@ class GPT2Model(torch.nn.Module):
                  sandwich_ln,
                  checkpoint_num_layers=1,
                  parallel_output=True,
-                 sparse_config=argparse.Namespace(sparse_type='standard')
+                 sparse_config=argparse.Namespace(sparse_type='standard'),
+                 finetune=False
                  ):
 
         super(GPT2Model, self).__init__()
@@ -99,7 +99,8 @@ class GPT2Model(torch.nn.Module):
                                                        checkpoint_activations,
                                                        checkpoint_num_layers,
                                                        sandwich_ln=sandwich_ln,
-                                                       sparse_config=sparse_config
+                                                       sparse_config=sparse_config,
+                                                       finetune=finetune
                                                        )
 
     def forward(self, input_ids, position_ids, attention_mask, *mems):
@@ -120,3 +121,6 @@ class GPT2Model(torch.nn.Module):
             return (logits_parallel, *hidden_layers)
 
         return (mpu.gather_from_model_parallel_region(logits_parallel), *hidden_layers)
+    
+    def init_plus_from_old(self):
+        self.transformer.init_plus_from_old()

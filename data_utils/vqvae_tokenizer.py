@@ -50,12 +50,15 @@ class VQVAETokenizer(object):
         self.device = device
         self.image_tokens = model.quantize_t.n_embed
         self.num_tokens = model.quantize_t.n_embed
+        self.tr_normalize = transforms.Normalize([0.79093, 0.76271, 0.75340], [0.30379, 0.32279, 0.32800])
 
     def __len__(self):
         return self.num_tokens
 
-    def EncodeAsIds(self, img):
+    def EncodeAsIds(self, img, add_normalization=False):
         assert len(img.shape) == 4 # [b, c, h, w]
+        if add_normalization:
+            img = self.tr_normalize(img)
         return img2code(self.model, img)
 
     def DecodeIds(self, code, shape=None):
@@ -78,7 +81,6 @@ class VQVAETokenizer(object):
         img = tr(Image.open(path))
         if img.shape[0] == 4:
             img = img[:-1]
-        tr_normalize = transforms.Normalize([0.79093, 0.76271, 0.75340], [0.30379, 0.32279, 0.32800])
-        img = tr_normalize(img)
+        img = self.tr_normalize(img)
         img = img.unsqueeze(0).float().to(self.device) # size [1, 3, h, w]
         return img  

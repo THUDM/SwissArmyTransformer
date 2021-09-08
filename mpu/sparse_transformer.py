@@ -75,7 +75,8 @@ class GPT2ParallelSelfAttention(torch.nn.Module):
     """
     def __init__(self, hidden_size, num_attention_heads,
                  attention_dropout_prob, output_dropout_prob,
-                 init_method, output_layer_init_method=None,sparse_config=None):
+                 init_method, output_layer_init_method=None,sparse_config=None,
+                 finetune=False):
         super(GPT2ParallelSelfAttention, self).__init__()
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
@@ -111,10 +112,29 @@ class GPT2ParallelSelfAttention(torch.nn.Module):
             get_cuda_rng_tracker = deepspeed.checkpointing.get_cuda_rng_tracker
             checkpoint = deepspeed.checkpointing.checkpoint
 
-        # self.offset_bias = torch.nn.Parameter(
-        #     torch.ones(num_attention_heads, sparse_config.kernel_size**2//2+1 +sparse_config.kernel_size2**2)) 
-
         self.sparse_config = sparse_config
+
+        if finetune: 
+            # build new branch
+            self.query_key_value_plus = ColumnParallelLinear(hidden_size, 3*hidden_size,
+                                                    stride=3,
+                                                    gather_output=False,
+                                                    init_method=init_method)
+            self.dense_plus = RowParallelLinear(hidden_size,
+                                       hidden_size,
+                                       input_is_parallel=True,
+                                       init_method=output_layer_init_method)
+
+    def init_plus_from_old(self):
+        self.query_key_value_plus.weight.data.copy_(self.query_key_value.weight.data)
+        if hasattr(self.query_key_value_plus, 'bias') and hasattr(self.query_key_value, 'bias'):
+            self.query_key_value_plus.bias.data.copy_(self.query_key_value.bias.data)
+        
+        self.dense_plus.weight.data.copy_(self.dense.weight.data)
+        if hasattr(self.dense_plus, 'bias') and hasattr(self.dense, 'bias'):
+            self.dense_plus.bias.data.copy_(self.dense.bias.data)
+    def reset_sparse_config(self, config):
+        self.sparse_config = config
 
     def _transpose_for_scores(self, tensor):
         """Transpose a 3D tensor [b, s, np*hn] into a 4D tensor with
@@ -128,16 +148,15 @@ class GPT2ParallelSelfAttention(torch.nn.Module):
 
 
     def forward(self, hidden_states, mask, mem=None):
-        # import pdb;pdb.set_trace()
         sparse_config = self.sparse_config
-        # hidden_states: [b, s, h]
-        # ltor_mask: [1, 1, s, s]
-
-        # Attention heads. [b, s, hp]
-        query_length = hidden_states.size(1)
+        layout = sparse_config.layout
+        if sparse_config.sparse_type == 'cuda_2d':
+            assert hidden_states.size(1) == sparse_config.layout[-1]
+            # [PAD]... [ROI1] text ... [BOI1] {layout[0]} 1024 {layout[1]} [EOI1] 4095 {layout[2]}
+            hidden_states_plus = hidden_states[:, layout[1]:]
+            hidden_states = hidden_states[:, :layout[1]]
 
         mixed_raw_layer = self.query_key_value(hidden_states)
-
         (mixed_query_layer,
             mixed_key_layer,
             mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, 3)
@@ -145,38 +164,45 @@ class GPT2ParallelSelfAttention(torch.nn.Module):
             memk, memv = split_tensor_along_last_dim(mem, 2)
             mixed_key_layer = torch.cat((memk, mixed_key_layer), dim=1)
             mixed_value_layer = torch.cat((memv, mixed_value_layer), dim=1)
+        
+        if sparse_config.sparse_type == 'cuda_2d':
+            mixed_raw_layer_plus = self.query_key_value_plus(hidden_states_plus)
+            q1, k1, v1 = split_tensor_along_last_dim(mixed_raw_layer_plus, 3)
 
         dropout_fn = self.attention_dropout if self.training else None
 
-        if sparse_config.sparse_type in ['standard', 'torch_1d']:
-            # Reshape and transpose [b, np, s, hn]
+        if sparse_config.sparse_type == 'standard':
             query_layer = self._transpose_for_scores(mixed_query_layer)
             
             key_layer = self._transpose_for_scores(mixed_key_layer)
             value_layer = self._transpose_for_scores(mixed_value_layer)
             
-            if sparse_config.sparse_type == 'standard':
-                context_layer = standard_attention(query_layer, key_layer, value_layer, mask, dropout_fn)
-            else:
-                context_layer = sparse_attention_1d(query_layer, key_layer, value_layer, sparse_config.pivot_idx, 
-                    mask, sparse_config.query_window, sparse_config.key_window_times, dropout_fn)
-                # inference: context_layer = sparse_attention_inference(query_layer, key_layer, value_layer, pivot_idx)
+            context_layer = standard_attention(query_layer, key_layer, value_layer, mask, dropout_fn)
             
             context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
             new_context_layer_shape = context_layer.size()[:-2] + \
                                     (self.hidden_size_per_partition,)
-            # [b, s, hp]
             context_layer = context_layer.view(*new_context_layer_shape)
             
         elif sparse_config.sparse_type == 'cuda_2d':
-            context_layer = sparse_attention_2dfull(mixed_query_layer, mixed_key_layer, mixed_value_layer, self.num_attention_heads_per_partition,
-                 sparse_config.layout, mask, sparse_config.kernel_size,
-                  kernel_size2=sparse_config.kernel_size2,
-                  attention_dropout=dropout_fn
-                 )
+            context_layer0, context_layer1 = sparse_attention_2d_light(
+                mixed_query_layer, mixed_key_layer, mixed_value_layer,
+                q1, k1, v1,
+                mask,
+                n_head=self.num_attention_heads_per_partition,
+                text_len=sparse_config.layout[0],
+                kernel_size=sparse_config.kernel_size,
+                kernel_size2=sparse_config.kernel_size2,
+                attention_dropout=dropout_fn
+            )
 
-        # Output. [b, s, h]
-        output = self.dense(context_layer)
+        if sparse_config.sparse_type == 'cuda_2d':
+            output_0 = self.dense(context_layer0)
+            output_1 = self.dense_plus(context_layer1)
+            output = torch.cat((output_0, output_1), dim=1)
+        else:
+            output = self.dense(context_layer)
+            
         if self.training:
             output = self.output_dropout(output)
         
@@ -284,7 +310,8 @@ class GPT2ParallelTransformerLayer(torch.nn.Module):
                  init_method,
                  output_layer_init_method=None,
                  sandwich_ln=True,
-                 sparse_config=argparse.Namespace(sparse_type='standard')
+                 sparse_config=argparse.Namespace(sparse_type='standard'),
+                 finetune=False
                  ):
         super(GPT2ParallelTransformerLayer, self).__init__()
         # Set output layer initialization if not provided.
@@ -302,7 +329,8 @@ class GPT2ParallelTransformerLayer(torch.nn.Module):
             output_dropout_prob,
             init_method,
             output_layer_init_method=output_layer_init_method,
-            sparse_config=sparse_config
+            sparse_config=sparse_config,
+            finetune=finetune
             )
 
         # Layernorm on the input data.
@@ -324,6 +352,10 @@ class GPT2ParallelTransformerLayer(torch.nn.Module):
 
         self.sparse_config = sparse_config
 
+    def reset_sparse_config(self, config):
+            self.sparse_config = config
+            self.attention.reset_sparse_config(config)
+    
     def forward(self, hidden_states, ltor_mask, mem=None):
         # hidden_states: [b, s, h]
         # ltor_mask: [1, 1, s, s]
@@ -419,7 +451,8 @@ class GPT2ParallelTransformer(torch.nn.Module):
                  init_method_std=0.02,
                  use_scaled_init_for_output_weights=True,
                  sandwich_ln=True,
-                 sparse_config=argparse.Namespace(sparse_type='standard')
+                 sparse_config=argparse.Namespace(sparse_type='standard'),
+                 finetune=False
                  ):
         super(GPT2ParallelTransformer, self).__init__()
         # Store activation checkpoiting flag.
@@ -441,12 +474,11 @@ class GPT2ParallelTransformer(torch.nn.Module):
         # Initialize the position embeddings.
         torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)
 
-        # TODO: after testing, this is not useful.
-        # self.img_type_embeddings = torch.nn.Parameter(torch.Tensor(64, hidden_size)) 
-        # torch.nn.init.normal_(self.img_type_embeddings, mean=0.0, std=init_method_std)
-        # self.txt_type_embeddings = torch.nn.Parameter(torch.Tensor(hidden_size)) 
-        # torch.nn.init.normal_(self.txt_type_embeddings, mean=0.0, std=init_method_std)
-
+        if finetune:
+            self.position_embeddings_plus = torch.nn.Embedding(4096, # FIXME
+                                                            hidden_size)
+            # Initialize the position embeddings.
+            torch.nn.init.normal_(self.position_embeddings_plus.weight, mean=0.0, std=init_method_std)
 
         def get_layer(layer_id):
             return GPT2ParallelTransformerLayer(
@@ -458,7 +490,8 @@ class GPT2ParallelTransformer(torch.nn.Module):
                 unscaled_init_method(init_method_std),
                 output_layer_init_method=output_layer_init_method,
                 sandwich_ln=sandwich_ln,
-                sparse_config=sparse_config
+                sparse_config=sparse_config,
+                finetune=finetune
                 )
 
         # Transformer layers.
@@ -473,6 +506,16 @@ class GPT2ParallelTransformer(torch.nn.Module):
             get_cuda_rng_tracker = deepspeed.checkpointing.get_cuda_rng_tracker
             checkpoint = deepspeed.checkpointing.checkpoint
         self.sparse_config = sparse_config
+
+    def init_plus_from_old(self):
+        self.position_embeddings_plus.weight.data.view(4, 1024, -1).copy_(self.position_embeddings.weight.data[-1024:]) # FIXME
+        for layer in self.layers:
+            layer.attention.init_plus_from_old()
+
+    def reset_sparse_config(self, config):
+            self.sparse_config = config
+            for layer in self.layers:
+                layer.reset_sparse_config(config)
 
     def forward(self, hidden_states, position_ids, attention_mask, *mems):
 
@@ -495,13 +538,14 @@ class GPT2ParallelTransformer(torch.nn.Module):
                 return m
             attention_mask = build_mask_matrix(query_length, key_length, sep)
 
-        # =====================   Image & Text Type Embedding   ======================== #
-        # TODO: after testing, this is not useful.
-        # extend_len = (key_length + 63) // 64
-        # hidden_states = hidden_states + txt_indices_bool.unsqueeze(-1) * self.txt_type_embeddings.view(1, 1, -1) + \
-        #     img_indices_bool.unsqueeze(-1) * self.img_type_embeddings.expand(extend_len, 64, -1).reshape(extend_len * 64, -1)[memory_length: key_length]
-        # ===================== END OF BLOCK ======================= #
-        position_embeddings = self.position_embeddings(position_ids)
+    
+        if self.sparse_config.sparse_type == 'cuda_2d':
+            position = position_ids[..., :self.sparse_config.layout[1]]
+            position_plus = position_ids[..., self.sparse_config.layout[1]:]
+            position_embeddings = torch.cat(
+                (self.position_embeddings(position), self.position_embeddings_plus(position_plus)), dim=-2)
+        else:
+            position_embeddings = self.position_embeddings(position_ids)
         hidden_states = hidden_states + position_embeddings
         hidden_states = self.embedding_dropout(hidden_states)
 
@@ -539,10 +583,8 @@ class GPT2ParallelTransformer(torch.nn.Module):
                 hidden_states = checkpoint(custom(l, l + chunk_length), *args)
                 l += chunk_length
         else:
-            assert self.sparse_config.sparse_type == 'standard'
             for i, layer in enumerate(self.layers):
                 args = [hidden_states, attention_mask_saved]
-
                 if mems:
                     mem_i = mems[i]  
                 elif self.max_memory_length > 0:
@@ -555,11 +597,6 @@ class GPT2ParallelTransformer(torch.nn.Module):
 
         # Final layer norm.
         output = self.final_layernorm(hidden_states)
-        # if self.max_memory_length > 0: # TODO cache
-        #     if self.sparse_config.sparse_type != 'cuda_2d':
-        #         mem_layers = self.update_mems(mem_layers, mems)
-        #     else:
-        #         pass # handle update outside the model, because mems is not the full cached qkv.
 
         return (output, *mem_layers)
         
@@ -609,245 +646,65 @@ def standard_attention(query_layer, key_layer, value_layer, attention_mask, atte
             attention_probs = attention_dropout(attention_probs)
     # Context layer.
     # [b, np, s, hn]
-    
+
     context_layer = torch.matmul(attention_probs, value_layer)
     return context_layer
 
-def sparse_attention_1d(q, k, v, pivot_idx, pivot_attention_mask, query_window=128, key_window_times=6, attention_dropout=None):
-    ''' Sparse Attention
-    Args:
-        q, k, v: inputs, [b, num_heads, s, hn], k is padded to n * query_window
-        pivot_idx: [b, num_pivots]
-        pivot_attention_mask: [b, s, num_pivots]
-        query_window: .
-        key_window_times: key_window = query_window * key_window_times
+
+def sparse_attention_2d_light(q0, k0, v0, q1, k1, v1, attention_mask, n_head, text_len=64, kernel_size=9, kernel_size2=7, attention_dropout=None, **kwargs):
     '''
-
-    b, n_head, s, hn = q.shape
-    b, n_piv = pivot_idx.shape
-    w = query_window
-
-    pivot_idx_dummy = pivot_idx.view(b, 1, n_piv, 1).expand(b, n_head, n_piv, hn)
-    # =====================   Pivot Attention   ======================== #
-    pivot_k, pivot_v = torch.gather(k, 2, pivot_idx_dummy), torch.gather(v, 2, pivot_idx_dummy)
-    attention_scores = torch.matmul(q, pivot_k.transpose(-1, -2))
-    pivot_attention_mask = pivot_attention_mask.unsqueeze(1)
-
-    attention_scores_pivot = torch.mul(attention_scores, pivot_attention_mask / math.sqrt(hn)) - 10000.0 * (1.0 - pivot_attention_mask)
-
-    attention_scores_pivot = attention_scores_pivot + math.log(s // n_piv)
-    # =====================   Window Attention   ======================= #
-    window_k = _chunk(k, query_window, key_window_times)
-    window_v = _chunk(v, query_window, key_window_times)
-    # window_k [b, n_head, s // w up int, w*times, hn]
-
-    if s % w == 0: # training # TODO args check
-        assert k.shape[2] == s
-        assert window_k.shape[2] == s // w
-        window_q = q.view(b, n_head, s // w, w, hn)        
-        attention_scores = torch.matmul(window_q, window_k.transpose(-1, -2))
-        window_attention_mask = torch.ones((w, w * key_window_times), dtype=attention_scores.dtype, device=q.device).tril_(diagonal=w * (key_window_times - 1))
-        attention_scores_window = torch.mul(attention_scores, window_attention_mask / math.sqrt(hn)) - 10000.0 * (1.0 - window_attention_mask)
-        for t in range(1, key_window_times):
-            attention_scores_window[:, :, t - 1, :, :w * key_window_times - w * t] -= 10000.0
-    else: 
-        raise ValueError('The seq_len must be exactly divided by window_size.')
-    # =====================   Joint Softmax   ======================= #
-    attention_scores_window = attention_scores_window.view(b, n_head, s, w * key_window_times)
-    attention_scores = torch.cat((attention_scores_pivot, attention_scores_window), dim=-1)
-    attention_probs = torch.nn.Softmax(dim=-1)(attention_scores)
-
-    if attention_dropout is not None:
-        with get_cuda_rng_tracker().fork():
-            attention_probs = attention_dropout(attention_probs)
-
-    context_layer = torch.matmul(attention_probs[..., :-w * key_window_times], pivot_v) + torch.einsum('bcgwk,bcgkh->bcgwh', attention_probs[..., -w * key_window_times:].view(b, n_head, s // w, w, w * key_window_times), window_v).view(b, n_head, s, hn)
-
-    return context_layer
-
-# def sparse_attention_inference_1d(q, k, v, pivot_and_window_idx, **kwargs):
-#     '''the inference process of sparse attention.
-#     The Qs are in the same block, but seq_len mod window size might != 0.
-
-#     The Qs are the final tokens of Ks. the pivot_and_window_idx[-query_len] are Qs.
-
-#     '''
-#     b, n_head, sq, hn = q.shape
-#     sk = k.shape[2]
-#     _b, n_piv = pivot_and_window_idx.shape
-
-#     pivot_and_window_idx_dummy = pivot_and_window_idx.view(b, 1, n_piv, 1).expand(b, n_head, n_piv, hn)
-#     pivot_k, pivot_v = torch.gather(k, 2, pivot_and_window_idx_dummy), torch.gather(v, 2, pivot_and_window_idx_dummy)
-#     attention_scores = torch.matmul(q / math.sqrt(hn), pivot_k.transpose(-1, -2))
-#     if sq > 1:
-#         query_part_scores = attention_scores[:, :, -sq:, -sq:]
-#         m = torch.ones((sq, sq), device=q.device, dtype=q.dtype) * -10000.
-#         m.triu_(diagonal=1)
-#         query_part_scores += m
-
-#     attention_probs = torch.nn.Softmax(dim=-1)(attention_scores)
-
-#     context_layer = torch.matmul(attention_probs, pivot_v) 
-#     return context_layer
-
-def transpose_and_split(x, layout, n_head):
-    x = x.transpose(1, 2)
-    x = x.reshape(x.shape[0]*n_head, x.shape[1] // n_head, x.shape[2])
-    x_text = x[..., :layout[0]]
-    x0 = x[...,layout[1]:layout[2]].view(x.shape[0], x.shape[1], sqrt(layout[2] - layout[1]), sqrt(layout[2] - layout[1])).contiguous()
-    x1 = x[...,layout[2]:layout[3]].view(x.shape[0], x.shape[1], sqrt(layout[3] - layout[2]), sqrt(layout[3] - layout[2])).contiguous()
-    return x, x_text, x0, x1
-
-def sparse_attention_2d(q, k, v, n_head, layout, attention_mask_text2d, kernel_size=9, kernel_size2=7, attention_dropout=None, **kwargs):
-    '''
-    q, k, v: [batch_size, 64+1024+4096, hidden_size]
+    q0, k0, v0: [batch_size, 1088, hidden_size]
+    q1, k1, v1: [batch_size, 4096, h2]
     n_head: int
-    layout: [endoftext/startofpad, startof0, startof1, endofall]
-    attention_mask_text2d: [batch_size, sq_len, endoftext]
+    attention_mask: [batch_size, 1088, 1088]
     '''
     from .local_attention_function import f_similar, f_weighting
-    b, sq_len, hn = q.shape
-    alpha = sqrt((layout[3] - layout[2]) // (layout[2] - layout[1]))
+    b, s0, h0 = q0.shape
+    b, s1, h1 = q1.shape
+    assert v1.shape[-1] == h0, 'q1, k1 can be smaller, but v1 cannot.'
+    h = h0 // n_head
+    l0, l1 = int(math.sqrt(s0-text_len)+0.0001), int(math.sqrt(s1)+0.0001)
 
-    q = q / math.sqrt(hn // n_head) # normalization
-
-    q_all, q_text, q0, q1 = transpose_and_split(q, layout, n_head) # 0, 1 [batch * n_head, hn_per_head, h, w] text [batch * n_head, hn_per_head, endoftext]
-    k_all, k_text, k0, k1 = transpose_and_split(k, layout, n_head)
-    v_all, v_text, v0, v1 = transpose_and_split(v, layout, n_head)
-    # import pdb; pdb.set_trace()
-    # all to text
-    scores_all_to_text = torch.einsum('bhi,bhj->bij', q_all, k_text).view(b, n_head, layout[3], layout[0]) * attention_mask_text2d - 10000.0 * (1.0 - attention_mask_text2d)
-    scores_all_to_text = scores_all_to_text.view(b*n_head, layout[3], layout[0])
-    # 0 to 0
-    scores_0_to_0 = f_similar(q0, k0, kernel_size*2-1, kernel_size, True)
-    # 1 to 1
+    q0 = q0.reshape(b, s0, n_head, h).permute(0, 2, 1, 3)
+    v0 = v0.reshape(b, s0, n_head, h).permute(0, 2, 1, 3)
+    k0T = k0.reshape(b, s0, n_head, h).permute(0, 2, 3, 1)
+    # standard attention for level 0
+    attention_scores = torch.matmul(q0 / math.sqrt(q0.shape[-1]), k0T)
+    attention_scores = torch.mul(attention_scores, attention_mask) - \
+                    10000.0 * (1.0 - attention_mask)
+    attention_probs0 = F.softmax(attention_scores, dim=-1)
+    # local attention for level 1
+    q1 = (q1.view(b, s1, n_head, h1 // n_head).permute(0, 2, 3, 1) / math.sqrt(h1//n_head)).contiguous().view(b*n_head, h1//n_head, l1, l1)
+    k1 = k1.view(b, s1, n_head, h1 // n_head).permute(0, 2, 3, 1).contiguous().view(b*n_head, h1//n_head, l1, l1)
+    v1 = v1.view(b, s1, n_head, h1 // n_head).permute(0, 2, 3, 1).contiguous().view(b*n_head, h1//n_head, l1, l1)
     scores_1_to_1 = f_similar(q1, k1, kernel_size*2-1, kernel_size, True)    
-    # 1 to 0
-    scores_1_to_0 = f_similar(q1, k0, kernel_size2, kernel_size2, False) # [batch * n_head, 2h, 2w, kernel_size2**2]
-    # softmax
-    # if 'offset_bias' in kwargs:
-    #     p1, p2 = kernel_size**2//2 + 1, kernel_size2**2
-    #     offset_bias = kwargs['offset_bias'].expand(b, n_head, p1+p2).view(b*n_head, 1, p1+p2)
-    #     scores_0_to_0 = scores_0_to_0 * offset_bias[...,:p1]
-    #     scores_1_to_1 = scores_1_to_1 * offset_bias[...,:p1]
-    #     scores_1_to_0 = scores_1_to_0 * offset_bias[...,-p2:]
+    # attention_probs1 = F.softmax(scores_1_to_1, dim=-1)
 
-    scores_0 = torch.cat(
-        (scores_all_to_text[:, layout[1]:layout[2]], 
-        scores_0_to_0.view(b * n_head, layout[2]-layout[1], scores_0_to_0.shape[-1])), 
-        dim=-1)
+    # cross attention
+    k0T = k0T[..., -l0**2:].reshape(b*n_head, h, l0, l0).contiguous()
+    scores_1_to_0 = f_similar(q1, k0T, kernel_size2, kernel_size2, False) # [b*n_head, l1, l1, field]
     scores_1 = torch.cat(
-        (scores_all_to_text[:, layout[2]:layout[3]],
-         scores_1_to_0.view(scores_1_to_0.shape[0], -1, scores_1_to_0.shape[3]),
-         scores_1_to_1.view(scores_1_to_1.shape[0], -1, scores_1_to_1.shape[3])),
-         dim=-1)
-    probs_text = F.softmax(scores_all_to_text[:, :layout[0]], dim=-1) # [batch * n_head, seq_text, seq_text]
-    probs_0 = F.softmax(scores_0, dim=-1) # 
-    probs_1 = F.softmax(scores_1, dim=-1)
+        (
+            scores_1_to_0.view(b*n_head, -1, scores_1_to_0.shape[3]),
+            scores_1_to_1.view(b*n_head, -1, scores_1_to_1.shape[3])
+        ),
+        dim=-1)
+    attention_probs1 = F.softmax(scores_1, dim=-1)
 
     if attention_dropout is not None:
         with get_cuda_rng_tracker().fork():
-            probs_0 = attention_dropout(probs_0)
-            probs_1 = attention_dropout(probs_1)
-    # weighting
-    pad = torch.zeros(layout[1], device=q.device, dtype=q.dtype)
-    probs_all_to_text = torch.cat((
-        probs_text,
-        pad[-layout[0]:].expand(b*n_head, layout[1]-layout[0], layout[0]),
-        probs_0[:, :, :layout[0]],
-        probs_1[:, :, :layout[0]]
-    ), dim=1)
-
-    context_all_to_text = torch.einsum('bhij,bhcj->bihc', 
-        probs_all_to_text.view(b, n_head, probs_all_to_text.shape[1], probs_all_to_text.shape[2]), 
-        v_text.view(b, n_head, v_text.shape[1], v_text.shape[2])).reshape(b, -1, hn)
-    
-    context_0_to_0 = f_weighting(v0, probs_0[..., layout[0]:].view_as(scores_0_to_0).contiguous(), kernel_size*2-1, kernel_size, True)
-
-    context_1_to_0 = f_weighting(v0, probs_1[:, :, layout[0]:layout[0]+scores_1_to_0.shape[-1]].view_as(scores_1_to_0).contiguous(), kernel_size2, kernel_size2, False)
-
-    context_1_to_1 = f_weighting(v1, probs_1[:, :, -scores_1_to_1.shape[-1]:].view_as(scores_1_to_1).contiguous(), kernel_size*2-1, kernel_size, True)
-    
-    context_all_to_01 =torch.cat(
-        (
-            pad.expand(b*n_head, hn//n_head, layout[1]),
-            context_0_to_0.view(b*n_head, hn//n_head, layout[2]-layout[1]),
-            (context_1_to_0 + context_1_to_1).view(b*n_head, hn//n_head, layout[3]-layout[2])
-        ), dim=-1).view(b, hn, -1).transpose(1, 2)
-    return context_all_to_text + context_all_to_01 
-
-
-def sparse_attention_2dfull(q, k, v, n_head, layout, attention_mask_text2d, kernel_size=9, kernel_size2=7, attention_dropout=None, **kwargs):
-    '''
-    q, k, v: [batch_size, 64+1024+4096, hidden_size]
-    n_head: int
-    layout: [endoftext/startofpad, startof0, startof1, endofall]
-    attention_mask_text2d: [batch_size, sq_len, endoftext]
-    '''
-    from .local_attention_function import f_similar, f_weighting
-    b, sq_len, hn = q.shape
-    alpha = sqrt((layout[3] - layout[2]) // (layout[2] - layout[1]))
-
-    q = q / math.sqrt(hn // n_head) # normalization
-
-    q_all, q_text, q0, q1 = transpose_and_split(q, layout, n_head) # 0, 1 [batch * n_head, hn_per_head, h, w] text [batch * n_head, hn_per_head, endoftext]
-    k_all, k_text, k0, k1 = transpose_and_split(k, layout, n_head)
-    v_all, v_text, v0, v1 = transpose_and_split(v, layout, n_head)
-    # import pdb; pdb.set_trace()
-    # all to text
-    scores_all_to_text = torch.einsum('bhi,bhj->bij', q_all, k_text).view(b, n_head, layout[3], layout[0]) * attention_mask_text2d - 10000.0 * (1.0 - attention_mask_text2d)
-    scores_all_to_text = scores_all_to_text.view(b*n_head, layout[3], layout[0])
-    # 0 to 0
-    if not hasattr(sparse_attention_2dfull, 'attention_mask0'):
-        sparse_attention_2dfull.attention_mask0 = torch.ones((layout[2] - layout[1], layout[2] - layout[1]), device=q.device, dtype=q.dtype).tril_()
-    attention_mask0 = sparse_attention_2dfull.attention_mask0
-    scores_0_to_0 = torch.einsum('bhi,bhj->bij', q0.view(*q0.shape[:2], -1), k0.view(*k0.shape[:2], -1)) * attention_mask0 - 10000.0 * (1.0 - attention_mask0)
-    # 1 to 1
-    scores_1_to_1 = f_similar(q1, k1, kernel_size*2-1, kernel_size, True)    
-    # 1 to 0
-    scores_1_to_0 = f_similar(q1, k0, kernel_size2, kernel_size2, False) # [batch * n_head, 2h, 2w, kernel_size2**2]
-    # softmax
-
-    scores_0 = torch.cat(
-        (scores_all_to_text[:, layout[1]:layout[2]], 
-        scores_0_to_0.view(b * n_head, layout[2]-layout[1], scores_0_to_0.shape[-1])), 
-        dim=-1)
-    scores_1 = torch.cat(
-        (scores_all_to_text[:, layout[2]:layout[3]],
-         scores_1_to_0.view(scores_1_to_0.shape[0], -1, scores_1_to_0.shape[3]),
-         scores_1_to_1.view(scores_1_to_1.shape[0], -1, scores_1_to_1.shape[3])),
-         dim=-1)
-    probs_text = F.softmax(scores_all_to_text[:, :layout[0]], dim=-1) # [batch * n_head, seq_text, seq_text]
-    probs_0 = F.softmax(scores_0, dim=-1) # 
-    probs_1 = F.softmax(scores_1, dim=-1)
-
-    if attention_dropout is not None:
-        with get_cuda_rng_tracker().fork():
-            probs_0 = attention_dropout(probs_0)
-            probs_1 = attention_dropout(probs_1)
-    # weighting
-    pad = torch.zeros(layout[1], device=q.device, dtype=q.dtype)
-    probs_all_to_text = torch.cat((
-        probs_text,
-        pad[-layout[0]:].expand(b*n_head, layout[1]-layout[0], layout[0]),
-        probs_0[:, :, :layout[0]],
-        probs_1[:, :, :layout[0]]
-    ), dim=1)
-
-    context_all_to_text = torch.einsum('bhij,bhcj->bihc', 
-        probs_all_to_text.view(b, n_head, probs_all_to_text.shape[1], probs_all_to_text.shape[2]), 
-        v_text.view(b, n_head, v_text.shape[1], v_text.shape[2])).reshape(b, -1, hn)
-    
-    context_0_to_0 = torch.einsum('bcj,bij->bci', v0.view(*v0.shape[:2], -1), probs_0[..., layout[0]:].view_as(scores_0_to_0))
-
-    context_1_to_0 = f_weighting(v0, probs_1[:, :, layout[0]:layout[0]+scores_1_to_0.shape[-1]].view_as(scores_1_to_0).contiguous(), kernel_size2, kernel_size2, False)
-
-    context_1_to_1 = f_weighting(v1, probs_1[:, :, -scores_1_to_1.shape[-1]:].view_as(scores_1_to_1).contiguous(), kernel_size*2-1, kernel_size, True)
-    
-    context_all_to_01 =torch.cat(
-        (
-            pad.expand(b*n_head, hn//n_head, layout[1]),
-            context_0_to_0.view(b*n_head, hn//n_head, layout[2]-layout[1]),
-            (context_1_to_0 + context_1_to_1).view(b*n_head, hn//n_head, layout[3]-layout[2])
-        ), dim=-1).view(b, hn, -1).transpose(1, 2)
-    return context_all_to_text + context_all_to_01 
+            attention_probs0 = attention_dropout(attention_probs0)
+            attention_probs1 = attention_dropout(attention_probs1)
+        
+    # weighting for level 0
+    context0 = torch.matmul(attention_probs0, v0) # [b, n_head, s0, h]
+    # weighting for level 1
+    probs_1_to_1 = attention_probs1[:, :, -scores_1_to_1.shape[3]:].view_as(scores_1_to_1)
+    context1_to_1 = f_weighting(v1, probs_1_to_1.contiguous(), kernel_size*2-1, kernel_size, True)
+    context1_to_1 = context1_to_1.view(b, n_head * h, l1**2)
+    # weighting for cross attention
+    probs_1_to_0 = attention_probs1[:, :, :scores_1_to_0.shape[3]].view_as(scores_1_to_0)
+    v0_part = v0[:, :, -l0**2:].transpose(-1, -2).contiguous().view(b*n_head, h, l0, l0)
+    context1_to_0 = f_weighting(v0_part, probs_1_to_0.contiguous(), kernel_size2, kernel_size2, False)
+    context1_to_0 = context1_to_0.view(b, n_head * h, l1**2)
+    return context0.transpose(1, 2).reshape(b, s0, h0), (context1_to_0 + context1_to_1).transpose(-1, -2)

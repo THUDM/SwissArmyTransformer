@@ -80,16 +80,16 @@ class BinaryDataset(Dataset):
     def __getitem__(self, index):
         return self.process_fn(self.bin[index])
 
-def get_dataset_by_type(dataset_type, path: str, args, DS_CLASS=LMDBDataset):       
+def get_dataset_by_type(dataset_type, path: str, args, DS_CLASS=LMDBDataset): 
+    kwargs_to_dataset = {}      
 
     tokenizer = get_tokenizer()
-    if args.finetune and args.max_position_embeddings_finetune > args.max_position_embeddings:
-        ml = args.max_position_embeddings_finetune
+    if args.layout[-1] > args.max_position_embeddings:
+        ml = args.layout[-1]
     else:
         ml = args.max_position_embeddings
 
     def pad_to_len(ret):
-        
         if len(ret) < ml: # pad
             return np.concatenate((ret, 
                 np.array([tokenizer['[PAD]']] * (ml - len(ret)))),
@@ -117,14 +117,27 @@ def get_dataset_by_type(dataset_type, path: str, args, DS_CLASS=LMDBDataset):
                 }
 
     elif dataset_type == 'CompactBinaryDataset':
+        layout = args.layout
         DS_CLASS = BinaryDataset
+        kwargs_to_dataset['length_per_sample'] = layout[-1]
         def process_fn(row):
-            text, code = row[:64].astype(np.int64), row[64:].astype(np.int64) # must 64 + 1024
-            text = text[text>-1]
-            ret = TextCodeTemplate(text, code)
-            ret, attention_mask_sep = pad_to_len(ret)
+            row = row.astype(np.int64)
+            # THIS IS Reverse order, TODO 
+            lens = list(reversed([layout[i] - layout[i-1] for i in range(1, len(layout))]))
+            codes = [row[layout[0]: layout[0]+lens[0]]]
+            if len(lens) > 1:
+                codes.append(row[layout[0]+lens[0]: layout[0]+lens[0]+lens[1]])
+            text = row[:layout[0]]
+            text = text[text>0][:layout[0] - 3] # [CLS] [BASE] [ROI1]
+            n_pad = layout[0]-3-len(text)
+            parts = [
+                np.array([tokenizer['[PAD]']] * n_pad, dtype=np.int64),
+                TextCodeTemplate(text, codes[-1]),
+                *reversed(codes[:-1])
+            ]
+            ret = np.concatenate(parts, axis=0)
             return {'text': ret, 
-                'loss_mask':  np.array([1] * attention_mask_sep + [0] * (len(ret) - attention_mask_sep))
+                'loss_mask':  np.array([0] * (n_pad+1) + [1] * (len(ret) - n_pad - 1)) # don't predict [CLS]
                 }
     elif dataset_type == 'BinaryDataset':
         DS_CLASS = BinaryDataset
@@ -134,5 +147,5 @@ def get_dataset_by_type(dataset_type, path: str, args, DS_CLASS=LMDBDataset):
                 'loss_mask':  loss_mask
                 }
 
-    return DS_CLASS(path, process_fn)
+    return DS_CLASS(path, process_fn, **kwargs_to_dataset)
 

@@ -23,9 +23,10 @@ transform = transforms.Compose([
             ])
 img = torchvision.io.read_image('bao.jpeg')
 img = transform(img) / 255.
-a = np.array(loadbao('bao.txt'))
-b = np.array(loadbao('bao2.txt'))
-for t in (a-b>2).nonzero()[0]:
+a = np.array(loadbao('bao2.txt'))
+b = np.array(loadbao('bao3.txt'))
+for t in (b-a>1).nonzero()[0]:
     x,y = t // 32, t % 32
     sq(img, x*16, y*16, 15, 15)
+print(a.mean(), b.mean())
 torchvision.utils.save_image(img, 'example_bao.jpg')

@@ -6,7 +6,8 @@
 # NHIDDEN=1024
 # NATT=16
 
-CHECKPOINT_PATH=pretrained/cogview/cogview-base
+CHECKPOINT_PATH=data/checkpoints/cogview-continue
+# CHECKPOINT_PATH=pretrained/cogview/cogview-base
 NLAYERS=48
 NHIDDEN=2560
 NATT=40
@@ -42,8 +43,8 @@ MASTER_PORT=${MASTER_PORT} python generate_samples.py \
        --generation-task text2image \
        --input-source ./input.txt \
        --output-path samples_text2image \
-       --batch-size 4 \
-       --max-inference-batch-size 4 \
+       --batch-size 8 \
+       --max-inference-batch-size 8 \
        --device 0 \
        $@
 

@@ -248,8 +248,34 @@ def save_ds_checkpoint(iteration, model, lr_scheduler, args):
         sd['torch_rng_state'] = torch.get_rng_state()
         sd['cuda_rng_state'] = torch.cuda.get_rng_state()
         sd['rng_tracker_states'] = mpu.get_cuda_rng_tracker().get_states()
+    if args.no_save_optim:
+        save_ds_checkpoint_no_optim(model, args.save, str(iteration), client_state=sd)
+    else:
+        model.save_checkpoint(args.save, str(iteration), client_state=sd)
 
-    model.save_checkpoint(args.save, str(iteration), client_state=sd)
+def save_ds_checkpoint_no_optim(model, save_dir, tag=None, client_state={}, save_latest=True):
+    
+    os.makedirs(save_dir, exist_ok=True)
+
+    if tag is None:
+        tag = f"global_step{model.global_steps}"
+
+    # Ensure tag is a string
+    tag = str(tag)
+
+    # Ensure checkpoint tag is consistent across ranks
+    model._checkpoint_tag_validation(tag)
+
+    if model.save_non_zero_checkpoint:
+        model._create_checkpoint_file(save_dir, tag, False)
+        model._save_checkpoint(save_dir, tag, client_state=client_state)
+
+    # Save latest checkpoint tag
+    if save_latest:
+        with open(os.path.join(save_dir, 'latest'), 'w') as fd:
+            fd.write(tag)
+
+    return True
 
 
 def get_checkpoint_iteration(args):
@@ -296,8 +322,12 @@ def load_checkpoint(model, optimizer, lr_scheduler, args, load_optimizer_states=
 
     if args.deepspeed:
         
-        checkpoint_name, sd = model.load_checkpoint(args.load, iteration, load_optimizer_states=not args.no_load_optim)
-        if "client_lr_scheduler" in sd:
+        checkpoint_name, sd = model.load_checkpoint(args.load, iteration, load_optimizer_states=not args.no_load_optim, load_module_strict=not args.finetune)
+        if args.finetune:
+            model.module.module.init_plus_from_old()
+        if (args.finetune or args.no_load_optim) and model.zero_optimization():
+            model.optimizer.refresh_fp32_params()
+        if "client_lr_scheduler" in sd and not args.finetune:
             lr_scheduler.load_state_dict(sd["client_lr_scheduler"])
             print_rank_0("Load lr scheduler state")
         if checkpoint_name is None:

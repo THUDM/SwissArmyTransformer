@@ -4,8 +4,7 @@ from tqdm import tqdm
 
 import torch
 import numpy as np
-from mpu.sparse_transformer import standard_attention, sparse_attention_1d, sparse_attention_2d, sparse_attention_2dfull
-
+from mpu.sparse_transformer import standard_attention, sparse_attention_2d_light
 def test_sparse_attention_1d():       
     s, w, times = 4096 + 128, 128, 2
     num_pivot = 768
@@ -80,7 +79,7 @@ def test_sparse_attention_2d():
     device = 'cuda'
     b, n_head, hn = 2, 16, 1024
     h = w = 32
-    layout = [10, 64, 64+h*w, 64+h*w*5]
+    layout = [64, 64+h*w, 64+h*w*5]
     k1 = 9
     k2 = 7
     k1h = k1*2-1
@@ -94,9 +93,6 @@ def test_sparse_attention_2d():
     m = mask[0]
     for i in range(layout[1]):
         m[i, :i+1] = 1
-    m[layout[1]:, :layout[0]] = 1
-    for i in tqdm(range(layout[1], layout[2])):
-        m[i, layout[1]:i+1] = 1
     # for i in tqdm(range(layout[1], layout[2])):
     #     x = (i - layout[1]) // w
     #     y = (i - layout[1]) % w
@@ -106,15 +102,15 @@ def test_sparse_attention_2d():
     #     ry = min(w-1, y + k1 // 2)
     #     m[i, layout[1]:layout[2]].view(h, w)[lx:x, ly:ry+1] = 1
     #     m[i, layout[1]:layout[2]].view(h, w)[x, ly:y+1] = 1
-    for i in tqdm(range(layout[2], layout[3])):
-        x = (i - layout[2]) // (2*w)
-        y = (i - layout[2]) % (2*w)
+    for i in tqdm(range(layout[1], layout[2])):
+        x = (i - layout[1]) // (2*w)
+        y = (i - layout[1]) % (2*w)
         lx = max(0, x - k1h // 2)
         ly = max(0, y - k1 // 2)
         rx = min(2*h-1, x + k1h // 2)
         ry = min(2*w-1, y + k1 // 2)
-        m[i, layout[2]:layout[3]].view(h*2, w*2)[lx:x, ly:ry+1] = 1
-        m[i, layout[2]:layout[3]].view(h*2, w*2)[x, ly:y+1] = 1
+        m[i, layout[1]:layout[2]].view(h*2, w*2)[lx:x, ly:ry+1] = 1
+        m[i, layout[1]:layout[2]].view(h*2, w*2)[x, ly:y+1] = 1
 
         x = x // 2
         y = y // 2
@@ -122,7 +118,7 @@ def test_sparse_attention_2d():
         ly = max(0, y - k2 // 2)
         rx = min(h-1, x + k2 // 2)
         ry = min(w-1, y + k2 // 2)
-        m[i, layout[1]:layout[2]].view(h, w)[lx:rx+1, ly:ry+1] = 1
+        m[i, layout[0]:layout[1]].view(h, w)[lx:rx+1, ly:ry+1] = 1
     
     mask[1:] = mask[0]
     # mask[1][layout[1]:, layout[0]-1] = 0
@@ -133,15 +129,18 @@ def test_sparse_attention_2d():
     torch.cuda.synchronize()
     t0 = time.time()
     qkv_tmp = qkv.view(3, b, layout[-1], n_head, hn//n_head).permute(0, 1, 3, 2, 4).contiguous()
-    r1 = standard_attention(*qkv_tmp, mask.unsqueeze(1)).transpose(1, 2).reshape(b, layout[3], hn)
+    r1 = standard_attention(*qkv_tmp, mask.unsqueeze(1)).transpose(1, 2).reshape(b, layout[2], hn)
     
     torch.cuda.synchronize()
     t1 = time.time()
-    r2 = sparse_attention_2dfull(*qkv2, n_head, layout, mask[...,:layout[0]].unsqueeze(1), kernel_size=k1, kernel_size2=k2)
+    # r2 = sparse_attention_2dfull(*qkv2, n_head, layout, mask[...,:layout[0]].unsqueeze(1), kernel_size=k1, kernel_size2=k2)
+    qkv20, qkv21 = qkv2[:, :, :layout[1]], qkv2[:, :, layout[1]:]
+    r20, r21 = sparse_attention_2d_light(*qkv20, *qkv21, mask[...,:layout[1],:layout[1]].unsqueeze(1), n_head, layout[0],kernel_size=k1, kernel_size2=k2)
+    r2 = torch.cat((r20, r21), dim=1)
     torch.cuda.synchronize()
     t2 = time.time()
     print('times: standard ', t1-t0, ' sparse ', t2-t1)
-    print(( (r1[:,:layout[0]]-r2[:,:layout[0]]).abs() / (r1[:,:layout[0]].abs()+r2[:,:layout[0]].abs())).max())
+    print(( (r1[:,:layout[1]]-r2[:,:layout[1]]).abs() / (r1[:,:layout[1]].abs()+r2[:,:layout[1]].abs())).max())
     print(( (r1[:,layout[1]:]-r2[:,layout[1]:]).abs() / (r1[:,layout[1]:].abs()+r2[:,layout[1]:].abs())).max())
     qkv.retain_grad()
     l2 = r2[:,layout[1]:].sum()
@@ -153,7 +152,7 @@ def test_sparse_attention_2d():
     g1 = qkv.grad
     g2 = qkv2.grad
     print( (g1-g2).abs().max())
-    print( ((g1-g2).abs() / (g1.abs()+g2.abs()+1e-5)).max())
+    print( ((g1-g2).abs() / (g1.abs()+g2.abs()+1e-3)).max())
 
     import pdb;pdb.set_trace()
     

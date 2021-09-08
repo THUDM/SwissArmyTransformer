@@ -147,6 +147,8 @@ def add_training_args(parser):
     group.add_argument('--warmup', type=float, default=0.01,
                        help='percentage of data to warmup on (.01 = 1% of all '
                             'training iters). Default 0.01')
+    group.add_argument('--restart-iter', type=int, default=0,
+                       help='restart with warmup from this iteration.')
     # model checkpointing
     group.add_argument('--save', type=str, default=None,
                        help='Output directory to save checkpoints to.')
@@ -301,19 +303,20 @@ def add_sparse_args(parser):
     group.add_argument("--key-window-times", type=int, default=6)
     group.add_argument("--num-pivot", type=int, default=768)
     # for cuda_2d
-    group.add_argument("--kernel-size", type=int, default=11)
+    group.add_argument("--kernel-size", type=int, default=9)
     group.add_argument("--kernel-size2", type=int, default=7)
-    group.add_argument("--layout", type=str, default='0,64,1088,5184')
+    group.add_argument("--layout", type=str, default='64,1088,5184')
     return parser
 
 def make_sparse_config(args):
+    args.layout = [int(x) for x in args.layout.split(',')]
     sparse_config = argparse.Namespace(sparse_type=args.sparse_type)
     if args.sparse_type == 'standard':
         pass
     if args.sparse_type == 'cuda_2d' or args.generation_task == 'cuda-2d generation':
         sparse_config.kernel_size = args.kernel_size
         sparse_config.kernel_size2 = args.kernel_size2
-        sparse_config.layout = [int(x) for x in args.layout.split(',')]
+        sparse_config.layout = args.layout
     elif args.sparse_type == 'torch_1d':
         raise NotImplementedError
     args.sparse_config = sparse_config

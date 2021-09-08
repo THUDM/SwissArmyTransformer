@@ -132,8 +132,8 @@ def filling_sequence(
 
             tmp = -F.log_softmax(logits, dim=-1)
             tmp = tmp[0,:-1].gather(dim=-1,index=tokens[0,1:].unsqueeze(-1))[4:,0]
-            for i in range(1,len(tmp)):
-                print(i, tmp[i].item())
+            # for i in range(1,len(tmp)):
+            #     print(i, tmp[i].item())
             index = counter
             print(tmp[1:].mean(), file=sys.stderr)
         elif seq[counter + 1] >= 0: # provided

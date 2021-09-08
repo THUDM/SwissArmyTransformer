@@ -41,7 +41,7 @@ from pretrain_gpt2 import get_model
 import math
 from copy import deepcopy
 from tqdm import tqdm
-from generation import get_batch, filling_sequence, add_interlacing_beam_marks, magnify, inverse_prompt_score, filling_sequence_local
+from generation import get_batch, filling_sequence, add_interlacing_beam_marks, magnify, inverse_prompt_score, filling_sequence_local, filling_sequence_cuda_2d
 from torchvision.utils import save_image
 import torch.distributed as dist
 
@@ -167,7 +167,7 @@ def generate_images_once(model, args, raw_text, seq=None, num=8, query_template=
             # profile = line_profiler.LineProfiler(model.module.forward)
             # profile = line_profiler.LineProfiler(standard_attention)
             # profile.enable()
-            fill_fn = filling_sequence_local if args.generation_task == 'cuda-2d generation' else filling_sequence
+            fill_fn = filling_sequence_cuda_2d if args.generation_task == 'cuda-2d generation' else filling_sequence
             output_tokens_list.append(fill_fn(model, seq.clone(), args))
             # torch.cuda.empty_cache()
             # profile.disable()  # 停止分析
@@ -212,7 +212,7 @@ def generate_images_once(model, args, raw_text, seq=None, num=8, query_template=
 
 def generate_images_continually(model, args):
     if args.generation_task == 'text2image':
-        query_template = '[ROI1] {} [BASE] [BOI1] [Image200]bao.jpeg'
+        query_template = '[ROI1] {} [BASE] [BOI1] [MASK]*1024'
     elif args.generation_task == 'image2text':
         query_template = '[BASE] [BOI1] [Image]{} [EOI1] [ROI1] [MASK]*20'
     elif args.generation_task == 'low-level super-resolution':
@@ -222,7 +222,7 @@ def generate_images_continually(model, args):
     elif args.generation_task == 'post-selection':
         query_template = '[BASE] [BOI1] [Image]{} [EOI1] [ROI1] {}'
     elif args.generation_task == 'cuda-2d generation':
-        query_template = '[CLS] {} [BASE] [Image200]bao.jpeg [MASK]*4096'
+        query_template = '[ROI1] {} [BASE] [BOI1] [MASK]*1024 [EOI1] [MASK]*4096'
     else:
         raise NotImplementedError
     for raw_text, seq, output_path in get_context(args, query_template):

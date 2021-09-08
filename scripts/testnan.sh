@@ -21,11 +21,11 @@ config_json="$script_dir/ds_config.json"
 gpt_options=" \
        --experiment-name cogview-testlocal \
        --img-tokenizer-num-tokens 8192 \
-       --dataset-type BinaryDataset \
+       --dataset-type CompactBinaryDataset \
        --model-parallel-size ${MP_SIZE} \
-       --num-layers 16 \
-       --hidden-size 1024 \
-       --num-attention-heads 16 \
+       --num-layers 48 \
+       --hidden-size 2560 \
+       --num-attention-heads 40 \
        --save $main_dir/data/checkpoints \
        --train-iters 100000 \
        --resume-dataloader \
@@ -36,15 +36,19 @@ gpt_options=" \
        --warmup .1 \
        --checkpoint-activations \
        --deepspeed-activation-checkpointing \
-       --max-position-embeddings 5184 \
+       --max-position-embeddings 1089 \
        --max-memory-length 0 \
-       --txt-loss-scale 2 \
+       --txt-loss-scale 1 \
        --sandwich-ln \
-       --sparse-type cuda_2d \
+       --sparse-type standard \
        --save-interval 2500 \
-       --load data/checkpoints/cogview-fixgrad-small08-25-09-38
+       --fp16 \
+       --eval-iters 1000 \
+       --load pretrained/cogview/cogview-base
 "
-       # --fp16 \
+       # 
+              # --load data/checkpoints/cogview-fixgrad-small08-25-09-38
+
 
 gpt_options="${gpt_options}
 
