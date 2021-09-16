@@ -1,3 +1,4 @@
+from vqvae.vqvae_zc import Encoder
 from .sampling import *
 import math
 import sys
@@ -37,7 +38,7 @@ def filling_sequence_cuda_2d(
 
     from torchvision import transforms
     tr = transforms.Compose([
-        transforms.Resize(512), 
+        transforms.Resize(512, interpolation=transforms.InterpolationMode.BILINEAR), 
     ])
     imgs = [tr(tokenizer.img_tokenizer.DecodeIds(x[-1024:].tolist())) for x in output0] # ground truth
     blur64 = tokenizer.img_tokenizer.EncodeAsIds(torch.cat(imgs, dim=0).to(device), add_normalization=True) # blured image as init value
@@ -73,29 +74,73 @@ def filling_sequence_cuda_2d(
         print(unfixed.sum())
         logits, *_dump = model(tokens, position_ids, attention_mask)
         step_cnt += 1
-        last_logits = logits
 
         # warmup 
-        real_topk = 5
-        real_temp = 2 - min(1,((step_cnt) / iterative_step)) * 1.9
+        real_topk = 200
+        # real_temp = 0.7 #- min(1,((step_cnt) / iterative_step)) * .3
+        # real_temp = args.temperature
+        if step_cnt <= 5:
+            real_temp = 0.1
+        elif step_cnt == 6:
+            real_temp = 0.55
+        elif step_cnt > 6:
+            real_temp = 0.45
+        if  5 < step_cnt:
+            real_topk = 200
         # sampling
         for invalid_slice in invalid_slices: # forbide to generate other tokens
             logits[..., invalid_slice] = -float('Inf')
         assert args.top_k > 0
-        tk_value, tk_idx = torch.topk(logits, real_topk, dim=-1)
-        tk_probs = (tk_value / real_temp).softmax(dim=-1).view(-1, tk_value.shape[-1])
-        prev = torch.multinomial(tk_probs, num_samples=1).view(*(tk_value.shape[:2]),1)
-        prev = torch.gather(tk_idx, dim=-1, index=prev).squeeze(-1)
+        
+        probs0 = F.softmax(logits/real_temp, dim=-1)
+        topsum = torch.topk(probs0, 20, dim=-1)[0].sum(dim=-1)
+        if step_cnt >= 6:
+            real_temp2 = torch.tensor([[[real_temp]]], device=probs0.device).expand(*probs0.shape[:2], 1) * (topsum < 0.95).unsqueeze(-1) + 0.6
+            # import pdb;pdb.set_trace()
+        else:
+            real_temp2 = real_temp
+        # import pdb;pdb.set_trace()
+        probs = F.softmax(logits/real_temp2, dim=-1)
+        tk_value, tk_idx = torch.topk(probs, real_topk, dim=-1)
+        prev = torch.multinomial(probs.view(-1, logits.shape[-1]), num_samples=1).view(*logits.shape[:2], 1)
+        edge_idx = tk_idx[:, :, -1:]
+        edge_value = tk_value[:, :, -1:]
+        edge_mask = probs.gather(dim=-1, index=prev) < edge_value
+        prev[edge_mask] = edge_idx[edge_mask]
+        prev.squeeze_(-1)
+        # tk_probs = (tk_value / real_temp).softmax(dim=-1).view(-1, tk_value.shape[-1])
+        # prev = torch.multinomial(tk_probs, num_samples=1).view(*(tk_value.shape[:2]),1)
+        # prev = torch.gather(tk_idx, dim=-1, index=prev).squeeze(-1)
         # update unfixed
         choice = 1
-        if choice == 0 and step_cnt > 5:
-            mprob = tk_probs.max(dim=-1)[0].view(*(tk_value.shape[:2]))
-            dprob = (mprob[:, 1:] < 0.5) & ((mprob[:, :-1] > 0.8)| (unfixed[:, 1:-1].logical_not()))
+        if choice == 0 and 5 < step_cnt:
+            mprob = probs.max(dim=-1)[0].view(*(tk_value.shape[:2]))
+            # import pdb;pdb.set_trace()
+            dprob = mprob[:, 1:] < mprob[:, args.layout[1]:].topk(300, dim=-1, largest=False)[0][:,-1].unsqueeze(-1).expand_as(mprob[:, 1:])
+
             new_fixed = unfixed.clone()
-            new_fixed[:, 2:] &= dprob
+            moved_new_fixed = new_fixed[:, 2:]
+            moved_new_fixed &= dprob
+            moved_new_fixed[:, 1:] &= dprob[:, :-1].logical_not() | unfixed[:, 2:-1].logical_not()
+            moved_new_fixed[:, 2:] &= dprob[:, :-2].logical_not() | unfixed[:, 2:-2].logical_not()
+            # moved_new_fixed[:, 3:] &= dprob[:, :-3].logical_not() | unfixed[:, 2:-3].logical_not()
+            moved_new_fixed[:, 64:] &= dprob[:, :-64].logical_not() | unfixed[:, 2:-64].logical_not()
+            moved_new_fixed[:, 65:] &= dprob[:, :-65].logical_not() | unfixed[:, 2:-65].logical_not()
+            # moved_new_fixed[:, 66:] &= dprob[:, :-66].logical_not() | unfixed[:, 2:-66].logical_not()
+        elif choice == 1 and 5 < step_cnt:
+            new_fixed = unfixed & False
+            x = (step_cnt-5) // 4
+            y = (step_cnt-5) % 4
+            new_fixed[..., -4096:].view(batch_size, 16, 4, 16, 4)[:, :, x, :, y] = True
+            new_fixed &= unfixed
         else:
             new_fixed = unfixed & False # TODO
         new_fixed[:, -1] = True
+
+        with open(f'bed{step_cnt}.txt', 'w') as fout:
+            for i, prob in enumerate(topsum[0, -4096:]):
+                fout.write(f'{i} {prob}\n')
+
         unfixed &= new_fixed.logical_not()
         # update seq and tokens
         seq[new_fixed] = prev[new_fixed[:, 1:]]
@@ -115,7 +160,6 @@ def filling_sequence_cuda_2d(
     if args.debug:
         imgs = torch.cat(imgs, dim=0)
         save_image(imgs, f'steps{device}.jpg', normalize=True)
-    
     model.module.transformer.max_memory_length = args.max_memory_length
 
     return seq

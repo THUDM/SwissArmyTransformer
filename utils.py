@@ -323,8 +323,8 @@ def load_checkpoint(model, optimizer, lr_scheduler, args, load_optimizer_states=
     if args.deepspeed:
         
         checkpoint_name, sd = model.load_checkpoint(args.load, iteration, load_optimizer_states=not args.no_load_optim, load_module_strict=not args.finetune)
-        if args.finetune:
-            model.module.module.init_plus_from_old()
+        # if args.finetune:
+        #     model.module.module.init_plus_from_old()
         if (args.finetune or args.no_load_optim) and model.zero_optimization():
             model.optimizer.refresh_fp32_params()
         if "client_lr_scheduler" in sd and not args.finetune:

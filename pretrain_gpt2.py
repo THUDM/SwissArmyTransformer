@@ -179,7 +179,6 @@ def get_learning_rate_scheduler(optimizer, args):
 
     return lr_scheduler
 
-
 def setup_model_and_optimizer(args):
     """Setup model and optimizer."""
 

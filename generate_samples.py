@@ -325,13 +325,13 @@ def main():
         torch.cuda.set_device(device)
 
     # Random seeds for reproducability.
-    set_random_seed(args.seed)
 
     # get the tokenizer
     tokenizer = prepare_tokenizer(args)
 
     # Model, optimizer, and learning rate.
     model = setup_model(args)
+    set_random_seed(args.seed)
 
     generate_images_continually(model, args)
 

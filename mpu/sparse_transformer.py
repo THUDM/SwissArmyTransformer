@@ -75,12 +75,13 @@ class GPT2ParallelSelfAttention(torch.nn.Module):
     """
     def __init__(self, hidden_size, num_attention_heads,
                  attention_dropout_prob, output_dropout_prob,
-                 init_method, output_layer_init_method=None,sparse_config=None,
+                 init_method, layer_id, output_layer_init_method=None,sparse_config=None,
                  finetune=False):
         super(GPT2ParallelSelfAttention, self).__init__()
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
             output_layer_init_method = init_method
+        self.layer_id = layer_id
         # Per attention head and per partition values.
         world_size = get_model_parallel_world_size()
         self.hidden_size_per_partition = divide(hidden_size, world_size)
@@ -177,7 +178,7 @@ class GPT2ParallelSelfAttention(torch.nn.Module):
             key_layer = self._transpose_for_scores(mixed_key_layer)
             value_layer = self._transpose_for_scores(mixed_value_layer)
             
-            context_layer = standard_attention(query_layer, key_layer, value_layer, mask, dropout_fn)
+            context_layer = standard_attention(query_layer, key_layer, value_layer, mask, dropout_fn, layer_id=self.layer_id, txt_len=layout[0] if not self.training else -1)
             
             context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
             new_context_layer_shape = context_layer.size()[:-2] + \
@@ -193,7 +194,9 @@ class GPT2ParallelSelfAttention(torch.nn.Module):
                 text_len=sparse_config.layout[0],
                 kernel_size=sparse_config.kernel_size,
                 kernel_size2=sparse_config.kernel_size2,
-                attention_dropout=dropout_fn
+                attention_dropout=dropout_fn,
+                text_start=(1-mask[...,-1,:]).sum().long().item()+1 if not self.training else -1,
+                layer_id=self.layer_id
             )
 
         if sparse_config.sparse_type == 'cuda_2d':
@@ -308,6 +311,7 @@ class GPT2ParallelTransformerLayer(torch.nn.Module):
                  output_dropout_prob,
                  layernorm_epsilon,
                  init_method,
+                 layer_id,
                  output_layer_init_method=None,
                  sandwich_ln=True,
                  sparse_config=argparse.Namespace(sparse_type='standard'),
@@ -317,6 +321,7 @@ class GPT2ParallelTransformerLayer(torch.nn.Module):
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
             output_layer_init_method = init_method
+        self.layer_id = layer_id
 
         # Layernorm on the input data.
         self.input_layernorm = LayerNorm(hidden_size, eps=layernorm_epsilon)
@@ -328,6 +333,7 @@ class GPT2ParallelTransformerLayer(torch.nn.Module):
             attention_dropout_prob,
             output_dropout_prob,
             init_method,
+            layer_id,
             output_layer_init_method=output_layer_init_method,
             sparse_config=sparse_config,
             finetune=finetune
@@ -488,6 +494,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
                 output_dropout_prob,
                 layernorm_epsilon,
                 unscaled_init_method(init_method_std),
+                layer_id,
                 output_layer_init_method=output_layer_init_method,
                 sandwich_ln=sandwich_ln,
                 sparse_config=sparse_config,
@@ -624,7 +631,7 @@ def _chunk(x, w, times):
 
     return x.as_strided(size=chunk_size, stride=chunk_stride)
 
-def standard_attention(query_layer, key_layer, value_layer, attention_mask, attention_dropout=None):
+def standard_attention(query_layer, key_layer, value_layer, attention_mask, attention_dropout=None, layer_id = -1, txt_len=-1):
     # We disable the PB-relax-Attention and only changes the order of computation, because it is enough for most of training. 
     # The implementation in the paper can be done very easily, if you really need it to train very deep transformers. 
 
@@ -638,9 +645,17 @@ def standard_attention(query_layer, key_layer, value_layer, attention_mask, atte
         attention_scores = torch.mul(attention_scores, attention_mask) - \
                     10000.0 * (1.0 - attention_mask)
     
-    # Attention probabilities. [b, np, s, s]
+    # Attention probabilities [b, np, s, s]
     attention_probs = F.softmax(attention_scores, dim=-1)
-    
+
+    if txt_len > 0:
+        t = key_layer.shape[-2] - txt_len - 1
+        if t // 32 <= 32:
+            # line = attention_probs[..., :, 1:txt_len].max(dim=-1, keepdim=True)[0]
+            # tmask = attention_probs[..., :, 1:txt_len] >= line
+            attention_probs[..., :, 1:txt_len] *= 6 if txt_len <= 10 else 4
+            attention_probs /= attention_probs.sum(dim=-1, keepdim=True)[0]
+
     if attention_dropout is not None:
         with get_cuda_rng_tracker().fork():
             attention_probs = attention_dropout(attention_probs)
@@ -651,7 +666,7 @@ def standard_attention(query_layer, key_layer, value_layer, attention_mask, atte
     return context_layer
 
 
-def sparse_attention_2d_light(q0, k0, v0, q1, k1, v1, attention_mask, n_head, text_len=64, kernel_size=9, kernel_size2=7, attention_dropout=None, **kwargs):
+def sparse_attention_2d_light(q0, k0, v0, q1, k1, v1, attention_mask, n_head, text_len=64, kernel_size=9, kernel_size2=7, attention_dropout=None, text_start = -1, layer_id=-1, **kwargs):
     '''
     q0, k0, v0: [batch_size, 1088, hidden_size]
     q1, k1, v1: [batch_size, 4096, h2]
@@ -673,6 +688,9 @@ def sparse_attention_2d_light(q0, k0, v0, q1, k1, v1, attention_mask, n_head, te
     attention_scores = torch.mul(attention_scores, attention_mask) - \
                     10000.0 * (1.0 - attention_mask)
     attention_probs0 = F.softmax(attention_scores, dim=-1)
+    if text_start > 0:
+        attention_probs0[..., :, text_start:text_len-2] *= 1
+        attention_probs0 /= attention_probs0.sum(dim=-1, keepdim=True)[0]
     # local attention for level 1
     q1 = (q1.view(b, s1, n_head, h1 // n_head).permute(0, 2, 3, 1) / math.sqrt(h1//n_head)).contiguous().view(b*n_head, h1//n_head, l1, l1)
     k1 = k1.view(b, s1, n_head, h1 // n_head).permute(0, 2, 3, 1).contiguous().view(b*n_head, h1//n_head, l1, l1)
@@ -701,10 +719,11 @@ def sparse_attention_2d_light(q0, k0, v0, q1, k1, v1, attention_mask, n_head, te
     # weighting for level 1
     probs_1_to_1 = attention_probs1[:, :, -scores_1_to_1.shape[3]:].view_as(scores_1_to_1)
     context1_to_1 = f_weighting(v1, probs_1_to_1.contiguous(), kernel_size*2-1, kernel_size, True)
-    context1_to_1 = context1_to_1.view(b, n_head * h, l1**2)
+    context1 = context1_to_1.view(b, n_head * h, l1**2)
     # weighting for cross attention
     probs_1_to_0 = attention_probs1[:, :, :scores_1_to_0.shape[3]].view_as(scores_1_to_0)
     v0_part = v0[:, :, -l0**2:].transpose(-1, -2).contiguous().view(b*n_head, h, l0, l0)
     context1_to_0 = f_weighting(v0_part, probs_1_to_0.contiguous(), kernel_size2, kernel_size2, False)
     context1_to_0 = context1_to_0.view(b, n_head * h, l1**2)
-    return context0.transpose(1, 2).reshape(b, s0, h0), (context1_to_0 + context1_to_1).transpose(-1, -2)
+    context1 = context1 + context1_to_0
+    return context0.transpose(1, 2).reshape(b, s0, h0), context1.transpose(-1, -2)

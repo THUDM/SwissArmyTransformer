@@ -311,12 +311,12 @@ def add_sparse_args(parser):
 def make_sparse_config(args):
     args.layout = [int(x) for x in args.layout.split(',')]
     sparse_config = argparse.Namespace(sparse_type=args.sparse_type)
+    sparse_config.layout = args.layout
     if args.sparse_type == 'standard':
         pass
     if args.sparse_type == 'cuda_2d' or args.generation_task == 'cuda-2d generation':
         sparse_config.kernel_size = args.kernel_size
         sparse_config.kernel_size2 = args.kernel_size2
-        sparse_config.layout = args.layout
     elif args.sparse_type == 'torch_1d':
         raise NotImplementedError
     args.sparse_config = sparse_config

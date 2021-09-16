@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CHECKPOINT_PATH=data/checkpoints/cogview-long
+CHECKPOINT_PATH=data/checkpoints/cogview-base
 # CHECKPOINT_PATH=data/checkpoints/cogview-compare
 NLAYERS=48
 NHIDDEN=2560
@@ -10,9 +10,9 @@ MASTER_PORT=$(shuf -n 1 -i 10000-65535)
 MPSIZE=1
 
 #SAMPLING ARGS
-TEMP=1.03
+TEMP=1.
 #If TOPK/TOPP are 0 it defaults to greedy sampling, top-k will also override top-p
-TOPK=100
+TOPK=200
 TOPP=0
 
 script_path=$(realpath $0)
@@ -36,13 +36,14 @@ MASTER_PORT=${MASTER_PORT} python generate_samples.py \
        --max-position-embeddings-finetune $MAXSEQLEN \
        --generation-task "cuda-2d generation" \
        --input-source ./input.txt \
-       --output-path samples_cuda_2d2 \
-       --batch-size 3 \
+       --output-path samples_cuda_2d3 \
+       --batch-size 4 \
        --max-inference-batch-size 4 \
        --device 0 \
        --finetune \
        --no-load-optim \
        --sparse-type cuda_2d \
+       --debug \
        $@
 
 

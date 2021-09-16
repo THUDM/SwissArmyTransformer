@@ -16,12 +16,12 @@ HOST_FILE_PATH="hostfile"
 # OPTIONS_NCCL=""
 # HOST_FILE_PATH="hostfile_single"
 
-small_data="/dataset/fd5061f6/cogview/cogdata_new/cogdata_task_3leveltokens/zijian/zijian.bin.part_0.cogdata"
-full_data="/dataset/fd5061f6/cogview/cogdata_new/cogdata_task_3leveltokens/merge.bin"
+small_data="/dataset/fd5061f6/cogview/cogdata_new/cogdata_task_4leveltokens/zijian/zijian.bin.part_0.cogdata"
+full_data="/dataset/fd5061f6/cogview/cogdata_new/cogdata_task_4leveltokens/merge.bin"
 
 config_json="$script_dir/ds_config_zero.json"
 gpt_options=" \
-       --experiment-name cogview-base-continue-long \
+       --experiment-name cogview-base-long \
        --img-tokenizer-num-tokens 8192 \
        --dataset-type CompactBinaryDataset \
        --model-parallel-size ${MP_SIZE} \
@@ -47,9 +47,9 @@ gpt_options=" \
        --no-load-optim \
        --no-save-optim \
        --eval-interval 1000 \
-       --save /root/checkpoints \
+       --save $main_dir/data/checkpoints \
        --fast-load \
-       --load data/checkpoints/cogview-continue \
+       --load data/checkpoints/cogview-base \
        --finetune 
 "
           

@@ -7,6 +7,15 @@ def loadbao(name):
             a, b = line.split()
             ret.append(abs(float(b)))
     return ret
+
+def loadlion(name):
+    ret1, ret2 = [], []
+    with open(name, 'r') as fin:
+        for line in fin:
+            a, b = line.split()
+            ret1.append(abs(float(a)))
+            ret2.append(abs(float(b)))
+    return ret1, ret2
 import torchvision
 import torchvision.transforms as transforms
 
@@ -20,13 +29,13 @@ def sq(img, x, y, lx, ly):
 transform = transforms.Compose([
                 transforms.Resize(512),
                 transforms.CenterCrop(512),
-            ])
-img = torchvision.io.read_image('bao.jpeg')
+            ]) 
+img = torchvision.io.read_image('cat2.jpeg')
 img = transform(img) / 255.
-a = np.array(loadbao('bao2.txt'))
-b = np.array(loadbao('bao3.txt'))
-for t in (b-a>1).nonzero()[0]:
-    x,y = t // 32, t % 32
-    sq(img, x*16, y*16, 15, 15)
-print(a.mean(), b.mean())
-torchvision.utils.save_image(img, 'example_bao.jpg')
+# a,b = np.array(loadlion('bed6.txt'))
+b = np.array(loadbao('bed6.txt'))
+for t in (b<0.999).nonzero()[0]:
+    x,y = t // 64, t % 64
+    sq(img, x*8, y*8, 7, 7)
+print(b.sum())
+torchvision.utils.save_image(img, 'example_cat6.jpg')

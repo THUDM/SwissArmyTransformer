@@ -6,8 +6,8 @@
 # NHIDDEN=1024
 # NATT=16
 
-CHECKPOINT_PATH=data/checkpoints/cogview-continue
-# CHECKPOINT_PATH=pretrained/cogview/cogview-base
+# CHECKPOINT_PATH=data/checkpoints/cogview-base
+CHECKPOINT_PATH=pretrained/cogview/cogview-base
 NLAYERS=48
 NHIDDEN=2560
 NATT=40
@@ -16,7 +16,7 @@ MASTER_PORT=$(shuf -n 1 -i 10000-65535)
 MPSIZE=1
 
 #SAMPLING ARGS
-TEMP=1.
+TEMP=1
 #If TOPK/TOPP are 0 it defaults to greedy sampling, top-k will also override top-p
 TOPK=200
 TOPP=0
@@ -46,6 +46,7 @@ MASTER_PORT=${MASTER_PORT} python generate_samples.py \
        --batch-size 8 \
        --max-inference-batch-size 8 \
        --device 0 \
+       --debug \
        $@
 
 

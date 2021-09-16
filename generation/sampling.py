@@ -19,6 +19,7 @@ import torch.nn.functional as F
 
 from pretrain_gpt2 import get_masks_and_position_ids
 from data_utils import get_tokenizer
+from copy import deepcopy
 
 def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-float('Inf')):
     # This function has been mostly taken from huggingface conversational ai code at
@@ -26,8 +27,12 @@ def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-float('Inf')):
 
     if top_k > 0:
         # Remove all tokens with a probability less than the last token of the top-k
+        # s1 = (logits-logits.max()).exp().sum()
         indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
-        logits[indices_to_remove] = filter_value
+        logits[indices_to_remove] = filter_value      
+        # s2 = (logits-logits.max()).exp().sum()
+        # with open('lion.txt', 'a') as fout:
+        #     fout.write(f'{s1} {s2}\n')
 
     if top_p > 0.0:
         # convert to 1D
@@ -107,6 +112,12 @@ def filling_sequence(
             offset = context_length
         context_length += 1
     tokens, attention_mask, position_ids = get_batch(seq[:context_length], device, args)
+    txt_len = seq.tolist().index(tokenizer['[BASE]'])
+    print('txt_len:', txt_len)
+    config = deepcopy(model.module.transformer.sparse_config)
+    ori_config = model.module.transformer.sparse_config
+    config.layout[0] = txt_len
+    model.module.transformer.reset_sparse_config(config)
 
     counter = context_length - 1 # == len(tokens) - 1
     index = 0 # len(mems)
@@ -130,12 +141,12 @@ def filling_sequence(
             logits, *qkv = model(tokens, position_ids, attention_mask, *mems)
             mems = update_mems(qkv, mems)
 
-            tmp = -F.log_softmax(logits, dim=-1)
-            tmp = tmp[0,:-1].gather(dim=-1,index=tokens[0,1:].unsqueeze(-1))[4:,0]
+            # tmp = -F.log_softmax(logits, dim=-1)
+            # tmp = tmp[0,:-1].gather(dim=-1,index=tokens[0,1:].unsqueeze(-1))[4:,0]
             # for i in range(1,len(tmp)):
             #     print(i, tmp[i].item())
             index = counter
-            print(tmp[1:].mean(), file=sys.stderr)
+            # print(tmp[1:].mean(), file=sys.stderr)
         elif seq[counter + 1] >= 0: # provided
             if seq[counter + 1] == tokenizer['[ROI2]']:
                 offset = counter + 1
@@ -165,29 +176,44 @@ def filling_sequence(
         logits = logits[:, -1] # [batch size, vocab size]
 
         temp = args.temperature
+        real_topk = args.top_k
+        if counter <= context_length + 32:
+            real_topk = 80
+        # else:
+            # real_topk = args.top_k
+        # if counter == context_length + 32 + 12:
+        #     import pdb;pdb.set_trace()
         # TODO since the temperature is crucial, how can we find a good setting?
         logits /= temp
-        for invalid_slice in invalid_slices: # forbide to generate other tokens
+        for invalid_slice in invalid_slices: #   to generate other tokens
             logits[..., invalid_slice] = -float('Inf')
-        logits = top_k_logits(logits, top_k=args.top_k, top_p=args.top_p)
-        log_probs = F.softmax(logits, dim=-1)
+        # logits = top_k_logits(logits, top_k=real_topk, top_p=args.top_p)
+        probs = F.softmax(logits, dim=-1)
+
+        tk_value, tk_idx = torch.topk(probs, real_topk, dim=-1)
 
         # expand beams
         if nb > 1 and tokens.shape[0] == 1: # 1->nb
             tokens = tokens.expand(nb, -1).contiguous()
             mems = [mem.expand(nb, -1, -1) for mem in mems]
-            prev = torch.multinomial(log_probs, num_samples=nb, replacement=True)
-            score = torch.log(torch.gather(log_probs, dim=1, index=prev)[0]).tolist()
+            prev = torch.multinomial(probs, num_samples=nb, replacement=True)
+            score = torch.log(torch.gather(probs, dim=1, index=prev)[0]).tolist()
         else: # nb -> nb
             assert tokens.shape[0] == nb
-            prev = torch.multinomial(log_probs, num_samples=1)
-            score_plus = torch.log(torch.gather(log_probs, dim=1, index=prev)[:, 0])
+            prev = torch.multinomial(probs, num_samples=1)
+            for j in range(0, prev.shape[0]):
+                if probs[j, prev[j,-1]] < tk_value[j, -1]:
+                    prev[j, -1] = tk_idx[j,torch.randint(tk_idx.shape[-1]-100, tk_idx.shape[-1], (1,))]
+                    # prev[j, -1] = tk_idx[j,torch.randint(0, tk_idx.shape[-1], (1,))]
+
+            score_plus = torch.log(torch.gather(probs, dim=1, index=prev)[:, 0])
             for idx in range(nb):
                 score[idx] += score_plus[idx]
         
         tokens = torch.cat((tokens, prev.view(tokens.shape[0], 1)), dim=1)
 
     output_tokens_list = tokens.view(tokens.shape[0], -1).contiguous()
+    model.module.transformer.reset_sparse_config(ori_config)
     return output_tokens_list
 
 def shrink_beams(tokens, mems, nb, score):

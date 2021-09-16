@@ -117,23 +117,21 @@ def get_dataset_by_type(dataset_type, path: str, args, DS_CLASS=LMDBDataset):
                 }
 
     elif dataset_type == 'CompactBinaryDataset':
-        layout = args.layout
+        layout = [64, 64+16**2, 64+16**2+32**2, 64+64**2+16**2+32**2] # FIXME
         DS_CLASS = BinaryDataset
         kwargs_to_dataset['length_per_sample'] = layout[-1]
         def process_fn(row):
             row = row.astype(np.int64)
-            # THIS IS Reverse order, TODO 
-            lens = list(reversed([layout[i] - layout[i-1] for i in range(1, len(layout))]))
-            codes = [row[layout[0]: layout[0]+lens[0]]]
-            if len(lens) > 1:
-                codes.append(row[layout[0]+lens[0]: layout[0]+lens[0]+lens[1]])
+        
+            codes = [row[layout[i-1]:layout[i]] for i in range(1, len(layout))]
+            
             text = row[:layout[0]]
             text = text[text>0][:layout[0] - 3] # [CLS] [BASE] [ROI1]
             n_pad = layout[0]-3-len(text)
             parts = [
                 np.array([tokenizer['[PAD]']] * n_pad, dtype=np.int64),
-                TextCodeTemplate(text, codes[-1]),
-                *reversed(codes[:-1])
+                TextCodeTemplate(text, codes[1]), # FIXME
+                *codes[2:] # FIXME
             ]
             ret = np.concatenate(parts, axis=0)
             return {'text': ret, 
