@@ -44,6 +44,13 @@ class BaseModel(torch.nn.Module):
         for m in self.mixins:
             m.reinit(self.transformer)
     
+    def forward(self, *args, **kwargs):
+        # update hooks as the current model (overrided forwards)
+        # Attention! the transformer might be shared by multiple models
+        self.transformer.hooks.clear()
+        self.transformer.hooks.update(self.hooks)
+        return self.transformer(*args, **kwargs)
+        
     def collect_hooks(self):
         names = ['word_embedding_forward', 'position_embedding_forward',
                     'attention_forward', 'mlp_forward', 'final_forward']
@@ -52,3 +59,6 @@ class BaseModel(torch.nn.Module):
             if hasattr(self, name):
                 hooks[name] = partial(getattr(self, name), self)
         return hooks
+
+    def disable_untrainable_params(self):
+        pass

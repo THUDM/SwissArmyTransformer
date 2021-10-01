@@ -116,7 +116,7 @@ class SelfAttention(torch.nn.Module):
 
     def forward(self, hidden_states, mask, *other_tensors):
         if 'attention_forward' in self.hooks:
-            return self.hooks['attention_forward'](hidden_states, mask, *other_tensors)
+            return self.hooks['attention_forward'](hidden_states, mask, *other_tensors,layer_id=self.layer_id)
         else:
             mixed_raw_layer = self.query_key_value(hidden_states)
             (mixed_query_layer,
