@@ -22,7 +22,6 @@ import numpy as np
 import torch
 
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
-from fp16 import FP16_Optimizer
 import mpu
 import model
 from tensorboardX import SummaryWriter
@@ -52,27 +51,6 @@ def print_args(args):
     for arg in vars(args):
         dots = '.' * (29 - len(arg))
         print('  {} {} {}'.format(arg, dots, getattr(args, arg)), flush=True)
-
-
-def print_params_min_max_norm(optimizer, iteration):
-    """Print min, max, and norm of all parameters."""
-    index = 0
-    rank = torch.distributed.get_rank()
-    string = 'iteration, rank, index, model-parallel,min, max, norm\n'
-    optimizer_ = optimizer
-    if isinstance(optimizer, FP16_Optimizer):
-        optimizer_ = optimizer.optimizer
-    for param_group in optimizer_.param_groups:
-        for param in param_group['params']:
-            index += 1
-            min_ = param.data.min()
-            max_ = param.data.max()
-            norm = param.data.norm()
-            string += '{:7d}, {:4d}, {:4d}, {:2d}, '.format(
-                iteration, rank, index, int(param.model_parallel))
-            string += '{:.6E}, {:.6E}, {:.6E}\n'.format(min_, max_, norm)
-    print(string, flush=True)
-
 
 class Timers:
     """Group of timers."""

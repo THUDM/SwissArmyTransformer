@@ -1,12 +1,21 @@
 import numpy as np
 import torch
+def entropy(x):
+    a = np.array(x)
+    a = a / a.sum()
+    return - np.sum(a * np.log(a))
+print(entropy([0.9999,0.001]))
 def loadbao(name):
-    ret = []
+    ret1, ret2 = [], []
     with open(name, 'r') as fin:
         for line in fin:
-            a, b = line.split()
-            ret.append(abs(float(b)))
-    return ret
+            a = line.split()
+            aa = [float(x) for x in a[1:5]]
+            b = entropy(aa)
+            c = sum(aa)
+            ret1.append(b)
+            ret2.append(c)
+    return np.array(ret1), np.array(ret2)
 
 def loadlion(name):
     ret1, ret2 = [], []
@@ -33,9 +42,9 @@ transform = transforms.Compose([
 img = torchvision.io.read_image('cat2.jpeg')
 img = transform(img) / 255.
 # a,b = np.array(loadlion('bed6.txt'))
-b = np.array(loadbao('bed6.txt'))
-for t in (b<0.999).nonzero()[0]:
+b, c = np.array(loadbao('bed1.txt'))
+for t in (b>1.35).nonzero()[0]:
     x,y = t // 64, t % 64
     sq(img, x*8, y*8, 7, 7)
 print(b.sum())
-torchvision.utils.save_image(img, 'example_cat6.jpg')
+torchvision.utils.save_image(img, 'example_cat.jpg')

@@ -13,11 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Pretrain GPT2"""
-
-# Flag to use Pytorch ddp which uses overlapping communication and computation.
-USE_TORCH_DDP = True
-
 from datetime import datetime
 import os
 import random
@@ -29,24 +24,15 @@ import torch
 import deepspeed
 from contextlib import ExitStack
 from arguments import get_args
-from fp16 import FP16_Module
-from fp16 import FP16_Optimizer
 from learning_rates import AnnealingLR
-from model import GPT2Model
-from model import gpt2_get_params_for_weight_decay_optimization
 
-if USE_TORCH_DDP:
-    from model import PyTorchDistributedDataParallel as DDP
-else:
-    from model import DistributedDataParallel as DDP
 import mpu
-from apex.optimizers import FusedAdam as Adam
+from mpu import GPT2ParallelTransformer
 from utils import Timers
 from utils import save_checkpoint
 from utils import load_checkpoint
 from utils import report_memory
 from utils import print_args
-from utils import print_params_min_max_norm
 from utils import print_rank_0
 from utils import get_sample_writer
 import torch.distributed as dist
@@ -60,7 +46,7 @@ def get_model(args, sparse_config=None):
 
     print_rank_0('building CogView2 model ...')
     ml = args.max_position_embeddings
-    model = GPT2Model(num_layers=args.num_layers,
+    model = GPT2ParallelTransformer(num_layers=args.num_layers,
                       vocab_size=args.vocab_size,
                       hidden_size=args.hidden_size,
                       num_attention_heads=args.num_attention_heads,
@@ -90,26 +76,47 @@ def get_model(args, sparse_config=None):
     model.cuda(torch.cuda.current_device())
 
     # Fp16 conversion.
-    if args.fp16:
-        model = FP16_Module(model)
+    # if args.fp16:
+    #     model = FP16_Module(model)
 
     # Wrap model for distributed training.
-    if not args.deepspeed:
-        if USE_TORCH_DDP:
-            i = torch.cuda.current_device()
-            model = DDP(model, device_ids=[i], output_device=i,
-                        process_group=mpu.get_data_parallel_group())
-        else:
-            model = DDP(model)
+    # if not args.deepspeed:
+    #     if USE_TORCH_DDP:
+    #         i = torch.cuda.current_device()
+    #         model = DDP(model, device_ids=[i], output_device=i,
+    #                     process_group=mpu.get_data_parallel_group())
+    #     else:
+    #         model = DDP(model)
 
     return model
 
 
+def gpt2_get_params_for_weight_decay_optimization(module):
+    
+    weight_decay_params = {'params': []}
+    no_weight_decay_params = {'params': [], 'weight_decay': 0.0}
+    for module_ in module.modules():
+        if isinstance(module_, (mpu.LayerNorm, torch.nn.LayerNorm)):
+            no_weight_decay_params['params'].extend(
+                [p for p in list(module_._parameters.values())
+                 if p is not None and p.requires_grad])
+        else:
+            weight_decay_params['params'].extend(
+                [p for n, p in list(module_._parameters.items())
+                 if p is not None and n != 'bias' and p.requires_grad])
+            no_weight_decay_params['params'].extend(
+                [p for n, p in list(module_._parameters.items())
+                 if p is not None and n == 'bias' and p.requires_grad])
+    return weight_decay_params, no_weight_decay_params
+
+
 def get_optimizer_param_groups(model):
     # Build parameter groups (weight decay and non-decay).
-    while isinstance(model, (DDP, FP16_Module)):
+    while hasattr(model, 'module'):
+        print(model)
         model = model.module
-    param_groups = gpt2_get_params_for_weight_decay_optimization(model)
+        
+    param_groups = gpt2_get_params_for_weight_decay_optimization(model) # TODO move to here
 
     # Add model parallel attribute if it is not set.
     for param_group in param_groups:
@@ -118,43 +125,6 @@ def get_optimizer_param_groups(model):
                 param.model_parallel = False
 
     return param_groups
-
-
-def get_optimizer(param_groups, args):
-    """Set up the optimizer."""
-    if args.cpu_optimizer:
-        #Apex FusedAdam uses decoupled weight decay so use the same here
-        if args.cpu_torch_adam:
-            cpu_adam_optimizer = torch.optim.AdamW
-        else:
-            #TODO add option for decoupled weight decay in DeepCPUAdam
-            from deepspeed.ops.adam import DeepSpeedCPUAdam
-            cpu_adam_optimizer = DeepSpeedCPUAdam
-        optimizer = cpu_adam_optimizer(param_groups,
-                        lr=args.lr, weight_decay=args.weight_decay)
-    else:
-        # Use FusedAdam.
-        optimizer = Adam(param_groups,
-                         lr=args.lr, weight_decay=args.weight_decay)
-
-    print(f'Optimizer = {optimizer.__class__.__name__}')
-    if hasattr(args, "deepspeed") and args.deepspeed:
-        raise NotImplementedError
-        # fp16 wrapper is not required for DeepSpeed.
-        # return optimizer
-
-    # Wrap into fp16 optimizer.
-    if args.fp16:
-        optimizer = FP16_Optimizer(optimizer,
-                                   static_loss_scale=args.loss_scale,
-                                   dynamic_loss_scale=args.dynamic_loss_scale,
-                                   dynamic_loss_args={
-                                       'scale_window': args.loss_scale_window,
-                                       'min_scale': args.min_scale,
-                                       'delayed_shift': args.hysteresis})
-
-    return optimizer
-
 
 def get_learning_rate_scheduler(optimizer, args):
     """Build the learning rate scheduler."""
@@ -184,10 +154,11 @@ def setup_model_and_optimizer(args):
 
     model = get_model(args)
 
-    if args.finetune:
+    if args.finetune: # TODO
         model.requires_grad_(False)
         for name, param in model.named_parameters():
-            if name.find('_plus') > 0:
+            # if name.find('_plus') > 0:
+            if name.find('query_key_value') >= 0 or name.find('attention.dense') >= 0 or name.find('position_embeddings') >= 0:
                 param.requires_grad_(True)
 
     param_groups = get_optimizer_param_groups(model)
@@ -195,7 +166,6 @@ def setup_model_and_optimizer(args):
     if args.train_data is not None:
         if args.deepspeed:
             print_rank_0("DeepSpeed is enabled.")
-
             model, optimizer, _, _ = deepspeed.initialize(
                 model=model,
                 model_parameters=param_groups,
@@ -204,7 +174,7 @@ def setup_model_and_optimizer(args):
                 dist_init_required=False
             )
         else:
-            optimizer = get_optimizer(param_groups, args)
+            raise ValueError('Currently, we only support training with deepspeed.')
         lr_scheduler = get_learning_rate_scheduler(optimizer, args)
     else:
         optimizer, lr_scheduler = None, None
@@ -374,26 +344,26 @@ def backward_step(optimizer, model, lm_loss, args, timers):
         # DeepSpeed backward propagation already addressed all reduce communication.
         # Reset the timer to avoid breaking timer logs below.
         timers('allreduce').reset()
-    else:
-        if not USE_TORCH_DDP:
-            timers('allreduce').start()
-            model.allreduce_params(reduce_after=False,
-                                   fp32_allreduce=args.fp32_allreduce)
-            timers('allreduce').stop()
+    # else:
+    #     if not USE_TORCH_DDP:
+    #         timers('allreduce').start()
+    #         model.allreduce_params(reduce_after=False,
+    #                                fp32_allreduce=args.fp32_allreduce)
+    #         timers('allreduce').stop()
 
     lm_loss_reduced = reduced_losses
 
     # Update master gradients.
-    if not args.deepspeed:
-        if args.fp16:
-            optimizer.update_master_grads()
+    # if not args.deepspeed:
+    #     if args.fp16:
+    #         optimizer.update_master_grads()
 
-        # Clipping gradients helps prevent the exploding gradient.
-        if args.clip_grad > 0:
-            if not args.fp16:
-                mpu.clip_grad_norm(model.parameters(), args.clip_grad)
-            else:
-                optimizer.clip_master_grads(args.clip_grad)
+    #     # Clipping gradients helps prevent the exploding gradient.
+    #     if args.clip_grad > 0:
+    #         if not args.fp16:
+    #             mpu.clip_grad_norm(model.parameters(), args.clip_grad)
+    #         else:
+    #             optimizer.clip_master_grads(args.clip_grad)
 
     return lm_loss_reduced
 
@@ -545,14 +515,14 @@ def train(model, optimizer, lr_scheduler,
             if report_memory_flag:
                 report_memory('after {} iterations'.format(args.iteration))
                 report_memory_flag = False
-            if USE_TORCH_DDP:
-                timers.log(['forward', 'backward', 'optimizer',
+            # if USE_TORCH_DDP:
+            #     timers.log(['forward', 'backward', 'optimizer',
+            #                 'batch generator', 'data loader'],
+            #                normalizer=args.log_interval)
+            # else:
+            timers.log(['forward', 'backward', 'allreduce', 'optimizer',
                             'batch generator', 'data loader'],
-                           normalizer=args.log_interval)
-            else:
-                timers.log(['forward', 'backward', 'allreduce', 'optimizer',
-                            'batch generator', 'data loader'],
-                           normalizer=args.log_interval)
+                        normalizer=args.log_interval)
         # Checkpointing
         if args.save and args.save_interval and args.iteration % args.save_interval == 0:
             save_checkpoint(args.iteration, model, optimizer, lr_scheduler, args)
@@ -613,9 +583,9 @@ def evaluate(data_iterator, model, args, timers, verbose=False):
                 deepspeed.checkpointing.reset()
 
             # Reduce across processes.
-            if isinstance(model, DDP):
-                torch.distributed.all_reduce(lm_loss.data)
-                lm_loss.data = lm_loss.data / args.world_size
+            # if isinstance(model, DDP):
+            #     torch.distributed.all_reduce(lm_loss.data)
+            #     lm_loss.data = lm_loss.data / args.world_size
 
             total_lm_loss += lm_loss.data.detach().float().item()
 

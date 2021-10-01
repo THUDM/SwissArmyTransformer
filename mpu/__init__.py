@@ -19,8 +19,6 @@ from .cross_entropy import vocab_parallel_cross_entropy
 
 from .data import broadcast_data
 
-from .grads import clip_grad_norm
-
 from .initialize import destroy_model_parallel
 from .initialize import get_data_parallel_group
 from .initialize import get_data_parallel_rank
@@ -47,5 +45,5 @@ from .random import partition_activations_in_checkpoint
 from .random import get_cuda_rng_tracker
 from .random import model_parallel_cuda_manual_seed
 
-from .sparse_transformer import GPT2ParallelTransformer
-from .sparse_transformer import LayerNorm
+from .transformer import BaseTransformer
+from .transformer import LayerNorm

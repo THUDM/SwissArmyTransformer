@@ -70,15 +70,29 @@ class VocabUtility:
         return VocabUtility.vocab_range_from_per_partition_vocab_size(
             per_partition_vocab_size, rank, world_size)
 
-def split_out_sums(x, BLOCK_SIZE=32, all_ret=False):
-    b, L = x.shape[:2]
-    rs = x.shape[2:]
-    x = x.view(b, L // BLOCK_SIZE, BLOCK_SIZE, *rs)
-    oris, sums = x.split([BLOCK_SIZE-1, 1], dim=2)
-    if all_ret:
-        return oris.reshape(b, -1, *rs), sums.reshape(b, -1, *rs)
-    else: 
-        return sums.reshape(b, -1, *rs)
-
 def sqrt(x):
     return int(math.sqrt(x) + 1e-4)
+
+def unscaled_init_method(sigma):
+    """Init method based on N(0, sigma)."""
+    def init_(tensor):
+        return torch.nn.init.normal_(tensor, mean=0.0, std=sigma)
+
+    return init_
+
+def scaled_init_method(sigma, num_layers):
+    """Init method based on N(0, sigma/sqrt(2*num_layers)."""
+    std = sigma / math.sqrt(2.0 * num_layers)
+    def init_(tensor):
+        return torch.nn.init.normal_(tensor, mean=0.0, std=std)
+
+    return init_
+
+@torch.jit.script
+def gelu_impl(x):
+     """OpenAI's gelu implementation."""
+     return 0.5 * x * (1.0 + torch.tanh(0.7978845608028654 * x *
+                                        (1.0 + 0.044715 * x * x)))
+
+def gelu(x): 
+    return gelu_impl(x)

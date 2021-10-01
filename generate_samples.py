@@ -33,9 +33,7 @@ from data_utils import get_tokenizer
 import mpu
 import deepspeed
 
-from fp16 import FP16_Module
 from model import GPT2Model
-from model import DistributedDataParallel as DDP
 from utils import print_rank_0
 from pretrain_gpt2 import get_model
 import math
