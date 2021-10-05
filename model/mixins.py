@@ -25,12 +25,12 @@ class BaseMixin(torch.nn.Module):
         pass
 
 class PositionEmbeddingMixin(BaseMixin):
-    def __init__(self, new_sequence_length, hidden_size, 
+    def __init__(self, additional_sequence_length, hidden_size, 
                 init_method_std=0.02, reinit_slice=(-1024, None)
         ):
         super(PositionEmbeddingMixin, self).__init__()
         self.reinit_slice = reinit_slice
-        self.position_embeddings = torch.nn.Embedding(new_sequence_length, hidden_size)
+        self.position_embeddings = torch.nn.Embedding(additional_sequence_length, hidden_size)
         torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)
     def reinit(self, transformer, *pre_mixins):
         old_weights = transformer.position_embeddings.weight.data[self.reinit_slice]

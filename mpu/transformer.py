@@ -52,13 +52,13 @@ def standard_attention(query_layer, key_layer, value_layer, attention_mask,
         query_layer / math.sqrt(query_layer.shape[-1]),
         key_layer.transpose(-1, -2)
     )
+    if log_attention_weights is not None:
+        attention_scores += log_attention_weights
     
     if attention_mask.shape[-2] > 1: # if auto-regressive, skip
         attention_scores = torch.mul(attention_scores, attention_mask) - \
                     10000.0 * (1.0 - attention_mask)
-    if log_attention_weights is not None:
-        attention_scores += log_attention_weights
-    
+
     attention_probs = F.softmax(attention_scores, dim=-1)
 
     if attention_dropout is not None:
@@ -179,33 +179,6 @@ class MLP(torch.nn.Module):
 
 
 class BaseTransformerLayer(torch.nn.Module):
-    """A single layer transformer for GPT2.
-
-    We use the following notation:
-        h: hidden size
-        n: number of attention heads
-        b: batch size
-        s: sequence length
-    Transformore layer takes input with size [b, s, h] and returns an
-    output of the same size.
-
-    Arguments:
-        hidden_size: The hidden size of the self attention.
-        num_attention_heads: number of attention head in the self
-                             attention.
-        attention_dropout_prob: dropout probability of the attention
-                                score in self attention.
-        output_dropout_prob: dropout probability for the outputs
-                             after self attention and final output.
-        layernorm_epsilon: epsilon used in layernorm to avoid
-                           division by zero.
-        init_method: initialization method used for the weights. Note
-                     that all biases are initialized to zero and
-                     layernorm weight are initialized to one.
-        output_layer_init_method: output layers (attention output and
-                                  mlp output) initialization. If None,
-                                  use `init_method`.
-    """
     def __init__(
         self,
         hidden_size,

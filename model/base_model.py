@@ -41,7 +41,8 @@ class BaseModel(torch.nn.Module):
         self.mixins = torch.nn.ModuleList()
         
     def reinit(self):
-        for m in self.mixins:
+        # if some mixins are loaded, overrides this function
+        for m in self.mixins: 
             m.reinit(self.transformer)
     
     def forward(self, *args, **kwargs):
