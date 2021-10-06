@@ -8,7 +8,5 @@
 
 # here put the import lib
 
-from .unified_tokenizer import get_tokenizer
-
-from .templates import *
-from .configure_data import make_loaders, detect_new_datasets
+from .configure_data import make_loaders
+from .datasets import *

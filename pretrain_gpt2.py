@@ -12,11 +12,15 @@ import sys
 import math
 import random
 import torch
+import numpy as np
 
 import mpu
 from arguments import get_args
 from model.base_model import BaseModel
 from training.deepspeed_training import main
+from data_utils import BinaryDataset
+from tokenization import get_tokenizer
+from tokenization.cogview import TextCodeTemplate
 
 def get_masks_and_position_ids(data,
                             loss_mask=None,
@@ -99,6 +103,27 @@ def forward_step(data_iterator, model, args, timers):
     
     return loss, {}
 
+def create_dataset_function(path, args):
+    tokenizer = get_tokenizer()
+    layout = [64, 64+16**2, 64+16**2+32**2, 64+64**2+16**2+32**2] # FIXME
+    def process_fn(row):
+        row = row.astype(np.int64)
+        codes = [row[layout[i-1]:layout[i]] for i in range(1, len(layout))]
+        
+        text = row[:layout[0]]
+        text = text[text>0][:layout[0] - 3] # [CLS] [BASE] [ROI1]
+        merged = TextCodeTemplate(text, codes[1], tokenizer)
+        n_pad = args.max_sequence_length - len(merged)
+        parts = [
+            merged, 
+            np.array([tokenizer['[PAD]']] * n_pad, dtype=np.int64)
+        ]
+        ret = np.concatenate(parts, axis=0)
+        return {'text': ret, 
+            'loss_mask': np.array([1]*len(merged) + [0]*n_pad)
+            }
+    return BinaryDataset(path, process_fn, length_per_sample=layout[-1])
+
 if __name__ == '__main__':
     args = get_args()
-    main(args, model_cls=BaseModel, forward_step=forward_step)
+    main(args, model_cls=BaseModel, forward_step=forward_step, create_dataset_function=create_dataset_function)

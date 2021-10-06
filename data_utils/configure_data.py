@@ -11,16 +11,13 @@ import os
 import sys
 import math
 import random
-from tqdm import tqdm
 import copy
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from bisect import bisect_right
+from functools import partial
 
-from .unified_tokenizer import get_tokenizer
-from .datasets import get_dataset_by_type
 from torch.utils import data
 from .samplers import DistributedBatchSampler
 
@@ -36,46 +33,37 @@ def make_data_loader(dataset, batch_size, num_iters, args):
     sampler = torch.utils.data.SequentialSampler(dataset)
     drop_last = distributed
     # the GPUs in the same model parallel group receive the same data
-    if distributed:
+    if distributed: # TODO reformat this, but it is not urgent
         gradient_accumulation_steps = getattr(args, 'gradient_accumulation_steps', 1)
         batch_sampler = DistributedBatchSampler(sampler,
-                                                                    batch_size,
-                                                                    drop_last,
-                                                                    rank,
-                                                                    world_size,
-                                                                    gradient_accumulation_steps=gradient_accumulation_steps)
+            batch_size,
+            drop_last,
+            rank,
+            world_size,
+            gradient_accumulation_steps=gradient_accumulation_steps)
     else:
         batch_sampler = torch.utils.data.BatchSampler(sampler,
                                                         batch_size,
                                                         drop_last)
     data_loader = torch.utils.data.DataLoader(dataset,
-                                              batch_sampler=batch_sampler,
-                                              num_workers=args.num_workers,
-                                              pin_memory=True)
+                                            batch_sampler=batch_sampler,
+                                            num_workers=args.num_workers,
+                                            pin_memory=True)
     return data_loader
 
 
-def make_dataset(dataset_type, path, split, args, **kwargs):
+def make_dataset_full(dataset_type, path, split, args, create_dataset_function, **kwargs):
     """function to create datasets+tokenizers for common options"""
     print('make dataset ...', path)
     if split is None:
         split = [1.]
 
     assert isinstance(path, list)
-    # TODO other dsclass, e.g. odps
-    # ds = [get_dataset_by_type(dataset_type, p, args) for p in path]
-    # dataset object can be copied N times
+    
     ds = []
     for p in path:
-        d = get_dataset_by_type(dataset_type, p, args)
-        if p.find('t2i') >= 0:
-            ds.extend([d] * 4)
-            print(f'Enlarge {p} 4 times...')
-        elif p.find('i2t') >= 0:
-            ds.extend([d] * 2)
-            print(f'Enlarge {p} 2 times...')
-        else:
-            ds.append(d)
+        d = create_dataset_function(p, args)
+        ds.append(d)
 
     ds = RandomMappingDataset(ConcatDataset(ds))
 
@@ -84,8 +72,15 @@ def make_dataset(dataset_type, path, split, args, **kwargs):
     # FIXME this will merge valid set and train set.
     return ds
 
-def make_loaders(args):
-    """makes training/val/test"""
+def make_loaders(args, create_dataset_function):
+    """makes training/val/test
+    Args:
+        args.train_data, args.valid_data, args.test_data: str. Paths to the dataset.
+        args.split: str. format: "8,1,1". how to split train_data.
+        args.dataset_type: use to create the right datasets. 
+    """
+    make_dataset = partial(make_dataset_full, 
+                        create_dataset_function=create_dataset_function)
 
     world_size = torch.distributed.get_world_size(
         group=mpu.get_data_parallel_group())
@@ -290,22 +285,3 @@ class RandomMappingDataset(data.Dataset):
         rng = np.random.RandomState(seed=[rng.randint(0, 2**32-1) for _ in range(16)])
         index = rng.randint(len(self.wrapped_data))
         return self.wrapped_data[index]
-
-def detect_new_datasets(args):
-    if args.new_dataset_path is None:
-        return None
-    if not os.path.exists(args.new_dataset_path):
-        print('Warning: new_dataset_path not exists... skip detection.')
-        return None
-    current_datasets = [str(os.path.abspath(path)) for path in args.train_data]
-
-    found = []
-    for _p in os.listdir(args.new_dataset_path):
-        p = os.path.join(args.new_dataset_path, _p)
-        if (str(p).endswith('lmdb') or str(p).endswith('bin')) and not str(os.path.abspath(p)) in current_datasets:
-            found.append(p)
-    if len(found) == 0:
-        return None
-    else:
-        args.train_data = args.train_data + found
-        return make_loaders(args)    
