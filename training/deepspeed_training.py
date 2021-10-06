@@ -40,11 +40,12 @@ from data_utils import make_loaders, get_tokenizer
 
 
 
-def main(args, model_cls, forward_step, init_step=None):
+def main(args, model_cls, forward_step_function, create_dataset_function, init_function=None):
     """Main training program."""
     hooks = {
-        'forward_step': forward_step,
-        'init_step': init_step
+        'forward_step': forward_step_function,
+        'init_function': init_function,
+        'create_dataset_function': create_dataset_function
         }
     
     torch.backends.cuda.matmul.allow_tf32 = False
@@ -63,7 +64,7 @@ def main(args, model_cls, forward_step, init_step=None):
     # init tokenizer
     tokenizer = get_tokenizer(args)
     # Data stuff.
-    train_data, val_data, test_data, args.vocab_size = get_train_val_test_data(args)
+    train_data, val_data, test_data, args.vocab_size = get_train_val_test_data(args, hooks['create_dataset_function'])
 
     # Model, optimizer, and learning rate.
     model, optimizer = setup_model_and_optimizer(args, model_cls)
@@ -109,8 +110,8 @@ def main(args, model_cls, forward_step, init_step=None):
         val_data_iterator = None
         
     # init hook before training
-    if hooks['init_func'] is not None:
-        hooks['init_func'](args, model, optimizer)
+    if hooks['init_function'] is not None:
+        hooks['init_function'](args, model, optimizer)
 
     # training 
     iteration = 0
@@ -525,14 +526,14 @@ def set_random_seed(seed):
         mpu.model_parallel_cuda_manual_seed(seed)
 
 
-def get_train_val_test_data(args):
+def get_train_val_test_data(args, create_dataset_function):
     """Load the data on rank zero and boradcast number of tokens to all GPUS."""
 
     (train_data, val_data, test_data) = (None, None, None)
 
     # Data loader only on rank 0 of each model parallel group.
     if mpu.get_model_parallel_rank() == 0:
-        train_data, val_data, test_data = make_loaders(args)
+        train_data, val_data, test_data = make_loaders(args, create_dataset_function)
         num_tokens = get_tokenizer().num_tokens
 
         before = num_tokens
