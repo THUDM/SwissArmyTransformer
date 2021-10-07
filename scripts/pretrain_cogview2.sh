@@ -19,17 +19,17 @@ small_data="/dataset/fd5061f6/cogview/cogdata_new/cogdata_task_4leveltokens/ziji
 
 config_json="$script_dir/ds_config_zero.json"
 gpt_options=" \
-       --experiment-name pretrain-gpt2-cogview-test \
+       --experiment-name pretrain-cogview2-test \
        --tokenizer-type cogview \
        --img-tokenizer-path pretrained/vqvae/vqvae_hard_biggerset_011.pt \
        --model-parallel-size ${MP_SIZE} \
        --mode pretrain \
-       --num-layers 12 \
-       --hidden-size 1024 \
-       --num-attention-heads 16 \
+       --num-layers 48 \
+       --hidden-size 2560 \
+       --num-attention-heads 40 \
        --train-iters 200000 \
        --resume-dataloader \
-       --train-data ${small_data} \
+       --train-data ${full_data} \
        --split 949,50,1 \
        --distributed-backend nccl \
        --lr-decay-style cosine \
@@ -41,6 +41,7 @@ gpt_options=" \
        --save-interval 2000 \
        --eval-interval 1000 \
        --save $main_dir/checkpoints \
+       --load pretrained/cogview/cogview2-base
 "
        # --load pretrained/cogview/cogview-base
 
@@ -51,7 +52,7 @@ gpt_options="${gpt_options}
 "
               
 
-run_cmd="${OPTIONS_NCCL} deepspeed --num_nodes ${NUM_WORKERS} --num_gpus ${NUM_GPUS_PER_WORKER} --hostfile ${HOST_FILE_PATH} pretrain_gpt2.py $@ ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --num_nodes ${NUM_WORKERS} --num_gpus ${NUM_GPUS_PER_WORKER} --hostfile ${HOST_FILE_PATH} pretrain_cogview2.py $@ ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

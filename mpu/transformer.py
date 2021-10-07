@@ -27,9 +27,7 @@ from .layers import ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedd
 from .mappings import gather_from_model_parallel_region, copy_to_model_parallel_region
 
 import deepspeed
-
-from .random import checkpoint
-from .random import get_cuda_rng_tracker
+from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint, get_cuda_rng_tracker
 
 from .utils import divide, sqrt, scaled_init_method, unscaled_init_method, gelu
 from .utils import split_tensor_along_last_dim
@@ -250,11 +248,11 @@ class BaseTransformerLayer(torch.nn.Module):
         # Layer norm post the self attention.
         layernorm_output = self.post_attention_layernorm(layernorm_input)
         # MLP.
-        mlp_output = self.mlp(layernorm_output)
+        mlp_output = self.mlp(layernorm_output,  *other_tensors)
 
         # Fourth LayerNorm
         if self.sandwich_ln:
-            mlp_output = self.fourth_layernorm(mlp_output, *other_tensors)
+            mlp_output = self.fourth_layernorm(mlp_output)
 
         # Second residual connection.
         output = layernorm_input + mlp_output
@@ -280,10 +278,6 @@ class BaseTransformer(torch.nn.Module):
                  hooks={}
                  ):
         super(BaseTransformer, self).__init__()
-        if deepspeed.checkpointing.is_configured():
-            global get_cuda_rng_tracker, checkpoint
-            get_cuda_rng_tracker = deepspeed.checkpointing.get_cuda_rng_tracker
-            checkpoint = deepspeed.checkpointing.checkpoint
         
         # recording parameters
         self.parallel_output = parallel_output

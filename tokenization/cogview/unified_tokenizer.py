@@ -35,7 +35,7 @@ class UnifiedTokenizer(object):
             ('[EOI2]', 5),
             ('[EOI3]', 6),
             ('[ROI1]', 7), # Reference
-            ('[ROI2]', 8),
+            ('[ROI2]', 8), # 58200
             ('[ROI3]', 9),
             ('[SEP]', 10),
             ('[MASK]', 11),

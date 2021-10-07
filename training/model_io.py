@@ -108,7 +108,7 @@ def get_checkpoint_iteration(args):
 
     return iteration, release, True
 
-def load_checkpoint(model, optimizer, lr_scheduler, args, load_optimizer_states=True):
+def load_checkpoint(model, args):
     """Load a model checkpoint."""
 
     iteration, release, success = get_checkpoint_iteration(args)
@@ -137,7 +137,7 @@ def load_checkpoint(model, optimizer, lr_scheduler, args, load_optimizer_states=
         else: # new params
             assert all(name.find('mixins')>0 for name in missing_keys)
             module.reinit() # initialize mixins
-            model.optimizer.refresh_fp32_params() # restore fp32 weights from module
+    model.optimizer.refresh_fp32_params() # restore fp32 weights from module
 
     # Iterations.
     if args.mode == 'finetune':

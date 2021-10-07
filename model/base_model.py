@@ -12,7 +12,6 @@ import sys
 import math
 import random
 import torch
-from functools import partial
 
 from mpu import BaseTransformer
 
@@ -28,7 +27,7 @@ class BaseModel(torch.nn.Module):
                 vocab_size=args.vocab_size,
                 hidden_size=args.hidden_size,
                 num_attention_heads=args.num_attention_heads,
-                max_sequence_length=args.max_position_embeddings,
+                max_sequence_length=args.max_sequence_length,
                 embedding_dropout_prob=args.hidden_dropout,
                 attention_dropout_prob=args.attention_dropout,
                 output_dropout_prob=args.hidden_dropout,
@@ -58,7 +57,7 @@ class BaseModel(torch.nn.Module):
         hooks = {}
         for name in names:
             if hasattr(self, name):
-                hooks[name] = partial(getattr(self, name), self)
+                hooks[name] = getattr(self, name)
         return hooks
 
     def disable_untrainable_params(self):

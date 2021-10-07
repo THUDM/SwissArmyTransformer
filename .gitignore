@@ -9,7 +9,7 @@ _cache*
 .vscode/
 samples/
 hostfile
-pretrained/checkpoints
+pretrained/
 *.png
 *.jpg
 *.jpeg

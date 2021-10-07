@@ -52,7 +52,7 @@ def make_data_loader(dataset, batch_size, num_iters, args):
     return data_loader
 
 
-def make_dataset_full(dataset_type, path, split, args, create_dataset_function, **kwargs):
+def make_dataset_full(path, split, args, create_dataset_function, **kwargs):
     """function to create datasets+tokenizers for common options"""
     print('make dataset ...', path)
     if split is None:
@@ -93,7 +93,6 @@ def make_loaders(args, create_dataset_function):
 
     data_set_args = {
         'path': args.train_data,
-        'dataset_type': args.dataset_type,
         'split': split,
     }
 

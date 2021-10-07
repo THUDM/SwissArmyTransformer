@@ -36,11 +36,12 @@ from utils import print_rank_0
 from utils import get_sample_writer
 
 import mpu
-from data_utils import make_loaders, get_tokenizer
+from data_utils import make_loaders 
+from tokenization import get_tokenizer
 
 
 
-def main(args, model_cls, forward_step_function, create_dataset_function, init_function=None):
+def training_main(args, model_cls, forward_step_function, create_dataset_function, init_function=None):
     """Main training program."""
     hooks = {
         'forward_step': forward_step_function,
@@ -50,7 +51,6 @@ def main(args, model_cls, forward_step_function, create_dataset_function, init_f
     
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.enabled = False # Disable CuDNN.
-    set_random_seed(args.seed) # Random seeds for reproducability.
     timers = Timers() # Timer.
     
     # Experiment Name
@@ -61,6 +61,8 @@ def main(args, model_cls, forward_step_function, create_dataset_function, init_f
         
     # Pytorch distributed.
     initialize_distributed(args)
+    set_random_seed(args.seed) # Random seeds for reproducability.
+    
     # init tokenizer
     tokenizer = get_tokenizer(args)
     # Data stuff.
@@ -71,7 +73,7 @@ def main(args, model_cls, forward_step_function, create_dataset_function, init_f
 
     # Config model IO
     if args.load is not None:
-        args.iteration = load_checkpoint(model, optimizer, args)
+        args.iteration = load_checkpoint(model, args)
         # if we don't load optim_states, filelock is no more needed.
         # with FileLock("/root/checkpoint_lock", timeout=-1):
         #     args.iteration = load_checkpoint(model, optimizer, args)
@@ -82,7 +84,7 @@ def main(args, model_cls, forward_step_function, create_dataset_function, init_f
     torch.distributed.barrier()
     
     # initialize lr scheduler
-    lr_scheduler = get_learning_rate_scheduler(optimizer, args, args.iteration)
+    lr_scheduler = get_learning_rate_scheduler(optimizer, args.iteration, args)
 
     summary_writer = None
     if torch.distributed.get_rank() == 0:
@@ -217,7 +219,7 @@ def get_optimizer_param_groups(model):
     return param_groups
 
 def get_learning_rate_scheduler(optimizer, iteration, args, 
-                                auto_warmup_steps=50, auto_warmup_rate=0.05):
+                                auto_warmup_steps=100, auto_warmup_rate=0.05):
     """Build the learning rate scheduler."""
 
     # Add linear learning rate scheduler.
@@ -226,10 +228,9 @@ def get_learning_rate_scheduler(optimizer, iteration, args,
     else:
         num_iters = args.train_iters
     num_iters = max(1, num_iters)
-    if args.mode == 'pretrain':
-        init_step = max(iteration-auto_warmup_steps, 0)
-    elif args.mode == 'finetune':
-        init_step = 0
+    init_step = max(iteration-auto_warmup_steps, 0)
+    if args.mode == 'pretrain' and iteration == 0:
+        auto_warmup_steps = 0
     # If init_step <= current_steps <= init_step + auto_warmup_steps,
     # lr = auto_warmup_rate * args.lr.
     # This overrides other rules.
@@ -335,7 +336,7 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
 
         # Check nan or inf in forward, preventing it from interfering loss scaler,
         # and all reduce metrics by the way
-        loss_checker = lm_loss.detach().item()
+        loss_checker = lm_loss.detach()
         for name in metrics:
             metrics[name] = metrics[name].detach()
             torch.distributed.all_reduce(metrics[name].data)

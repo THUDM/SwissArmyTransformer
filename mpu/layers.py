@@ -33,9 +33,7 @@ from .mappings import copy_to_model_parallel_region
 from .mappings import gather_from_model_parallel_region
 from .mappings import reduce_from_model_parallel_region
 from .mappings import scatter_to_model_parallel_region
-from .random import get_cuda_rng_tracker
 from .utils import divide
-from .utils import split_tensor_along_last_dim
 from .utils import VocabUtility
 
 

@@ -20,8 +20,8 @@ from .mixins import PositionEmbeddingMixin, AttentionMixin
 
 from mpu.transformer import split_tensor_along_last_dim
 from mpu.local_attention_function import f_similar, f_weighting
-from mpu.random import get_cuda_rng_tracker
 from mpu.utils import sqrt
+from deepspeed.runtime.activation_checkpointing.checkpointing import get_cuda_rng_tracker
 
 
 class Cuda2dModel(BaseModel):
@@ -88,7 +88,19 @@ class Cuda2dModel(BaseModel):
         output_1 = dense_plus(context_layer1)
         output = torch.cat((output_0, output_1), dim=1)
         
-        return output
+        return output, None
+    
+    def disable_untrainable_params(self):
+        self.transformer.requires_grad_(False)
+    
+    @classmethod
+    def add_model_specific_args(cls, parser):
+        group = parser.add_argument_group('Cuda2dModel', 'cuda2d model configurations')
+        group.add_argument("--kernel-size", type=int, default=9)
+        group.add_argument("--kernel-size2", type=int, default=7)
+        group.add_argument("--layout", type=str, default='64,1088,5184')
+        group.add_argument("--new-sequence-length", type=int, default=5185)
+        return parser
 
 def sparse_attention_2d_light(q0, k0, v0, q1, k1, v1, attention_mask, n_head, text_len, kernel_size=9, kernel_size2=7, attention_dropout=None, log_attention_weights = None, **kwargs):
     '''

@@ -39,59 +39,19 @@ def add_model_config_args(parser):
                        help='layer norm epsilon')
     group.add_argument('--hidden-dropout', type=float, default=0.1,
                        help='dropout probability for hidden state transformer')
-    group.add_argument('--max-position-embeddings', type=int, default=512,
+    group.add_argument('--max-sequence-length', type=int, default=512,
                        help='maximum number of position embeddings to use')
-    group.add_argument('--vocab-size', type=int, default=30522,
+    group.add_argument('--vocab-size', type=int, default=0,
                        help='vocab size to use for non-character-level '
                             'tokenization. This value will only be used when '
                             'creating a tokenizer')
-    group.add_argument('--deep-init', action='store_true',
-                       help='initialize bert model similar to gpt2 model.'
-                            'scales initialization of projection layers by a '
-                            'factor of 1/sqrt(2N). Necessary to train bert '
-                            'models larger than BERT-Large.')
     group.add_argument('--make-vocab-size-divisible-by', type=int, default=128,
                        help='Pad the vocab size to be divisible by this value.'
                             'This is added for computational efficieny reasons.')
-    group.add_argument('--cpu-optimizer', action='store_true',
-                       help='Run optimizer on CPU')
-    group.add_argument('--cpu_torch_adam', action='store_true',
-                       help='Use Torch Adam as optimizer on CPU.')
-    
-    group.add_argument('--max-position-embeddings-finetune', type=int, default=-1,
-                       help='maximum number of position embeddings to use in finetune')
     group.add_argument('--sandwich-ln', action='store_true',
                        help='add sandwich ln in cogview.')
     return parser
 
-
-def add_fp16_config_args(parser):
-    """Mixed precision arguments."""
-
-    group = parser.add_argument_group('fp16', 'fp16 configurations')
-
-    group.add_argument('--fp16', action='store_true',
-                       help='Run model in fp16 mode')
-    group.add_argument('--fp32-embedding', action='store_true',
-                       help='embedding in fp32')
-    group.add_argument('--fp32-layernorm', action='store_true',
-                       help='layer norm in fp32')
-    group.add_argument('--fp32-tokentypes', action='store_true',
-                       help='embedding token types in fp32')
-    group.add_argument('--fp32-allreduce', action='store_true',
-                       help='all-reduce in fp32')
-    group.add_argument('--hysteresis', type=int, default=2,
-                       help='hysteresis for dynamic loss scaling')
-    group.add_argument('--loss-scale', type=float, default=None,
-                       help='Static loss scaling, positive power of 2 '
-                            'values can improve fp16 convergence. If None, dynamic'
-                            'loss scaling is used.')
-    group.add_argument('--loss-scale-window', type=float, default=1000,
-                       help='Window over which to raise/lower dynamic scale')
-    group.add_argument('--min-scale', type=float, default=1,
-                       help='Minimum loss scale for dynamic loss scale')
-
-    return parser
 
 
 def add_training_args(parser):
@@ -110,10 +70,6 @@ def add_training_args(parser):
                             'with larger models and sequences')
     group.add_argument('--checkpoint-num-layers', type=int, default=1,
                        help='chunk size (number of layers) for checkpointing')
-    group.add_argument('--deepspeed-activation-checkpointing', action='store_true',
-                       help='uses activation checkpointing from deepspeed')
-    group.add_argument('--clip-grad', type=float, default=1.0,
-                       help='gradient clipping')
     group.add_argument('--train-iters', type=int, default=1000000,
                        help='total number of iterations to train over all training runs')
     group.add_argument('--log-interval', type=int, default=50,
@@ -123,16 +79,6 @@ def add_training_args(parser):
     group.add_argument('--summary-dir', type=str, default="", help="The directory to store the summary")
     group.add_argument('--seed', type=int, default=1234,
                        help='random seed')
-    group.add_argument('--img-tokenizer-path', type=str, default=None,
-                       help='The checkpoint file path of image tokenizer.')
-    group.add_argument('--img-tokenizer-num-tokens', type=int, default=None,
-                       help='The num tokens of image tokenizer. ONLY use for pretraining with img-tokenizer UNKNOW.')
-    # Batch prodecuer arguments
-    group.add_argument('--reset-position-ids', action='store_true',
-                       help='Reset posistion ids after end-of-document token.')
-    group.add_argument('--reset-attention-mask', action='store_true',
-                       help='Reset self attention maske after '
-                            'end-of-document token.')
 
     # Learning rate.
     group.add_argument('--lr-decay-iters', type=int, default=None,
@@ -147,31 +93,32 @@ def add_training_args(parser):
     group.add_argument('--warmup', type=float, default=0.01,
                        help='percentage of data to warmup on (.01 = 1% of all '
                             'training iters). Default 0.01')
-    group.add_argument('--restart-iter', type=int, default=0,
-                       help='restart with warmup from this iteration.')
     # model checkpointing
     group.add_argument('--save', type=str, default=None,
                        help='Output directory to save checkpoints to.')
-    group.add_argument('--save-interval', type=int, default=5000,
-                       help='number of iterations between saves')
-    group.add_argument('--no-save-optim', action='store_true',
-                       help='Do not save current optimizer.')
-    group.add_argument('--no-save-rng', action='store_true',
-                       help='Do not save current rng state.')
     group.add_argument('--load', type=str, default=None,
                        help='Path to a directory containing a model checkpoint.')
-    group.add_argument('--no-load-optim', action='store_true',
-                       help='Do not load optimizer when loading checkpoint.')
+    group.add_argument('--save-interval', type=int, default=5000,
+                       help='number of iterations between saves')
+    # group.add_argument('--no-save-optim', action='store_true',
+    #                    help='Do not save current optimizer.')
+    # group.add_argument('--no-load-optim', action='store_true',
+    #                    help='Do not load optimizer when loading checkpoint.')
+    group.add_argument('--no-save-rng', action='store_true',
+                       help='Do not save current rng state.')
     group.add_argument('--no-load-rng', action='store_true',
                        help='Do not load rng state when loading checkpoint.')
-    group.add_argument('--finetune', action='store_true',
-                       help='Load model for finetuning. Do not load optimizer '
-                            'or rng state from checkpoint and set iteration to 0. '
-                            'Assumed when loading a release checkpoint.')
+    group.add_argument('--mode', type=str,
+                       default='pretrain',
+                       choices=['pretrain',
+                                'finetune',
+                                'inference'
+                                ],
+                       help='what type of task to use, will influence auto-warmup, exp name, iteration')
     group.add_argument('--resume-dataloader', action='store_true',
                        help='Resume the dataloader when resuming training. '
                             'Does not apply to tfrecords dataloader, try resuming'
-                            'with a different seed in this case.')
+                            'with a different seed in this case.') 
     # distributed training args
     group.add_argument('--distributed-backend', default='nccl',
                        help='which backend to use for distributed '
@@ -180,11 +127,9 @@ def add_training_args(parser):
     group.add_argument('--local_rank', type=int, default=None,
                        help='local rank passed from distributed launcher')
     
-    # loss scale
-    group.add_argument('--txt-loss-scale', type=float, default=1)
-    group.add_argument('--fast-load', action='store_true',
-                       help='load checkpoints without locks.')
-
+    group.add_argument('--fp16', action='store_true',
+                       help='Run model in fp16 mode')
+    
     return parser
 
 
@@ -243,9 +188,9 @@ def add_data_args(parser):
 
     group.add_argument('--model-parallel-size', type=int, default=1,
                        help='size of the model parallel.')
-    group.add_argument('--shuffle', action='store_true',
-                       help='Shuffle data. Shuffling is deterministic '
-                            'based on seed and current epoch.')
+    # group.add_argument('--shuffle', action='store_true',
+    #                    help='Shuffle data. Shuffling is deterministic '
+    #                         'based on seed and current epoch.')
     group.add_argument('--train-data', nargs='+', default=None,
                        help='Whitespace separated filenames or corpora names '
                             'for training.')
@@ -261,20 +206,6 @@ def add_data_args(parser):
     group.add_argument('--num-workers', type=int, default=2,
                        help="""Number of workers to use for dataloading""")
 
-    group.add_argument('--dataset-type', type=str,
-                       default='TokenizedDataset',
-                       choices=['TokenizedDataset',
-                                'TextCodeDataset',
-                                'CompactBinaryDataset',
-                                'BinaryDataset'
-                                ],
-                       help='what type of dataset to use')
-
-    group.add_argument('--max-memory-length', type=int, default=2048,
-                       help="max memory buffer for attention")
-    group.add_argument('--new-dataset-path', type=str, default=None,
-                       help='The folder we will dynamically check for lmdbs during training.')
-    
     return parser
 
 def add_generation_api_args(parser):
@@ -290,102 +221,59 @@ def add_generation_api_args(parser):
     group.add_argument('--device', default=None)
 
     return parser
-
-def add_sparse_args(parser):
+    
+def add_tokenization_args(parser):
     """sparse attention arguments."""
 
-    group = parser.add_argument_group('Sparse Attention', 'sparse configurations')
-    group.add_argument('--sparse-type', type=str, default='standard',
-                       choices=['standard', 'torch_1d', 'cuda_2d'],
-                       help='whether use sparse attention.') # TODO: Temporally not using is-sparse==2 (not optimized), use 0 for inference.
-    # for torch_1d
-    group.add_argument("--query-window", type=int, default=128)
-    group.add_argument("--key-window-times", type=int, default=6)
-    group.add_argument("--num-pivot", type=int, default=768)
-    # for cuda_2d
-    group.add_argument("--kernel-size", type=int, default=9)
-    group.add_argument("--kernel-size2", type=int, default=7)
-    group.add_argument("--layout", type=str, default='64,1088,5184')
+    group = parser.add_argument_group('Tokenization', 'tokenization configurations')
+    group.add_argument('--tokenizer-type', type=str, default='fake', help='type name of tokenizer')
+
+    group.add_argument('--img-tokenizer-path', type=str, default=None,
+                       help='The checkpoint file path of image tokenizer.')
     return parser
 
-def make_sparse_config(args):
-    args.layout = [int(x) for x in args.layout.split(',')]
-    sparse_config = argparse.Namespace(sparse_type=args.sparse_type)
-    sparse_config.layout = args.layout
-    if args.sparse_type == 'standard':
-        pass
-    if args.sparse_type == 'cuda_2d' or args.generation_task == 'cuda-2d generation':
-        sparse_config.kernel_size = args.kernel_size
-        sparse_config.kernel_size2 = args.kernel_size2
-    elif args.sparse_type == 'torch_1d':
-        raise NotImplementedError
-    args.sparse_config = sparse_config
 
-def get_args():
+    
+def get_args(args_list=None):
     """Parse all the args."""
 
-    parser = argparse.ArgumentParser(description='PyTorch CogView Model')
+    parser = argparse.ArgumentParser(description='Swiss Army Transformer')
     parser = add_model_config_args(parser)
-    parser = add_fp16_config_args(parser)
     parser = add_training_args(parser)
     parser = add_evaluation_args(parser)
-    parser = add_text_generate_args(parser)
     parser = add_data_args(parser)
+    parser = add_tokenization_args(parser)
+    parser = add_text_generate_args(parser)
     parser = add_generation_api_args(parser)
-    parser = add_sparse_args(parser)
 
     # Include DeepSpeed configuration arguments
     parser = deepspeed.add_config_arguments(parser)
 
-    args = parser.parse_args()
-    make_sparse_config(args)
+    args = parser.parse_args(args_list)
 
     if not args.train_data:
         print('WARNING: No training data specified')
-    elif args.sparse_type == 'torch_1d' and (args.max_position_embeddings - 1) % args.query_window != 0:
-        raise ValueError('During sparse training, the sequence length must be exactly divided by window_size.') 
 
     args.cuda = torch.cuda.is_available()
 
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
-    if hasattr(args, 'deepspeed_mpi') and args.deepspeed_mpi:
-        mpi_define_env(args)
-    elif os.getenv('OMPI_COMM_WORLD_LOCAL_RANK'):
-        # We are using (OpenMPI) mpirun for launching distributed data parallel processes
-        local_rank = int(os.getenv('OMPI_COMM_WORLD_LOCAL_RANK'))
-        local_size = int(os.getenv('OMPI_COMM_WORLD_LOCAL_SIZE'))
-
-        # Possibly running with Slurm
-        num_nodes = int(os.getenv('SLURM_JOB_NUM_NODES', '1'))
-        nodeid = int(os.getenv('SLURM_NODEID', '0'))
-
-        args.local_rank = local_rank
-        args.rank = nodeid * local_size + local_rank
-        args.world_size = num_nodes * local_size
+    
 
     args.model_parallel_size = min(args.model_parallel_size, args.world_size)
     if args.rank == 0:
         print('using world size: {} and model-parallel size: {} '.format(
             args.world_size, args.model_parallel_size))
 
-    args.dynamic_loss_scale = False
-    if args.loss_scale is None:
-        args.dynamic_loss_scale = True
-        if args.rank == 0:
-            print(' > using dynamic loss scaling')
-
-    # The args fp32_* or fp16_* meant to be active when the
-    # args fp16 is set. So the default behaviour should all
-    # be false.
-    if not args.fp16:
-        args.fp32_embedding = False
-        args.fp32_tokentypes = False
-        args.fp32_layernorm = False
-
     if hasattr(args, "deepspeed") and args.deepspeed and args.deepspeed_config is not None:
         with open(args.deepspeed_config) as file:
             deepspeed_config = json.load(file)
+        if "fp16" in deepspeed_config and deepspeed_config["fp16"]["enabled"]:
+            args.fp16 = True
+        else:
+            args.fp16 = False
+        if args.checkpoint_activations:
+            args.deepspeed_activation_checkpointing = True
         if "train_micro_batch_size_per_gpu" in deepspeed_config:
             args.batch_size = deepspeed_config["train_micro_batch_size_per_gpu"]
         if "gradient_accumulation_steps" in deepspeed_config:
@@ -399,40 +287,3 @@ def get_args():
     return args
 
 
-def mpi_define_env(args):
-    ''' For training CogView via MPI to setup the connection.
-        Omit this function if use the basic deepspeed pdsh runner. 
-    '''
-    from mpi4py import MPI
-    import subprocess
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    world_size = comm.Get_size()
-
-    master_addr = None
-    if rank == 0:
-        hostname_cmd = ["hostname -I"]
-        result = subprocess.check_output(hostname_cmd, shell=True)
-        master_addr = result.decode('utf-8').split()[0]
-    master_addr = comm.bcast(master_addr, root=0)
-
-    # Determine local rank by assuming hostnames are unique
-    proc_name = MPI.Get_processor_name()
-    all_procs = comm.allgather(proc_name)
-    local_rank = sum([i == proc_name for i in all_procs[:rank]])
-
-    os.environ['RANK'] = str(rank)
-    os.environ['WORLD_SIZE'] = str(world_size)
-    args.local_rank = local_rank
-    args.world_size = world_size
-    args.rank = rank
-    os.environ['MASTER_ADDR'] = master_addr
-    os.environ['MASTER_PORT'] = "29500" # TORCH_DISTRIBUTED_DEFAULT_PORT = 29500
-
-    print(
-        "Discovered MPI settings of world_rank={}, local_rank={}, world_size={}, master_addr={}, master_port={}"
-        .format(os.environ['RANK'],
-                args.local_rank,
-                os.environ['WORLD_SIZE'],
-                os.environ['MASTER_ADDR'],
-                os.environ['MASTER_PORT']))
