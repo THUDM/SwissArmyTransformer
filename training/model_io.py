@@ -135,7 +135,7 @@ def load_checkpoint(model, args):
         if not args.do_train:
             raise ValueError(f'Missing keys for inference: {missing_keys}.')
         else: # new params
-            assert all(name.find('mixins')>0 for name in missing_keys)
+            assert all(name.find('mixins')>=0 for name in missing_keys)
             module.reinit() # initialize mixins
     model.optimizer.refresh_fp32_params() # restore fp32 weights from module
 

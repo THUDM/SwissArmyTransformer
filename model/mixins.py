@@ -34,9 +34,9 @@ class PositionEmbeddingMixin(BaseMixin):
         torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)
     def reinit(self, transformer, *pre_mixins):
         old_weights = transformer.position_embeddings.weight.data[self.reinit_slice]
-        old_len, hidden_size = old_weights.shape[0]
+        old_len, hidden_size = old_weights.shape
         assert hidden_size == self.position_embeddings.weight.shape[-1]
-        self.position_embeddings_plus.weight.data.view(-1, old_len, hidden_size).copy_(old_weights)
+        self.position_embeddings.weight.data.view(-1, old_len, hidden_size).copy_(old_weights)
 
 class AttentionMixin(BaseMixin):
     def __init__(self, num_layers,

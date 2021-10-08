@@ -31,7 +31,8 @@ class CachedAutoregressiveModel(BaseModel):
             mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, 3)
         
         if mem is not None: # the first time, mem is None
-            memk, memv = split_tensor_along_last_dim(mem, 2)
+            b = mixed_key_layer.shape[0] # might change batch_size
+            memk, memv = split_tensor_along_last_dim(mem.expand(b, -1, -1), 2)
             mixed_key_layer = torch.cat((memk, mixed_key_layer), dim=1)
             mixed_value_layer = torch.cat((memv, mixed_value_layer), dim=1)
 

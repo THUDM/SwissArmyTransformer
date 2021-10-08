@@ -1,4 +1,4 @@
-# coding=utf-
+# coding=utf-8
 # rewritten, Copyright (c) 2021, Ming Ding.  All rights reserved.
 # Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
 #
@@ -26,7 +26,6 @@ from .initialize import get_model_parallel_world_size
 from .layers import ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding
 from .mappings import gather_from_model_parallel_region, copy_to_model_parallel_region
 
-import deepspeed
 from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint, get_cuda_rng_tracker
 
 from .utils import divide, sqrt, scaled_init_method, unscaled_init_method, gelu
@@ -248,7 +247,7 @@ class BaseTransformerLayer(torch.nn.Module):
         # Layer norm post the self attention.
         layernorm_output = self.post_attention_layernorm(layernorm_input)
         # MLP.
-        mlp_output = self.mlp(layernorm_output,  *other_tensors)
+        mlp_output = self.mlp(layernorm_output, *other_tensors)
 
         # Fourth LayerNorm
         if self.sandwich_ln:
