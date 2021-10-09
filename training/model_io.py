@@ -121,7 +121,7 @@ def load_checkpoint(model, args):
                 torch.distributed.get_rank(), checkpoint_name))
     sd = torch.load(checkpoint_name, map_location='cpu')
     
-    assert not args.do_train or args.deepspeed
+    assert not hasattr(args, 'do_train') or not args.do_train or args.deepspeed
     if args.deepspeed:
         module = model.module
     else: # inference without deepspeed
@@ -136,8 +136,10 @@ def load_checkpoint(model, args):
             raise ValueError(f'Missing keys for inference: {missing_keys}.')
         else: # new params
             assert all(name.find('mixins')>=0 for name in missing_keys)
+            assert args.mode == 'finetune'
             module.reinit() # initialize mixins
-    model.optimizer.refresh_fp32_params() # restore fp32 weights from module
+    if args.mode != 'inference':
+        model.optimizer.refresh_fp32_params() # restore fp32 weights from module
 
     # Iterations.
     if args.mode == 'finetune':

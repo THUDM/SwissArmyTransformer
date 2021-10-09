@@ -20,27 +20,20 @@ def top_k_logits_(logits, top_k=0, filter_value=-float('Inf')):
     return logits
 
 class BaseStrategy:
-    def __init__(self, invalid_slices=[], temperature=1., topk=200, debias=False):
+    def __init__(self, invalid_slices=[], temperature=1., topk=200, eps=1e-4):
         self.invalid_slices = invalid_slices
         self.temperature = temperature
         self.topk = topk
-        self.debias = debias
+        self.eps = eps
     def forward(self, logits, tokens, mems, temperature=None):
         if temperature is None:
             temperature = self.temperature 
         logits = logits / temperature
         for invalid_slice in self.invalid_slices:
-            logits[..., invalid_slice] = -float('Inf')
-        if self.debias:
-            probs = F.softmax(logits, dim=-1)
-            tk_value, tk_idx = torch.topk(probs, self.topk, dim=-1)
-            pred = torch.multinomial(probs, num_samples=1)
-            for j in range(0, pred.shape[0]):
-                if probs[j, pred[j,-1]] < tk_value[j, -1]:
-                    pred[j, -1] = tk_idx[j, torch.randint(tk_idx.shape[-1]-100, tk_idx.shape[-1], (1,))] # 100 is the last N as outlier, which is chosen casually
-        else:
-            logits = top_k_logits_(logits)
-            probs = F.softmax(logits, dim=-1)
-            pred = torch.multinomial(probs, num_samples=1)
+            logits[..., invalid_slice] = -65504
+            
+        logits = top_k_logits_(logits, self.topk)
+        probs = F.softmax(logits.float(), dim=-1) # float is essetial, due to a bug in Pytorch
+        pred = torch.multinomial(probs, num_samples=1)
         tokens = torch.cat((tokens, pred.view(tokens.shape[0], 1)), dim=1)
         return tokens, mems

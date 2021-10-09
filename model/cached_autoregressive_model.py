@@ -37,14 +37,15 @@ class CachedAutoregressiveModel(BaseModel):
             mixed_value_layer = torch.cat((memv, mixed_value_layer), dim=1)
 
         # same as training
-        query_layer = self._transpose_for_scores(mixed_query_layer)
-        key_layer = self._transpose_for_scores(mixed_key_layer)
-        value_layer = self._transpose_for_scores(mixed_value_layer)
-        context_layer = standard_attention(query_layer, key_layer, value_layer, mask, dropout_fn=None, log_attention_weights=self.log_attention_weights)
+        query_layer = attn_module._transpose_for_scores(mixed_query_layer)
+        key_layer = attn_module._transpose_for_scores(mixed_key_layer)
+        value_layer = attn_module._transpose_for_scores(mixed_value_layer)
+        context_layer = standard_attention(query_layer, key_layer, value_layer, mask, None, log_attention_weights=self.log_attention_weights)
+        
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
+        new_context_layer_shape = context_layer.size()[:-2] + (attn_module.hidden_size_per_partition,)
         context_layer = context_layer.view(*new_context_layer_shape)
-        output = self.dense(context_layer)
+        output = attn_module.dense(context_layer)
         
         # new mem this layer
         new_mem = mixed_raw_layer.detach()[..., -(mixed_raw_layer.shape[-1] // 3 * 2):].contiguous()

@@ -59,14 +59,13 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     else:
         args.experiment_name = args.experiment_name + datetime.now().strftime("%m-%d-%H-%M")
         
-    # Pytorch distributed.
+    # Pytorch distributed. must before seed
     initialize_distributed(args)
     set_random_seed(args.seed) # Random seeds for reproducability.
-    
     # init tokenizer
-    tokenizer = get_tokenizer(args)
+    prepare_tokenizer(args) # args.vocab_size is set.
     # Data stuff.
-    train_data, val_data, test_data, args.vocab_size = get_train_val_test_data(args, hooks['create_dataset_function'])
+    train_data, val_data, test_data = make_loaders(args, hooks['create_dataset_function'])
 
     # Model, optimizer, and learning rate.
     model, optimizer = setup_model_and_optimizer(args, model_cls)
@@ -514,72 +513,39 @@ def initialize_distributed(args):
 
     # Optional DeepSpeed Activation Checkpointing Features
     if hasattr(args, "deepspeed") and args.deepspeed and args.deepspeed_activation_checkpointing:
-        set_deepspeed_activation_checkpointing(args)
+        set_deepspeed_activation_checkpointing(args) # TODO manual model-parallel seed
 
 
 def set_random_seed(seed):
     """Set random seed for reproducability."""
-
     if seed is not None and seed > 0:
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
-        mpu.model_parallel_cuda_manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed) # if you are using multi-GPU.
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.enabled = False
+        torch.backends.cuda.matmul.allow_tf32 = False
+        if hasattr(mpu, 'model_parallel_cuda_manual_seed'):
+            mpu.model_parallel_cuda_manual_seed(seed)
+        
+        
+def prepare_tokenizer(args):
+    tokenizer = get_tokenizer(args)
+    num_tokens = tokenizer.num_tokens
+    before = num_tokens
+    after = before
+    multiple = args.make_vocab_size_divisible_by * \
+               mpu.get_model_parallel_world_size()
+    while (after % multiple) != 0:
+        after += 1
+    print_rank_0('> padded vocab (size: {}) with {} dummy '
+                 'tokens (new size: {})'.format(
+        before, after - before, after))
+    args.vocab_size = after
+    print("prepare tokenizer done", flush=True)
+    return tokenizer
 
-
-def get_train_val_test_data(args, create_dataset_function):
-    """Load the data on rank zero and boradcast number of tokens to all GPUS."""
-
-    (train_data, val_data, test_data) = (None, None, None)
-
-    # Data loader only on rank 0 of each model parallel group.
-    if mpu.get_model_parallel_rank() == 0:
-        train_data, val_data, test_data = make_loaders(args, create_dataset_function)
-        num_tokens = get_tokenizer().num_tokens
-
-        before = num_tokens
-        after = before
-        multiple = args.make_vocab_size_divisible_by * \
-                   mpu.get_model_parallel_world_size()
-        while (after % multiple) != 0:
-            after += 1
-        print_rank_0('> padded vocab (size: {}) with {} dummy '
-                     'tokens (new size: {})'.format(
-                         before, after - before, after))
-        token_counts = torch.cuda.LongTensor(
-            [after, int(args.do_train), int(args.do_valid), int(args.do_test)])
-    else:
-        token_counts = torch.cuda.LongTensor([0, 0, 0, 0])
-    # Broadcast num tokens.
-    torch.distributed.broadcast(token_counts,
-                                mpu.get_model_parallel_src_rank(),
-                                group=mpu.get_model_parallel_group())
-    num_tokens = token_counts[0].item()
-    args.do_train = token_counts[1].item()
-    args.do_valid = token_counts[2].item()
-    args.do_test = token_counts[3].item()
-
-    return train_data, val_data, test_data, num_tokens
-
-def see_memory_usage(message, force=False):
-    if not force:
-        return
-    dist.barrier()
-    if dist.get_rank() == 0:
-        print(message)
-        print("Memory Allocated ", torch.cuda.memory_allocated()/(1024*1024*1024), "GigaBytes")
-        print("Max Memory Allocated ", torch.cuda.max_memory_allocated()/(1024*1024*1024), "GigaBytes")
-        print("Cache Allocated ", torch.cuda.memory_cached()/(1024*1024*1024), "GigaBytes")
-        print("Max cache Allocated ", torch.cuda.max_memory_cached()/(1024*1024*1024), "GigaBytes")
-        print(" ")
-
-def seed_torch(seed=1029):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed) # if you are using multi-GPU.
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.enabled = False
 

@@ -116,19 +116,20 @@ def filling_sequence_cuda_2d(
         # update unfixed
         choice = 1
         if choice == 0 and warmup_steps < step_cnt:
-            mprob = probs.max(dim=-1)[0].view(*(tk_value.shape[:2]))
-            # import pdb;pdb.set_trace()
-            dprob = mprob[:, 1:] < mprob[:, args.layout[1]:].topk(300, dim=-1, largest=False)[0][:,-1].unsqueeze(-1).expand_as(mprob[:, 1:])
+            # mprob = probs.max(dim=-1)[0].view(*(tk_value.shape[:2]))
+            # # import pdb;pdb.set_trace()
+            # dprob = mprob[:, 1:] < mprob[:, args.layout[1]:].topk(300, dim=-1, largest=False)[0][:,-1].unsqueeze(-1).expand_as(mprob[:, 1:])
 
-            new_fixed = unfixed.clone()
-            moved_new_fixed = new_fixed[:, 2:]
-            moved_new_fixed &= dprob
-            moved_new_fixed[:, 1:] &= dprob[:, :-1].logical_not() | unfixed[:, 2:-1].logical_not()
-            moved_new_fixed[:, 2:] &= dprob[:, :-2].logical_not() | unfixed[:, 2:-2].logical_not()
-            # moved_new_fixed[:, 3:] &= dprob[:, :-3].logical_not() | unfixed[:, 2:-3].logical_not()
-            moved_new_fixed[:, 64:] &= dprob[:, :-64].logical_not() | unfixed[:, 2:-64].logical_not()
-            moved_new_fixed[:, 65:] &= dprob[:, :-65].logical_not() | unfixed[:, 2:-65].logical_not()
-            # moved_new_fixed[:, 66:] &= dprob[:, :-66].logical_not() | unfixed[:, 2:-66].logical_not()
+            # new_fixed = unfixed.clone()
+            # moved_new_fixed = new_fixed[:, 2:]
+            # moved_new_fixed &= dprob
+            # moved_new_fixed[:, 1:] &= dprob[:, :-1].logical_not() | unfixed[:, 2:-1].logical_not()
+            # moved_new_fixed[:, 2:] &= dprob[:, :-2].logical_not() | unfixed[:, 2:-2].logical_not()
+            # # moved_new_fixed[:, 3:] &= dprob[:, :-3].logical_not() | unfixed[:, 2:-3].logical_not()
+            # moved_new_fixed[:, 64:] &= dprob[:, :-64].logical_not() | unfixed[:, 2:-64].logical_not()
+            # moved_new_fixed[:, 65:] &= dprob[:, :-65].logical_not() | unfixed[:, 2:-65].logical_not()
+            # # moved_new_fixed[:, 66:] &= dprob[:, :-66].logical_not() | unfixed[:, 2:-66].logical_not()
+            pass
         elif choice == 1 and warmup_steps < step_cnt:
             new_fixed = unfixed & False
             ll, rr = 4, 4

@@ -157,27 +157,15 @@ def add_text_generate_args(parser):
     group.add_argument("--temperature", type=float, default=1.0)
     group.add_argument("--top_p", type=float, default=0.0)
     group.add_argument("--top_k", type=int, default=0)
-    # group.add_argument("--out-seq-length", type=int, default=256)
-    group.add_argument("--generation-task", type=str,
-                       default='text2image',
-                       choices=['text2image',
-                                'image2text',
-                                'super-resolution',
-                                'low-level super-resolution',
-                                'post-selection',
-                                'raw',
-                                'cuda-2d generation'
-                                ],
-                       help='what type of inference task to use')
+    group.add_argument("--out-seq-length", type=int, default=256)
     group.add_argument('--input-source', type=str, default='interactive',
                        help='what input mode to use, interactive or path')
     group.add_argument('--output-path', type=str, default='./samples',
                        help='path to place the generated samples')
-    group.add_argument('--debug', action='store_true',
-                       help='Debug will merge all outputs.')
     group.add_argument('--with-id', action='store_true',
                        help='If each line is prepended with an id.')
     group.add_argument('--max-inference-batch-size', type=int, default=12)
+    group.add_argument('--device', type=int, default=0)
     return parser
 
 
@@ -218,7 +206,6 @@ def add_generation_api_args(parser):
     group.add_argument('--input_rec_path', default='input/')
     group.add_argument('--check_mode', default='code')
     group.add_argument('--time_interval', default=10)
-    group.add_argument('--device', default=None)
 
     return parser
     
