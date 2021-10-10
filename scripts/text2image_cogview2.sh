@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CHECKPOINT_PATH=pretrained/cogview/cogview-base
+CHECKPOINT_PATH=pretrained/cogview/cogview2-base
 NLAYERS=48
 NHIDDEN=2560
 NATT=40
@@ -15,7 +15,7 @@ TOPK=200
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 
-MASTER_PORT=${MASTER_PORT} python inference_cogview.py \
+MASTER_PORT=${MASTER_PORT} python inference_cogview2.py \
        --tokenizer-type cogview \
        --img-tokenizer-path pretrained/vqvae/l1+ms-ssim+revd_percep.pt \
        --mode inference \
@@ -33,7 +33,7 @@ MASTER_PORT=${MASTER_PORT} python inference_cogview.py \
        --sandwich-ln \
        --input-source ./input.txt \
        --output-path samples_text2image \
-       --batch-size 8 \
+       --batch-size 4 \
        --max-inference-batch-size 8 \
        --device 0 \
        $@

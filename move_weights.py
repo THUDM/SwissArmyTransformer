@@ -103,3 +103,13 @@ missing_keys, unexpected_keys = model.load_state_dict(old['module'], strict=Fals
 # %%
 torch.save(old, 'pretrained/cogview/cogview2-base/6000/mp_rank_00_model_states.pt')
 # %%
+import torch
+old = torch.load("/dataset/fd5061f6/cogview/zwd/vqgan/l1+ms-ssim+revd_percep/checkpoints/last.ckpt", map_location='cpu')
+
+# %%
+from collections import OrderedDict
+new_ckpt = OrderedDict()
+for k,v in old['state_dict'].items():
+    new_ckpt[k] = v.detach()
+torch.save(new_ckpt, 'pretrained/vqvae/l1+ms-ssim+revd_percep.pt')
+# %%

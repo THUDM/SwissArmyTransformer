@@ -2,6 +2,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from .vqvae_diffusion import Decoder as DifDecoder
+
 # import distributed as dist_fn
 
 # Copyright 2018 The Sonnet Authors. All Rights Reserved.
@@ -225,22 +227,27 @@ class VQVAE(nn.Module):
         n_embed=1024,
         stride=4,
         simple=True,
-        decay=0.99
+        decay=0.99,
+        dif=False,
+        ddconfig=None
     ):
         super().__init__()
         if channel == 2048:
             n_res_block = 0
         self.enc_b = Encoder(in_channel, channel, n_res_block, n_res_channel, stride, embed_dim, n_embed, simple)
         self.quantize_t = Quantize(embed_dim, n_embed)
-        self.dec = Decoder(
-            in_channel=embed_dim, 
-            out_channel=in_channel,
-            channel=channel,
-            n_res_block=n_res_block,
-            n_res_channel=n_res_channel,
-            stride=stride-2,
-            simple=simple
-        )
+        if dif:
+            self.dec = DifDecoder(**ddconfig)
+        else:
+            self.dec = Decoder(
+                in_channel=embed_dim, 
+                out_channel=in_channel,
+                channel=channel,
+                n_res_block=n_res_block,
+                n_res_channel=n_res_channel,
+                stride=stride-2,
+                simple=simple
+            )
          
     def forward(self, input, continuous_relax=False, temperature=1., hard=False, KL=False):
         quant_t, diff, _, = self.encode(input, continuous_relax, temperature, hard, KL)

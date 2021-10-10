@@ -68,11 +68,12 @@ def generate_continually(func, input_source='interactive'):
             raw_text = raw_text.strip()
             if len(raw_text) == 0:
                 continue
-            try:
-                start_time = time.time()
-                func(raw_text)
-                print("\nTaken time {:.2f}\n".format(time.time() - start_time), flush=True)
-            except (ValueError, FileNotFoundError) as e:
-                err_linenos.append(line_no)
-                continue
+            # try:
+            start_time = time.time()
+            func(raw_text)
+            print("\nTaken time {:.2f}\n".format(time.time() - start_time), flush=True)
+            # except (ValueError, FileNotFoundError) as e:
+            #     err_linenos.append(line_no)
+            #     print(e)
+            #     continue
         print(err_linenos)

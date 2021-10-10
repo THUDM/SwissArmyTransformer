@@ -36,7 +36,7 @@ class IterativeEntfilterStrategy:
             topraw = (torch.topk(logits, filter_topk, dim=-1)[0]).softmax(dim=-1)
             ent = -(topraw * topraw.log()).sum(dim=-1) # [batch_size, seq_length]
             temperature = torch.tensor([[[temperature - temperature2]]], device=logits.device).expand(*logits.shape[:2], 1) * (ent > entfilter).unsqueeze(-1) + temperature2
-        logits = logits / temperature
+        logits = logits.float() / temperature
         for invalid_slice in self.invalid_slices:
             logits[..., invalid_slice] = -float('Inf')
         

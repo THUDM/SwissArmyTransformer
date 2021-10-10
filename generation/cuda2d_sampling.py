@@ -14,7 +14,7 @@ import random
 import torch
 from .sampling_strategies import IterativeEntfilterStrategy
 
-def filling_sequence(
+def filling_sequence_cuda2d(
         model, 
         seq0,
         seq1, 
@@ -38,10 +38,9 @@ def filling_sequence(
     assert seq1.shape[1] == layout[-1] - layout[-2]
     assert (seq1 >= 0).all() and (seq0 >= 0).all()
     device = seq0.device
-
     # concat and pad sequences
     batch_size = seq0.shape[0]
-    n_pad = layout[1] + 1 - len(seq0) # +1 for [EOI1]
+    n_pad = layout[1] + 1 - seq0.shape[1] # +1 for [EOI1]
     assert n_pad > 0, "You should truncate long input before filling."
     seq = torch.cat((
         torch.tensor([0]*n_pad, device=device, dtype=seq0.dtype)
@@ -53,6 +52,7 @@ def filling_sequence(
     tokens = seq.clone()
     attention_mask = torch.ones(layout[1], layout[1]).tril().to(device)
     attention_mask[n_pad:, :n_pad] = 0
+    attention_mask = attention_mask.type_as(next(model.parameters())) # if fp16
     position_ids = torch.cat((
         torch.zeros(n_pad, dtype=torch.long),
         torch.arange(0, layout[1] - n_pad), 
@@ -60,7 +60,7 @@ def filling_sequence(
 
     # prepare for interation
     unfixed = (tokens < 0)
-    unfixed[:, -4096] = True
+    unfixed[:, -layout[-1] + layout[-2]:] = True
     ll, rr = block_hw
     edge_len = int(math.sqrt(layout[-1] - layout[-2]) + 1e-4)
     num_steps = warmup_steps + ll + rr - 2
@@ -69,7 +69,8 @@ def filling_sequence(
         logits, *_dump = model(tokens[:,:-1], position_ids, attention_mask)
         if step_cnt <= warmup_steps:
             real_temp = 0.1
-            tokens = strategy.forward(logits, tokens, real_temp)
+            new_tokens = strategy.forward(logits, tokens, real_temp)
+            tokens[unfixed] = new_tokens[unfixed]
         else:
             real_temp = 1.05
             new_tokens = strategy.forward(
@@ -86,4 +87,5 @@ def filling_sequence(
                     print(x,y)
                     unfixed[..., -(layout[-1] - layout[-2]):].view(
                         batch_size, edge_len//ll, ll, edge_len//rr, rr)[:, :, x, :, y] = False
-    return tokens
+
+    return tokens[:, n_pad:]

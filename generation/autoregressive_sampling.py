@@ -85,7 +85,8 @@ def filling_sequence(
             continue
 
         # forward
-        model.log_attention_weights = log_attention_weights[..., index: counter+1, :counter+1] # TODO memlen
+        if log_attention_weights is not None:
+            model.log_attention_weights = log_attention_weights[..., index: counter+1, :counter+1] # TODO memlen
         logits, *mem_kv = model(
             tokens[:, index:], 
             position_ids[..., index: counter+1],

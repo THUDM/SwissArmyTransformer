@@ -308,7 +308,7 @@ class BaseTransformer(torch.nn.Module):
                 layer_id,
                 output_layer_init_method=self.output_layer_init_method,
                 sandwich_ln=sandwich_ln,
-                hooks=hooks
+                hooks=self.hooks
                 )
         self.layers = torch.nn.ModuleList(
             [get_layer(layer_id) for layer_id in range(num_layers)])

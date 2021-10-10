@@ -18,7 +18,7 @@ import torch
 import torch.nn.functional as F
 
 
-from vqvae import new_model, img2code, code2img
+from vqvae import new_model, img2code, code2img, load_model_default
 from torchvision import transforms
 from PIL import Image
 
@@ -35,16 +35,17 @@ class VQVAETokenizer(object):
             model_path, 
             device='cuda'
         ):
-        ckpt = torch.load(model_path, map_location=torch.device(device))
+        # ckpt = torch.load(model_path, map_location=torch.device(device))
 
-        model = new_model()
+        # model = new_model()
 
-        if list(ckpt.keys())[0].startswith('module.'):
-            ckpt = {k[7:]: v for k, v in ckpt.items()}
+        # if list(ckpt.keys())[0].startswith('module.'):
+        #     ckpt = {k[7:]: v for k, v in ckpt.items()}
 
-        model.load_state_dict(ckpt)
-        model = model.to(device)
-        model.eval()
+        # model.load_state_dict(ckpt)
+        # model = model.to(device)
+        # model.eval()
+        model = load_model_default(device=device, path=model_path)
 
         self.model = model
         self.device = device
