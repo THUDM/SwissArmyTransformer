@@ -11,7 +11,6 @@ import os
 import sys
 import math
 import random
-from tqdm import tqdm
 
 import numpy as np
 import torch

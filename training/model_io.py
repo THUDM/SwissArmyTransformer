@@ -16,7 +16,7 @@ import torch
 import numpy as np
 
 import mpu
-from utils import print_rank_0
+from .utils import print_rank_0
 
 def get_checkpoint_name(checkpoints_path, iteration, release=False, zero=False):
     if release:

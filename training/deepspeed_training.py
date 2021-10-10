@@ -29,11 +29,11 @@ import deepspeed
 from .learning_rates import AnnealingLR
 from .model_io import load_checkpoint, save_checkpoint
 
-from utils import Timers
-from utils import report_memory
-from utils import print_args
-from utils import print_rank_0
-from utils import get_sample_writer
+from .utils import Timers
+from .utils import report_memory
+from .utils import print_args
+from .utils import print_rank_0
+from .utils import get_sample_writer
 
 import mpu
 from data_utils import make_loaders 

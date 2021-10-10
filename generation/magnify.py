@@ -11,7 +11,6 @@ import os
 import sys
 import math
 import random
-from tqdm import tqdm
 
 import numpy as np
 import torch
@@ -30,7 +29,7 @@ def magnify(model, tokenizer, tokens_list, text_token_list, args):
         magnified_code = code.new_zeros((s * 2, s * 2), dtype=torch.long) - 1
 
         windows = [(0, 0, 18), (0, 1, 30), (0, 2, 30), (1, 1, 30), (1, 0, 30), (1, 2, 30), (2, 0, 32), (2, 1, 32), (2, 2, 32)]
-        for i, j, line in tqdm(windows):
+        for i, j, line in windows:
                 code_part = code[8 * i: 8 * (i+2), 8 * j: 8 * (j+2)].reshape(-1)
 
                 magnified_code_part = magnified_code[16 * i: 16 * i + line, 16 * j: 16 * (j+2)].reshape(-1)
