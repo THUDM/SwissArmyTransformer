@@ -42,7 +42,7 @@ def main(args):
     
     def process(raw_text):
         if args.with_id:
-            query_id, raw_text = raw_text.split()
+            query_id, raw_text = raw_text.split('\t')
         print('raw text: ', raw_text)
         text = query_template.format(raw_text)
         seq = tokenizer.parse_query(text, img_size=args.img_size)

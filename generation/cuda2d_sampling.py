@@ -84,7 +84,6 @@ def filling_sequence_cuda2d(
             for x in range(min(ll, step_cnt - warmup_steps)):
                 y = step_cnt - warmup_steps - x - 1
                 if y < rr:
-                    print(x,y)
                     unfixed[..., -(layout[-1] - layout[-2]):].view(
                         batch_size, edge_len//ll, ll, edge_len//rr, rr)[:, :, x, :, y] = False
 

@@ -246,6 +246,8 @@ def get_args(args_list=None):
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
     
+    if args.local_rank is not None:
+        args.device = args.local_rank
 
     args.model_parallel_size = min(args.model_parallel_size, args.world_size)
     if args.rank == 0:

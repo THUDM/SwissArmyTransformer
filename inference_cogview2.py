@@ -52,7 +52,7 @@ def main(args):
     
     def process(raw_text):
         if args.with_id:
-            query_id, raw_text = raw_text.split()
+            query_id, raw_text = raw_text.split('\t')
         print('raw text: ', raw_text)
         text = query_template.format(raw_text)
         seq = tokenizer.parse_query(text, img_size=args.img_size)
@@ -62,7 +62,7 @@ def main(args):
         txt_len = seq.index(tokenizer['[BASE]'])
         log_attention_weights = torch.zeros(len(seq), len(seq), 
             device=args.device, dtype=torch.half if args.fp16 else torch.float32)
-        log_attention_weights[txt_len+2:, 1:txt_len] = 1.8 if txt_len <= 10 else 1.4 # TODO args
+        log_attention_weights[txt_len+2:, 1:txt_len] = 1.8 if txt_len <= 10 else 1.6 # TODO args
 
         # generation
         seq = torch.cuda.LongTensor(seq, device=args.device)
@@ -77,11 +77,13 @@ def main(args):
                     )
             imgs = [tr(tokenizer.img_tokenizer.DecodeIds(x[-1025:-1].tolist())) for x in output0]
             blur64 = tokenizer.img_tokenizer.EncodeAsIds(torch.cat(imgs, dim=0).to(args.device), add_normalization=True) # [batch_size, 4096]
-            output1 = filling_sequence_cuda2d(model, output0, blur64, 
+            len_tim = output0.shape[0]
+            for tim2 in range(0, len_tim, 4):
+                output1 = filling_sequence_cuda2d(model, output0[tim2: tim2+4], blur64[tim2: tim2+4], 
                     warmup_steps=3, block_hw=(4, 4),
                     strategy=strategy1
                     )
-            output_list.append(output1)
+                output_list.append(output1)
         output_tokens = torch.cat(output_list, dim=0)
         # decoding
         imgs, txts = [], []
