@@ -67,3 +67,40 @@ class AttentionMixin(BaseMixin):
             self.query_key_value[layer_id].bias.data.copy_(old_attention.query_key_value.bias.data)
             self.dense[layer_id].weight.data.copy_(old_attention.dense.weight.data)
             self.dense[layer_id].bias.data.copy_(old_attention.dense.bias.data)
+
+class ParallelLinearMixin(BaseMixin):
+    def __init__(self, input_size, output_size, bias=True,
+                 init_method=torch.nn.init.xavier_normal_, stride=1,
+                 keep_master_weight_for_test=False):
+        super(ParallelLinearMixin, self).__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+        
+        self.parallel_linear = ColumnParallelLinear(
+            input_size, output_size, bias=bias, gather_output=True,
+            init_method=init_method, stride=stride,
+            keep_master_weight_for_test=keep_master_weight_for_test)
+
+    def forward(self, input_):
+        return self.parallel_linear(input_)
+
+class ParallelDoubleLayerLinearMixin(BaseMixin):
+    def __init__(self, input_size, hidden_size, output_size, bias=True,
+                 init_method=torch.nn.init.xavier_normal_, stride=1,
+                 keep_master_weight_for_test=False):
+        super(ParallelDoubleLayerLinearMixin, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        
+        self.column_parallel_linear = ColumnParallelLinear(
+            input_size, hidden_size, bias=bias, gather_output=False,
+            init_method=init_method, stride=stride,
+            keep_master_weight_for_test=keep_master_weight_for_test)
+        self.row_parallel_linear = RowParallelLinear(
+            hidden_size, output_size, bias=bias,
+            init_method=init_method, stride=stride,
+            keep_master_weight_for_test=keep_master_weight_for_test)
+    
+    def forward(self, input_):
+        return self.row_parallel_linear(self.column_parallel_linear(input_))
