@@ -335,12 +335,13 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
 
         # Check nan or inf in forward, preventing it from interfering loss scaler,
         # and all reduce metrics by the way
+        # !!!
         loss_checker = lm_loss.detach()
         for name in metrics:
-            metrics[name] = metrics[name].detach()
+            metrics[name] = metrics[name].detach().clone()
             torch.distributed.all_reduce(metrics[name].data)
             metrics[name].data /= args.world_size
-            loss_checker += metrics[name]
+            loss_checker = metrics[name] + metrics[name]
         if loss_checker.isnan().any() or loss_checker.isinf().any():
             print('Skipping backward and optimizer step for nan or inf in forwarding metrics/loss!')
             return lm_loss.detach(), 1, metrics
@@ -452,6 +453,9 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
         summary_writer.add_scalar(f'Train/lr', lr, step)
         summary_writer.add_scalar(f'Train/train_loss', loss, step)
         summary_writer.add_scalar(f'Train/elapsed_time', elapsed_time, step)
+        for i in range(2, 17):
+            if f'f{i}_loss' in avg_metrics.keys():
+                summary_writer.add_scalar(f'Train/f{i}_loss', avg_metrics[f'f{i}_loss'], step)
 
 
 def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step):
@@ -502,6 +506,7 @@ def initialize_distributed(args):
     init_method = 'tcp://'
     master_ip = os.getenv('MASTER_ADDR', 'localhost')
     master_port = os.getenv('MASTER_PORT', '6000')
+    master_port = str(29501) # TMP!!! FIX ME!!!
     init_method += master_ip + ':' + master_port
     torch.distributed.init_process_group(
         backend=args.distributed_backend,

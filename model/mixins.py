@@ -14,7 +14,7 @@ import random
 
 import torch
 from mpu import ColumnParallelLinear, RowParallelLinear
-from mpu.transformer import unscaled_init_method
+from mpu.transformer import unscaled_init_method, LayerNorm
 
 class BaseMixin(torch.nn.Module):
     def __init__(self):
@@ -26,7 +26,7 @@ class BaseMixin(torch.nn.Module):
 
 class PositionEmbeddingMixin(BaseMixin):
     def __init__(self, additional_sequence_length, hidden_size, 
-                init_method_std=0.02, reinit_slice=(-1024, None)
+                init_method_std=0.02, reinit_slice=slice(-1024, None)
         ):
         super(PositionEmbeddingMixin, self).__init__()
         self.reinit_slice = reinit_slice
@@ -67,3 +67,57 @@ class AttentionMixin(BaseMixin):
             self.query_key_value[layer_id].bias.data.copy_(old_attention.query_key_value.bias.data)
             self.dense[layer_id].weight.data.copy_(old_attention.dense.weight.data)
             self.dense[layer_id].bias.data.copy_(old_attention.dense.bias.data)
+
+class VideoAttentionMixin(BaseMixin):
+    def __init__(self, num_layers,
+                hidden_size, 
+                video_hidden_size,
+                video_n_head,
+                init_method=unscaled_init_method(0.02),
+                output_layer_init_method=unscaled_init_method(1.0)
+        ):
+        super(VideoAttentionMixin, self).__init__()
+        self.num_layers = num_layers # replace attention in the LAST n layers
+        self.hidden_size = hidden_size
+        self.video_hidden_size = video_hidden_size
+        self.video_n_head = video_n_head
+        self.query_key_value = torch.nn.ModuleList(
+            [ColumnParallelLinear(video_hidden_size, 3*video_hidden_size,stride=3,
+                gather_output=False,init_method=init_method)
+                for layer_id in range(num_layers)
+            ])
+        # 是否要层间share ???!!!
+        self.densemap_i2v = RowParallelLinear(hidden_size,
+                video_hidden_size,
+                input_is_parallel=True,
+                init_method=output_layer_init_method)
+        self.densemap_v2i = RowParallelLinear(video_hidden_size,
+                hidden_size,
+                input_is_parallel=True,
+                init_method=output_layer_init_method)
+        # self.map_norm = LayerNorm(video_hidden_size, eps=1.0e-5)
+
+    def reinit(self, transformer, *pre_mixins):
+        assert self.num_layers == len(transformer.layers)
+        
+        # # tmp save weight
+        # path = "./weight_matrix/layer10.pt"
+        # torch.save(transformer.layers[10].attention.query_key_value.weight.data, path)
+        # initial with pseudo-inverse
+        dense_weight = torch.linalg.pinv(self.densemap_i2v.weight.data.type(torch.float32)).type(torch.float16)
+        self.densemap_v2i.weight.data.copy_(torch.clamp(dense_weight, min=-5, max=5))
+        for layer_id in range(self.num_layers):
+            old_attention_weight = transformer.layers[layer_id].attention.query_key_value.weight.data
+            # y^T = A x^T
+            new_weight = old_attention_weight.reshape(3, self.hidden_size, self.hidden_size)
+            new_weight = torch.matmul(torch.matmul(self.densemap_i2v.weight.data, new_weight), self.densemap_v2i.weight.data)
+            new_weight = new_weight.reshape(3*self.video_hidden_size, self.video_hidden_size)
+            self.query_key_value[layer_id].weight.data.copy_(new_weight)
+            old_attention_bias = transformer.layers[layer_id].attention.query_key_value.bias.data
+            # Q, K, V
+            new_bias = torch.cat((torch.matmul(self.densemap_i2v.weight.data, old_attention_bias[..., :self.hidden_size]), 
+                                    torch.matmul(old_attention_bias[..., self.hidden_size:2*self.hidden_size], self.densemap_v2i.weight.data), 
+                                    torch.matmul(old_attention_bias[..., 2*self.hidden_size:], self.densemap_v2i.weight.data)), 
+                                   dim = -1
+                                   )
+            self.query_key_value[layer_id].bias.data.copy_(new_bias)

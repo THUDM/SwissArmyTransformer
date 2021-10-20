@@ -109,6 +109,8 @@ class Timers:
         assert normalizer > 0.0
         string = 'time (ms)'
         for name in names:
+            if name not in self.timers.keys():
+                continue
             elapsed_time = self.timers[name].elapsed(
                 reset=reset) * 1000.0 / normalizer
             string += ' | {}: {:.2f}'.format(name, elapsed_time)
