@@ -157,6 +157,7 @@ def add_text_generate_args(parser):
     group.add_argument("--temperature", type=float, default=1.0)
     group.add_argument("--top_p", type=float, default=0.0)
     group.add_argument("--top_k", type=int, default=0)
+    group.add_argument("--num-beams", type=int, default=1)
     group.add_argument("--out-seq-length", type=int, default=256)
     group.add_argument('--input-source', type=str, default='interactive',
                        help='what input mode to use, interactive or path')
@@ -214,9 +215,41 @@ def add_tokenization_args(parser):
 
     group = parser.add_argument_group('Tokenization', 'tokenization configurations')
     group.add_argument('--tokenizer-type', type=str, default='fake', help='type name of tokenizer')
-
+    group.add_argument('--tokenizer-model-type', type=str,
+                       default=None,
+                       help="Model type to use for sentencepiece tokenization \
+                           (one of ['bpe', 'char', 'unigram', 'word']) or \
+                           bert vocab to use for BertWordPieceTokenizer (one of \
+                           ['bert-large-uncased', 'bert-large-cased', etc.])")
     group.add_argument('--img-tokenizer-path', type=str, default=None,
                        help='The checkpoint file path of image tokenizer.')
+    return parser
+
+
+def add_glm_args(parser):
+    """Arguments for GLM"""
+    group = parser.add_argument_group('GLM', 'GLM Configurations')
+    group.add_argument('--block-lm', action='store_true', help="whether use the BlockLM pre-training")
+    group.add_argument('--masked-lm', action='store_true', help='whether to use the mlm objective')
+    group.add_argument('--bert-prob', type=float, default=0.5)
+    group.add_argument('--gpt-infill-prob', type=float, default=0.5)
+    group.add_argument('--gpt-min-ratio', type=float, default=0.5)
+    group.add_argument('--gap-sentence-prob', type=float, default=0.0)
+    group.add_argument('--gap-sentence-ratio', type=float, default=0.15)
+    group.add_argument('--avg-block-length', type=int, default=3)
+    group.add_argument('--short-seq-prob', type=float, default=0.0)
+    group.add_argument('--single-span-prob', type=float, default=0.0)
+    group.add_argument('--task-mask', action='store_true', help="Use different mask for generation and blank filling")
+    group.add_argument('--no-shuffle-block', action='store_true', help="not shuffle the blocks when filling the blank")
+    group.add_argument('--no-block-position', action='store_true',
+                       help='Use (rough) absolute positions instead of block positions')
+    group.add_argument('--sentinel-token', action='store_true',
+                       help="Use sentinel (mask) tokens to replace 2d position encoding")
+    group.add_argument('--block-mask-prob', type=float, default=0.0)
+    group.add_argument('--context-mask-ratio', type=float, default=0.0)
+    group.add_argument('--random-position', action='store_true',
+                       help="Use random start position to cover all the position embeddings")
+    group.add_argument('--cloze-eval', action='store_true', help='Evaluation dataset with cloze task')
     return parser
 
 
@@ -232,6 +265,7 @@ def get_args(args_list=None):
     parser = add_tokenization_args(parser)
     parser = add_text_generate_args(parser)
     parser = add_generation_api_args(parser)
+    parser = add_glm_args(parser)
 
     # Include DeepSpeed configuration arguments
     parser = deepspeed.add_config_arguments(parser)

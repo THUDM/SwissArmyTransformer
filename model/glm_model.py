@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 
 from .base_model import BaseModel
+from .cached_autoregressive_model import CachedAutoregressiveModel
 
 
-class GLMModel(BaseModel):
+class GLMModel(CachedAutoregressiveModel):
     def __init__(self, args, transformer=None):
         super().__init__(args, transformer=transformer)
         self.transformer.block_position_embeddings = torch.nn.Embedding(args.max_sequence_length, args.hidden_size)
