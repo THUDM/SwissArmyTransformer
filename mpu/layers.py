@@ -323,3 +323,15 @@ class RowParallelLinear(torch.nn.Module):
             output = output_
         return output
 
+
+'''
+1. 重叠 
+2. 32*32 256*256
+3. 大小 
+4. 
+
+32 * 32
+
+xmin ymin xmax ymax tokens
+[] 文本 [POS0] xmin ymin xmax ymax tokens [POS0] ..... 图片
+'''

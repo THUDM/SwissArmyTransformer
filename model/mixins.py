@@ -67,3 +67,11 @@ class AttentionMixin(BaseMixin):
             self.query_key_value[layer_id].bias.data.copy_(old_attention.query_key_value.bias.data)
             self.dense[layer_id].weight.data.copy_(old_attention.dense.weight.data)
             self.dense[layer_id].bias.data.copy_(old_attention.dense.bias.data)
+
+class WordEmebeddingMixin(BaseMixin):
+    def __init__(self, additional_token_num, hidden_size):
+        super(WordEmebeddingMixin, self).__init__()
+        self.word_embeddings = torch.nn.Embedding(additional_token_num, hidden_size)
+        torch.nn.init.normal_(self.word_embeddings.weight, mean=0.0, std=init_method_std)
+    def reinit(self, transformer, *pre_mixins):
+        old_weights = transformer.
