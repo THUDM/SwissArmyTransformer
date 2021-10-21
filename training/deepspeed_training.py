@@ -335,12 +335,12 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
 
         # Check nan or inf in forward, preventing it from interfering loss scaler,
         # and all reduce metrics by the way
-        loss_checker = lm_loss.clone().detach()
+        loss_checker = lm_loss.detach()
         for name in metrics:
-            metrics[name] = metrics[name].detach()
+            metrics[name] = metrics[name].detach().clone()
             torch.distributed.all_reduce(metrics[name].data)
             metrics[name].data /= args.world_size
-            loss_checker += metrics[name]
+            loss_checker = loss_checker + metrics[name]
         if loss_checker.isnan().any() or loss_checker.isinf().any():
             print('Skipping backward and optimizer step for nan or inf in forwarding metrics/loss!')
             return lm_loss.detach(), 1, metrics

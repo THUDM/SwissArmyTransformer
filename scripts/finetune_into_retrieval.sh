@@ -26,9 +26,14 @@ gpt_options=" \
        --mode finetune \
        --batch-size 4 \
        --num-layers 48 \
+       --retrieval-num-layers 1 \
+       --retrieval-pos-embed \
+       --retrieval-init-temp 0. \
+       --retrieval-temp-scale 1e1 \
+       --txt-img-split \
        --hidden-size 2560 \
        --num-attention-heads 40 \
-       --train-iters 200000 \
+       --train-iters 1000000 \
        --resume-dataloader \
        --train-data ${small_data} \
        --split 949,50,1 \
@@ -39,11 +44,12 @@ gpt_options=" \
        --max-sequence-length 1089 \
        --sandwich-ln \
        --fp16 \
-       --save-interval 2000 \
+       --save-interval 10 \
        --eval-interval 1000 \
        --save $main_dir/checkpoints \
        --load /workspace/dm/SwissArmyTransformer/pretrained/cogview/cogview-base
 "
+       # --load /workspace/dm/SwissArmyTransformer/pretrained/cogview/cogview-base
        # --load pretrained/cogview/cogview-base
 
 

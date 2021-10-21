@@ -44,11 +44,20 @@ def get_masks_and_position_ids(data,
     # Position ids.
     position_ids = torch.zeros(batch_size, seq_length, dtype=torch.long,
                                device=data.device)
-    for i in range(batch_size):
-        torch.arange(layout[1] - n_pads[i], out=position_ids[i, n_pads[i]:layout[1]],
-            dtype=torch.long, device=data.device)
-    position_ids[:, -1] = 0
-    position_ids[:, -2] = 1
+    if args.retrieval_pos_embed:
+        for i in range(batch_size): # all start from beginning.
+            torch.arange(layout[0] - 5 - n_pads[i], out=position_ids[i, n_pads[i]:layout[0]-5],
+                dtype=torch.long, device=data.device)
+            torch.arange(layout[0] - 3, layout[1], out=position_ids[i, layout[0]-5:layout[1]-2],
+                dtype=torch.long, device=data.device)
+        position_ids[:, -1] = 0
+        position_ids[:, -2] = 1
+    else:
+        for i in range(batch_size): # all start from beginning.
+            torch.arange(layout[0] - 5 - n_pads[i], out=position_ids[i, n_pads[i]:layout[0]-5],
+                dtype=torch.long, device=data.device)
+            torch.arange(layout[0] - 5, layout[1], out=position_ids[i, layout[0]-5:layout[1]],
+                dtype=torch.long, device=data.device)
 
     return attention_mask, position_ids
 
@@ -98,13 +107,9 @@ def divide(numerator, denominator):
     ensure_divisibility(numerator, denominator)
     return numerator // denominator
 
-def parallel_contrastive_loss(lvec, rvec, args):
-    # if mpu.get_data_parallel_rank() == 0:
-    #     print('lvec', lvec)
-    #     print('rvec', rvec)
+def parallel_contrastive_loss(lvec, rvec, temp, args):
     device = args.device
-    temp = args.retrieval_temp
-    lvec = lvec * np.exp(temp)
+    lvec = lvec * temp.exp()
     
     rank = mpu.get_data_parallel_rank()
     world_size = mpu.get_data_parallel_world_size()
@@ -143,34 +148,40 @@ def parallel_contrastive_loss(lvec, rvec, args):
     parallel_logits = torch.cat(parallel_logits, dim=0)
     
     # Fill in local logits for backward
-    parallel_logits[split_start:split_end, :] = local_dist_logits
-    parallel_logits[:, split_start:split_end] = dist_local_logits
-    parallel_logits[split_start:split_end, split_start:split_end] = local_local_logits    
+    cat_ll_ld_logits = torch.cat([local_dist_logits[:, :split_start], local_local_logits, local_dist_logits[:, split_end:]], dim=1)
+    parallel_logits = torch.cat([parallel_logits[:, :split_start], dist_local_logits, parallel_logits[:, split_end:]], dim=1)
+    parallel_logits = torch.cat([parallel_logits[:split_start, :], cat_ll_ld_logits, parallel_logits[split_end:, :]], dim=0)
+    # parallel_logits[split_start:split_end, :] = local_dist_logits
+    # parallel_logits[:, split_start:split_end] = dist_local_logits
+    # parallel_logits[split_start:split_end, split_start:split_end] = local_local_logits    
     
-    predicted_logits = parallel_logits[arange_1d, arange_1d]
+    # predicted_logits = parallel_logits[arange_1d, arange_1d]
     
-    # Calculate left2right loss
-    left_logits_max = torch.max(parallel_logits, dim=1)[0]
-    left_logits = parallel_logits.sub(left_logits_max.unsqueeze(dim=1))
-    left_exp_logits = left_logits.exp()
-    left_sum_exp_logits = left_exp_logits.sum(dim=1)
-    left_loss = torch.log(left_sum_exp_logits) - predicted_logits # Loss = log(sum(exp(logits))) - predicted-logit.
-    left_loss = left_loss.sum()
+    # # Calculate left2right loss
+    # left_logits_max = torch.max(parallel_logits, dim=1)[0]
+    # left_logits = parallel_logits.sub(left_logits_max.unsqueeze(dim=1))
+    # left_exp_logits = left_logits.exp()
+    # left_sum_exp_logits = left_exp_logits.sum(dim=1)
+    # left_loss = torch.log(left_sum_exp_logits) - predicted_logits # Loss = log(sum(exp(logits))) - predicted-logit.
+    # left_loss = left_loss.sum()
     
-    # Calculate right2left loss
-    parallel_logits_t = parallel_logits.permute(1, 0)
-    right_logits_max = torch.max(parallel_logits_t, dim=1)[0]
-    right_logits = parallel_logits_t.sub(right_logits_max.unsqueeze(dim=1))
-    right_exp_logits = right_logits.exp()
-    right_sum_exp_logits = right_exp_logits.sum(dim=1)
-    right_loss = torch.log(right_sum_exp_logits) - predicted_logits # Loss = log(sum(exp(logits))) - predicted-logit.
-    right_loss = right_loss.sum()
+    # # Calculate right2left loss
+    # parallel_logits_t = parallel_logits.permute(1, 0)
+    # right_logits_max = torch.max(parallel_logits_t, dim=1)[0]
+    # right_logits = parallel_logits_t.sub(right_logits_max.unsqueeze(dim=1))
+    # right_exp_logits = right_logits.exp()
+    # right_sum_exp_logits = right_exp_logits.sum(dim=1)
+    # right_loss = torch.log(right_sum_exp_logits) - predicted_logits # Loss = log(sum(exp(logits))) - predicted-logit.
+    # right_loss = right_loss.sum()
+
+    left_loss = F.cross_entropy(parallel_logits, arange_1d)
+    right_loss = F.cross_entropy(parallel_logits.permute(1, 0), arange_1d)
     
     total_loss = (left_loss + right_loss) / 2
     
-    # if mpu.get_data_parallel_rank() == 0:
-    #     print('parallel', parallel_logits)
-    #     print('loss', total_loss, left_loss, right_loss)
+    # if mpu.get_data_parallel_rank() == 0 and args.iteration % 200 == 0:
+    #     import pdb
+    #     pdb.set_trace()
     
     return total_loss, left_loss, right_loss
 
@@ -184,13 +195,15 @@ def forward_step(data_iterator, model, args, timers):
     timers('batch generator').stop()
     
     # Forward model.
-    (txt_vecs, img_vecs), *mems = model(tokens, position_ids, attention_mask)
+    (txt_vecs, img_vecs, temp), *mems = model(tokens, position_ids, attention_mask)
     
     # L2 Normalize
-    txt_vecs = txt_vecs / txt_vecs.pow(2).sum(dim=1).sqrt().unsqueeze(1)
-    img_vecs = img_vecs / img_vecs.pow(2).sum(dim=1).sqrt().unsqueeze(1)
+    txt_vecs = F.normalize(txt_vecs)
+    img_vecs = F.normalize(img_vecs)
+    # txt_vecs = txt_vecs / txt_vecs.pow(2).sum(dim=1).sqrt().unsqueeze(1)
+    # img_vecs = img_vecs / img_vecs.pow(2).sum(dim=1).sqrt().unsqueeze(1)
     
-    loss, txt2img_loss, img2txt_loss = parallel_contrastive_loss(txt_vecs, img_vecs, args)
+    loss, txt2img_loss, img2txt_loss = parallel_contrastive_loss(txt_vecs, img_vecs, temp, args)
     # loss, txt2img_loss, img2txt_loss = torch.tensor(0.), torch.tensor(0.), torch.tensor(0.)
     
     return loss, {'txt2img_loss': txt2img_loss, 'img2txt_loss': img2txt_loss}

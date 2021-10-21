@@ -26,17 +26,18 @@ class BaseMixin(torch.nn.Module):
 
 class PositionEmbeddingMixin(BaseMixin):
     def __init__(self, additional_sequence_length, hidden_size, 
-                init_method_std=0.02, reinit_slice=(-1024, None)
+                init_method_std=0.02, reinit_slice=slice(-1024, None)
         ):
         super(PositionEmbeddingMixin, self).__init__()
         self.reinit_slice = reinit_slice
         self.position_embeddings = torch.nn.Embedding(additional_sequence_length, hidden_size)
         torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)
     def reinit(self, transformer, *pre_mixins):
-        old_weights = transformer.position_embeddings.weight.data[self.reinit_slice]
-        old_len, hidden_size = old_weights.shape
-        assert hidden_size == self.position_embeddings.weight.shape[-1]
-        self.position_embeddings.weight.data.view(-1, old_len, hidden_size).copy_(old_weights)
+        if self.reinit_slice is not None:
+            old_weights = transformer.position_embeddings.weight.data[self.reinit_slice]
+            old_len, hidden_size = old_weights.shape
+            assert hidden_size == self.position_embeddings.weight.shape[-1]
+            self.position_embeddings.weight.data.view(-1, old_len, hidden_size).copy_(old_weights)
 
 class AttentionMixin(BaseMixin):
     def __init__(self, num_layers,
@@ -67,40 +68,3 @@ class AttentionMixin(BaseMixin):
             self.query_key_value[layer_id].bias.data.copy_(old_attention.query_key_value.bias.data)
             self.dense[layer_id].weight.data.copy_(old_attention.dense.weight.data)
             self.dense[layer_id].bias.data.copy_(old_attention.dense.bias.data)
-
-class ParallelLinearMixin(BaseMixin):
-    def __init__(self, input_size, output_size, bias=True,
-                 init_method=torch.nn.init.xavier_normal_, stride=1,
-                 keep_master_weight_for_test=False):
-        super(ParallelLinearMixin, self).__init__()
-        self.input_size = input_size
-        self.output_size = output_size
-        
-        self.parallel_linear = ColumnParallelLinear(
-            input_size, output_size, bias=bias, gather_output=True,
-            init_method=init_method, stride=stride,
-            keep_master_weight_for_test=keep_master_weight_for_test)
-
-    def forward(self, input_):
-        return self.parallel_linear(input_)
-
-class ParallelDoubleLayerLinearMixin(BaseMixin):
-    def __init__(self, input_size, hidden_size, output_size, bias=True,
-                 init_method=torch.nn.init.xavier_normal_, stride=1,
-                 keep_master_weight_for_test=False):
-        super(ParallelDoubleLayerLinearMixin, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        
-        self.column_parallel_linear = ColumnParallelLinear(
-            input_size, hidden_size, bias=bias, gather_output=False,
-            init_method=init_method, stride=stride,
-            keep_master_weight_for_test=keep_master_weight_for_test)
-        self.row_parallel_linear = RowParallelLinear(
-            hidden_size, output_size, bias=bias,
-            init_method=init_method, stride=stride,
-            keep_master_weight_for_test=keep_master_weight_for_test)
-    
-    def forward(self, input_):
-        return self.row_parallel_linear(self.column_parallel_linear(input_))
