@@ -73,8 +73,9 @@ class VideoAttentionMixin(BaseMixin):
                 hidden_size, 
                 video_hidden_size,
                 video_n_head,
+                attention_dropout_prob,
                 init_method=unscaled_init_method(0.02),
-                output_layer_init_method=unscaled_init_method(1.0)
+                output_layer_init_method=unscaled_init_method(0.02)
         ):
         super(VideoAttentionMixin, self).__init__()
         self.num_layers = num_layers # replace attention in the LAST n layers
@@ -86,38 +87,91 @@ class VideoAttentionMixin(BaseMixin):
                 gather_output=False,init_method=init_method)
                 for layer_id in range(num_layers)
             ])
-        # 是否要层间share ???!!!
-        self.densemap_i2v = RowParallelLinear(hidden_size,
+        self.dense = torch.nn.ModuleList(
+            [RowParallelLinear(video_hidden_size,
                 video_hidden_size,
                 input_is_parallel=True,
                 init_method=output_layer_init_method)
-        self.densemap_v2i = RowParallelLinear(video_hidden_size,
-                hidden_size,
+                for layer_id in range(num_layers)
+            ])
+        self.attention_dropout = torch.mm.ModuleList(
+            [torch.nn.Dropout(attention_dropout_prob)
+             for layer_id in range(num_layers)]
+        )
+        self.startmap_i2v = RowParallelLinear(hidden_size,
+                video_hidden_size,
                 input_is_parallel=True,
                 init_method=output_layer_init_method)
-        # self.map_norm = LayerNorm(video_hidden_size, eps=1.0e-5)
+        self.keymap_i2v = torch.nn.Modulelist(
+            [RowParallelLinear(hidden_size,
+                video_hidden_size,
+                input_is_parallel=True,
+                init_method=output_layer_init_method)
+             for layer_id in range(num_layers)
+             ])
+        self.valmap_i2v = torch.nn.Modulelist(
+            [RowParallelLinear(hidden_size,
+                video_hidden_size,
+                input_is_parallel=True,
+                init_method=output_layer_init_method)
+             for layer_id in range(num_layers)
+             ])
 
     def reinit(self, transformer, *pre_mixins):
         assert self.num_layers == len(transformer.layers)
-        
-        # # tmp save weight
-        # path = "./weight_matrix/layer10.pt"
-        # torch.save(transformer.layers[10].attention.query_key_value.weight.data, path)
         # initial with pseudo-inverse
-        dense_weight = torch.linalg.pinv(self.densemap_i2v.weight.data.type(torch.float32)).type(torch.float16)
-        self.densemap_v2i.weight.data.copy_(torch.clamp(dense_weight, min=-5, max=5))
-        for layer_id in range(self.num_layers):
-            old_attention_weight = transformer.layers[layer_id].attention.query_key_value.weight.data
-            # y^T = A x^T
-            new_weight = old_attention_weight.reshape(3, self.hidden_size, self.hidden_size)
-            new_weight = torch.matmul(torch.matmul(self.densemap_i2v.weight.data, new_weight), self.densemap_v2i.weight.data)
-            new_weight = new_weight.reshape(3*self.video_hidden_size, self.video_hidden_size)
-            self.query_key_value[layer_id].weight.data.copy_(new_weight)
-            old_attention_bias = transformer.layers[layer_id].attention.query_key_value.bias.data
-            # Q, K, V
-            new_bias = torch.cat((torch.matmul(self.densemap_i2v.weight.data, old_attention_bias[..., :self.hidden_size]), 
-                                    torch.matmul(old_attention_bias[..., self.hidden_size:2*self.hidden_size], self.densemap_v2i.weight.data), 
-                                    torch.matmul(old_attention_bias[..., 2*self.hidden_size:], self.densemap_v2i.weight.data)), 
-                                   dim = -1
-                                   )
-            self.query_key_value[layer_id].bias.data.copy_(new_bias)
+        # dense_weight = torch.linalg.pinv(self.densemap_i2v.weight.data.type(torch.float32)).type(torch.float16)
+        # self.densemap_v2i.weight.data.copy_(torch.clamp(dense_weight, min=-5, max=5))
+        # for layer_id in range(self.num_layers):
+        #     old_attention_weight = transformer.layers[layer_id].attention.query_key_value.weight.data
+        #     # y^T = A x^T
+        #     new_weight = old_attention_weight.reshape(3, self.hidden_size, self.hidden_size)
+        #     new_weight = torch.matmul(torch.matmul(self.densemap_i2v.weight.data, new_weight), self.densemap_v2i.weight.data)
+        #     new_weight = new_weight.reshape(3*self.video_hidden_size, self.video_hidden_size)
+        #     self.query_key_value[layer_id].weight.data.copy_(new_weight)
+        #     old_attention_bias = transformer.layers[layer_id].attention.query_key_value.bias.data
+        #     # Q, K, V
+        #     new_bias = torch.cat((torch.matmul(self.densemap_i2v.weight.data, old_attention_bias[..., :self.hidden_size]), 
+        #                             torch.matmul(old_attention_bias[..., self.hidden_size:2*self.hidden_size], self.densemap_v2i.weight.data), 
+        #                             torch.matmul(old_attention_bias[..., 2*self.hidden_size:], self.densemap_v2i.weight.data)), 
+        #                            dim = -1
+        #                            )
+        #     self.query_key_value[layer_id].bias.data.copy_(new_bias)
+
+class VideoMLPMixin(BaseMixin):
+    def __init__(self, num_layers, video_hidden_size, hidden_size, output_dropout_prob, 
+                init_method=unscaled_init_method(0.02),
+                output_layer_init_method=None):
+        super(VideoMLPMixin, self).__init__()
+        self.num_layers = num_layers
+        # Set output layer initialization if not provided.
+        if output_layer_init_method is None:
+            output_layer_init_method = init_method
+        # Project to 4h.
+        self.dense_h_to_4h = torch.nn.ModuleList(
+            [ColumnParallelLinear(
+            video_hidden_size,
+            4*video_hidden_size,
+            gather_output=False,
+            init_method=init_method)
+            for layer_id in range(num_layers)]
+        )
+        # Project back to h.
+        self.dense_4h_to_h = torch.nn.ModuleList(
+            [RowParallelLinear(
+            4*video_hidden_size,
+            video_hidden_size,
+            input_is_parallel=True,
+            init_method=output_layer_init_method)
+            for layer_id in range(num_layers)]
+        )
+        self.dropout = torch.nn.ModuleList(
+            [torch.nn.Dropout(output_dropout_prob)
+             for layer_id in range(num_layers)]
+        )
+        self.endmap_v2i = RowParallelLinear(video_hidden_size,
+            hidden_size,
+            input_is_parallel=True,
+            init_method=output_layer_init_method)
+    def reinit(self, transformer, *pre_mixins):
+        assert self.num_layers == len(transformer.layers)
