@@ -250,6 +250,7 @@ def add_glm_args(parser):
     group.add_argument('--random-position', action='store_true',
                        help="Use random start position to cover all the position embeddings")
     group.add_argument('--cloze-eval', action='store_true', help='Evaluation dataset with cloze task')
+    group.add_argument('--old-checkpoint', action='store_true', help="Loading the checkpoint from old libraray")
     return parser
 
 

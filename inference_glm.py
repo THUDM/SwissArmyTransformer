@@ -21,7 +21,7 @@ from model.glm_model import GLMModel
 from training import load_checkpoint, initialize_distributed, set_random_seed, prepare_tokenizer
 from tokenization import get_tokenizer
 from generation.sampling_strategies import BaseStrategy
-from generation.autoregressive_sampling import filling_sequence
+from generation.autoregressive_sampling import update_mems
 from generation.utils import timed_name, save_multiple_images, generate_continually
 
 
@@ -80,19 +80,19 @@ def read_context(tokenizer, args, output=None):
     return terminate_runs, raw_text, context_tokens_tensor, context_length
 
 
-def get_batch(context_tokens, device, args):
+def get_batch(context_tokens, args):
     tokens = context_tokens
     tokens = tokens.view(1, -1).contiguous()
-    tokens = tokens.to(device)
+    tokens = tokens.to('cuda')
 
     # Get the masks and postition ids.
     if args.block_lm:
-        attention_mask = torch.ones(1, 1, tokens.size(1), tokens.size(1), device=device, dtype=torch.long)
+        attention_mask = torch.ones(tokens.size(1), tokens.size(1), device='cuda', dtype=torch.long)
         if args.fp16:
             attention_mask = attention_mask.half()
-        position_ids = torch.arange(tokens.size(1), device=device, dtype=torch.long)
+        position_ids = torch.arange(tokens.size(1), device='cuda', dtype=torch.long)
         if not args.no_block_position:
-            block_position_ids = torch.zeros(tokens.size(1), device=device, dtype=torch.long)
+            block_position_ids = torch.zeros(tokens.size(1), device='cuda', dtype=torch.long)
             position_ids = torch.stack((position_ids, block_position_ids), dim=0)
         position_ids = position_ids.unsqueeze(0)
     else:
@@ -129,12 +129,8 @@ def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-float('Inf')):
     return logits
 
 
-def sample_sequence(model, tokenizer, context_tokens, context_length, args, device, mems=None, end_tokens=None):
-    if not args.block_lm:
-        context_tokens, attention_mask, position_ids = get_batch(context_tokens, device, args)
-        tokens = torch.empty((args.num_beams, 0), device=context_tokens.device, dtype=torch.long)
-    else:
-        tokens = context_tokens.new_full((1, 1), tokenizer.get_command('sop').Id)
+def sample_sequence(model, tokenizer, context_tokens, context_length, args, mems=None, end_tokens=None):
+    tokens = context_tokens.new_full((1, 1), tokenizer.get_command('sop').Id)
     counter = 0
     if mems is None:
         mems = []
@@ -152,24 +148,22 @@ def sample_sequence(model, tokenizer, context_tokens, context_length, args, devi
         beam_scores = torch.zeros(1, dtype=torch.float, device=context_tokens.device)
     last_beam_num = 1
     while counter < args.out_seq_length:
-        if counter == 0 and not args.block_lm:
-            next_token_logits, *mems = model(context_tokens, position_ids, attention_mask, *mems)
-        else:
-            if args.block_lm:
-                if args.no_block_position:
-                    position_ids = context_tokens.new_full((last_beam_num, 1), context_length + counter)
-                else:
-                    position_ids = context_tokens.new_ones(last_beam_num, 2, 1)
-                    position_ids[:, 0] = context_length
-                    position_ids[:, 1] = counter + 1
-                attention_mask = context_tokens.new_ones(1, context_length + counter, device=context_tokens.device,
-                                                         dtype=torch.long)
+        if args.block_lm:
+            if args.no_block_position:
+                position_ids = context_tokens.new_full((last_beam_num, 1), context_length + counter)
             else:
-                position_ids = context_tokens.new_ones((last_beam_num, 1)) * (context_length + counter - 1)
-                attention_mask = context_tokens.new_ones(last_beam_num, 1, 1, args.mem_length + 1,
-                                                         device=context_tokens.device, dtype=torch.float)
-            last_token = tokens[:, -1:]
-            next_token_logits, *mems = model(last_token, position_ids, attention_mask, *mems)
+                position_ids = context_tokens.new_ones(last_beam_num, 2, 1)
+                position_ids[:, 0] = context_length
+                position_ids[:, 1] = counter + 1
+            attention_mask = context_tokens.new_ones(1, context_length + counter, device=context_tokens.device,
+                                                     dtype=torch.long)
+        else:
+            position_ids = context_tokens.new_ones((last_beam_num, 1)) * (context_length + counter - 1)
+            attention_mask = context_tokens.new_ones(last_beam_num, 1, 1, args.mem_length + 1,
+                                                     device=context_tokens.device, dtype=torch.float)
+        last_token = tokens[:, -1:]
+        next_token_logits, *mem_kvs = model(last_token, position_ids, attention_mask, *mems)
+        mems = update_mems(mem_kvs, mems, max_memory_length=1000000)
         next_token_logits = next_token_logits[:, -1]
         if args.num_beams > 1:
             next_token_scores = F.log_softmax(next_token_logits, dim=-1)
@@ -228,7 +222,7 @@ def sample_sequence(model, tokenizer, context_tokens, context_length, args, devi
     return torch.cat((context_tokens, tokens), dim=1), mems
 
 
-def generate_samples(model, tokenizer, args, device):
+def generate_samples(model, tokenizer, args):
     model.eval()
     output_path = "./samples"
     if not os.path.exists(output_path):
@@ -237,14 +231,13 @@ def generate_samples(model, tokenizer, args, device):
     with torch.no_grad(), open(output_path, "w") as output:
         while True:
             torch.distributed.barrier(group=mpu.get_model_parallel_group())
-
             terminate_runs, raw_text, context_tokens_tensor, context_length = read_context(tokenizer, args, output)
             if terminate_runs == 1:
                 return
             start_time = time.time()
             if args.block_lm:
                 mems = []
-                tokens, attention_mask, position_ids = get_batch(context_tokens_tensor, device, args)
+                tokens, attention_mask, position_ids = get_batch(context_tokens_tensor, args)
                 mask_tokens = ['MASK', 'sMASK', 'gMASK'] if args.task_mask else ['MASK']
                 mask_tokens = [tokenizer.get_command(token).Id for token in mask_tokens]
                 end_tokens = [tokenizer.get_command('eop').Id, args.eod_token]
@@ -261,10 +254,8 @@ def generate_samples(model, tokenizer, args, device):
                         position = position_ids[0, mask_position].item()
                     else:
                         position = mask_position
-                    tokens, mems = sample_sequence(model, tokenizer, tokens, position,
-                                                   args, device, mems=mems, end_tokens=end_tokens)
-            else:
-                tokens, _ = sample_sequence(model, tokenizer, context_tokens_tensor, context_length, args, device)
+                    tokens, mems = sample_sequence(model, tokenizer, tokens, position, args, mems=mems,
+                                                   end_tokens=end_tokens)
             output_tokens_list = tokens.view(-1).contiguous()
             if mpu.get_model_parallel_rank() == 0:
                 os.system('clear')
@@ -290,7 +281,7 @@ def main(args):
     load_checkpoint(model, args)
     set_random_seed(args.seed)
     model.eval()
-    generate_samples(model, tokenizer, args, torch.cuda.current_device())
+    generate_samples(model, tokenizer, args)
 
 
 if __name__ == "__main__":

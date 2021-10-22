@@ -7,4 +7,5 @@ MODEL_ARGS="--block-lm \
             --max-sequence-length 513 \
             --tokenizer-model-type roberta \
             --tokenizer-type GPT2BPETokenizer \
+            --old-checkpoint \
             --load ${CHECKPOINT_PATH}/blocklm-roberta-large-blank"

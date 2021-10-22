@@ -28,8 +28,12 @@ def get_checkpoint_name(checkpoints_path, iteration, release=False, zero=False):
         d += '_zero_dp_rank_{}'.format(dp_rank)
     return os.path.join(checkpoints_path, d, 'mp_rank_{:02d}_model_states.pt'.format(mpu.get_model_parallel_rank()))
 
-def get_checkpoint_tracker_filename(checkpoints_path):
-    return os.path.join(checkpoints_path, 'latest')
+def get_checkpoint_tracker_filename(checkpoints_path, old_checkpoint=False):
+    if old_checkpoint:
+        return os.path.join(checkpoints_path, 'latest_checkpointed_iteration.txt')
+    else:
+        return os.path.join(checkpoints_path, 'latest')
+
 
 def save_checkpoint(iteration, model, optimizer,
                     lr_scheduler, args):
@@ -85,7 +89,7 @@ def save_ds_checkpoint_no_optim(model, save_dir, tag=None, client_state={}, save
 
 def get_checkpoint_iteration(args):
     # Read the tracker file and set the iteration.
-    tracker_filename = get_checkpoint_tracker_filename(args.load)
+    tracker_filename = get_checkpoint_tracker_filename(args.load, old_checkpoint=args.old_checkpoint)
     if not os.path.isfile(tracker_filename):
         print_rank_0('WARNING: could not find the metadata file {} '.format(
             tracker_filename))
@@ -126,7 +130,12 @@ def load_checkpoint(model, args):
         module = model.module
     else: # inference without deepspeed
         module = model
-        
+
+    # Process the checkpoint for GLM
+    if args.block_lm and args.old_checkpoint:
+        sd['module']['transformer.word_embeddings.weight'] = sd['module']['word_embeddings.weight']
+        del sd['module']['word_embeddings.weight']
+
     # only load module, other hyperparameters are just for recording.
     missing_keys, unexpected_keys = module.load_state_dict(sd['module'], strict=False)
     if len(unexpected_keys) > 0:
