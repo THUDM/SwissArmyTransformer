@@ -26,21 +26,27 @@ def get_masks_and_position_ids(seq):
     return tokens, attention_mask, position_ids
 
 def update_mems(hiddens, mems, max_memory_length):
+    '''
+        hiddens: list (num_layers) of [batch, query_length, 2d]
+        mems: None or [num_layers, batch, memory_length, 2d]
+    '''
     if hiddens is None:
-        return []
-    memory_length = mems[0].size(1) if mems else 0
-    query_length = hiddens[0].size(1)
+        return None
+    hiddens = torch.stack(hiddens)
+    memory_length = mems.shape[2] if mems is not None else 0
+    query_length = hiddens.shape[2]
     new_memory_length = min(max_memory_length, memory_length + query_length)
     new_mems = []
     with torch.no_grad():
-        for i in range(len(hiddens)):
-            if new_memory_length <= query_length:
-                new_mems.append(hiddens[i][:, -new_memory_length:])
-            else:
-                if mems[i].shape[0] < hiddens[i].shape[0]:
-                    mems[i] = mems[i].expand(hiddens[i].shape[0], *mems[i].shape[1:])
-                new_mems.append(torch.cat((mems[i][:, -new_memory_length+query_length:], hiddens[i]), dim=1))
-    return new_mems
+        if new_memory_length <= query_length:
+            return hiddens[:, :, -new_memory_length:]
+        else:
+            if mems.shape[1] < hiddens.shape[1]:
+                mems = mems.expand(-1, hiddens.shape[1], -1, -1)
+            return torch.cat(
+                (mems[:, :, -new_memory_length+query_length:], hiddens),
+                dim=2
+            )
 
 
 def filling_sequence(
@@ -67,7 +73,7 @@ def filling_sequence(
     # initialize generation
     counter = context_length - 1 # Last fixed index is ``counter'' 
     index = 0 # Next forward starting index, also the length of cache.
-    mems = [] # mems are the first-level citizens here, but we don't assume what is memorized.
+    mems = None # mems are the first-level citizens here, but we don't assume what is memorized.
         
     # step-by-step generation
     while counter < len(seq) - 1:
@@ -87,11 +93,12 @@ def filling_sequence(
         # forward
         if log_attention_weights is not None:
             model.log_attention_weights = log_attention_weights[..., index: counter+1, :counter+1] # TODO memlen
+        kw_tensors = {'mems': mems} if mems is not None else {}
         logits, *mem_kv = model(
             tokens[:, index:], 
             position_ids[..., index: counter+1],
             attention_mask[..., index: counter+1, :counter+1], # TODO memlen
-            *mems
+            **kw_tensors # if no mems, cannot pass
         )
         mems = update_mems(mem_kv, mems, max_memory_length=max_memory_length)
         counter += 1

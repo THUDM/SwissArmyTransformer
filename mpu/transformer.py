@@ -52,9 +52,9 @@ def standard_attention(query_layer, key_layer, value_layer, attention_mask,
     if log_attention_weights is not None:
         attention_scores += log_attention_weights
     
-    if attention_mask.shape[-2] > 1: # if auto-regressive, skip
-        attention_scores = torch.mul(attention_scores, attention_mask) - \
-                    10000.0 * (1.0 - attention_mask)
+    # if attention_mask.shape[-2] > 1: # if auto-regressive, skip
+    attention_scores = torch.mul(attention_scores, attention_mask) - \
+                10000.0 * (1.0 - attention_mask)
 
     attention_probs = F.softmax(attention_scores, dim=-1)
 
@@ -111,9 +111,9 @@ class SelfAttention(torch.nn.Module):
         tensor = tensor.view(*new_tensor_shape)
         return tensor.permute(0, 2, 1, 3)
 
-    def forward(self, hidden_states, mask, *other_tensors):
+    def forward(self, hidden_states, mask, **kw_tensors):
         if 'attention_forward' in self.hooks:
-            return self.hooks['attention_forward'](hidden_states, mask, *other_tensors,layer_id=self.layer_id)
+            return self.hooks['attention_forward'](hidden_states, mask, **kw_tensors, layer_id=self.layer_id)
         else:
             mixed_raw_layer = self.query_key_value(hidden_states)
             (mixed_query_layer,
@@ -162,9 +162,9 @@ class MLP(torch.nn.Module):
         )
         self.dropout = torch.nn.Dropout(output_dropout_prob)
 
-    def forward(self, hidden_states, *other_tensors):
+    def forward(self, hidden_states, **kw_tensors):
         if 'mlp_forward' in self.hooks:
-            output = self.hooks['mlp_forward'](hidden_states, *other_tensors, layer_id=self.layer_id)
+            output = self.hooks['mlp_forward'](hidden_states, **kw_tensors, layer_id=self.layer_id)
         else:
             intermediate_parallel = self.dense_h_to_4h(hidden_states)
             intermediate_parallel = gelu(intermediate_parallel)
@@ -227,7 +227,7 @@ class BaseTransformerLayer(torch.nn.Module):
             hooks=hooks
         )
     
-    def forward(self, hidden_states, mask, *other_tensors):
+    def forward(self, hidden_states, mask, **kw_tensors):
         '''
             hidden_states: [batch, seq_len, hidden_size]
             mask: [(1, 1), seq_len, seq_len]
@@ -236,7 +236,7 @@ class BaseTransformerLayer(torch.nn.Module):
         # Layer norm at the begining of the transformer layer.
         layernorm_output1 = self.input_layernorm(hidden_states)
         # Self attention.
-        attention_output, output_this_layer = self.attention(layernorm_output1, mask, *other_tensors)
+        attention_output, output_this_layer = self.attention(layernorm_output1, mask, **kw_tensors)
 
         # Third LayerNorm
         if self.sandwich_ln:
@@ -247,7 +247,7 @@ class BaseTransformerLayer(torch.nn.Module):
         # Layer norm post the self attention.
         layernorm_output = self.post_attention_layernorm(layernorm_input)
         # MLP.
-        mlp_output = self.mlp(layernorm_output, *other_tensors)
+        mlp_output = self.mlp(layernorm_output, **kw_tensors)
 
         # Fourth LayerNorm
         if self.sandwich_ln:
@@ -316,7 +316,7 @@ class BaseTransformer(torch.nn.Module):
         # Final layer norm before output.
         self.final_layernorm = LayerNorm(hidden_size, eps=layernorm_epsilon)
 
-    def forward(self, input_ids, position_ids, attention_mask, *other_tensors):
+    def forward(self, input_ids, position_ids, attention_mask, *, branch_input=None, **kw_tensors):
         # sanity check 
         assert len(input_ids.shape) == 2 
         batch_size, query_length = input_ids.shape
@@ -324,19 +324,29 @@ class BaseTransformer(torch.nn.Module):
         assert position_ids.shape[-1] == query_length
         assert len(attention_mask.shape) == 2 or \
             len(attention_mask.shape) == 4 and attention_mask.shape[1] == 1
+        assert branch_input is None or 'layer_forward' in self.hooks and isinstance(branch_input, torch.Tensor)
+        for k, v in kw_tensors.items():
+            assert isinstance(v, torch.Tensor)
+        # branch_input is a new part of input need layer-by-layer update,
+        #   but with different hidden_dim and computational routine.
+        #   In most cases, you can just ignore it.
 
         # embedding part
         if 'word_embedding_forward' in self.hooks:
-            hidden_states = self.hooks['word_embedding_forward'](input_ids, *other_tensors)
+            hidden_states = self.hooks['word_embedding_forward'](input_ids, **kw_tensors)
         else: # default
             hidden_states = self.word_embeddings(input_ids)
             
         if 'position_embedding_forward' in self.hooks:
-            position_embeddings = self.hooks['position_embedding_forward'](position_ids, *other_tensors)
+            position_embeddings = self.hooks['position_embedding_forward'](position_ids, **kw_tensors)
         else:
             position_embeddings = self.position_embeddings(position_ids)    
         hidden_states = hidden_states + position_embeddings
         hidden_states = self.embedding_dropout(hidden_states)
+        
+        # branch related embedding
+        if branch_input is None and 'branch_embedding_forward' in self.hooks:
+            branch_input = self.hooks['branch_embedding_forward'](branch_input, **kw_tensors)
 
         # define custom_forward for checkpointing
         output_per_layers = []
@@ -344,35 +354,64 @@ class BaseTransformer(torch.nn.Module):
             def custom(start, end):
                 def custom_forward(*inputs):
                     layers_ = self.layers[start:end]
-                    x_, mask, *other_tensors = inputs[0], inputs[1], inputs[2:]
+                    x_, mask = inputs[0], inputs[1]    
+                    if len(inputs) > 2: # have branch_input
+                        branch_ = inputs[2]     
+                    output_per_layers_part = []               
                     for i, layer in enumerate(layers_):
-                        x_, output_this_layer = layer(x_, mask, *other_tensors)
-                        output_per_layers.append(output_this_layer)
-                    return x_
+                        if len(inputs) > 2:
+                            x_, branch_, output_this_layer = self.hooks['layer_forward'](
+                                x_, mask, layer_id=layer.layer_id, branch_input=branch_, **kw_tensors
+                            )
+                        elif 'layer_forward' in self.hooks:
+                            x_, output_this_layer = self.hooks['layer_forward'](
+                                x_, mask, layer_id=layer.layer_id, **kw_tensors
+                            )
+                        else:
+                            x_, output_this_layer = layer(x_, mask, **kw_tensors)
+                        output_per_layers_part.append(output_this_layer)
+                    return x_, output_per_layers_part
                 return custom_forward
         
             l, num_layers = 0, len(self.layers)
             chunk_length = self.checkpoint_num_layers
             while l < num_layers:
-                args = [hidden_states, attention_mask, *other_tensors]
-                hidden_states = checkpoint(custom(l, l + chunk_length), *args)
+                args = [hidden_states, attention_mask]
+                if branch_input is not None:
+                    hidden_states, branch_input, output_per_layers_part = checkpoint(custom(l, l + chunk_length), *args, branch_input)
+                else:
+                    hidden_states, output_per_layers_part = checkpoint(custom(l, l + chunk_length), *args)
+                output_per_layers.extend(output_per_layers_part)
                 l += chunk_length
         else:
             for i, layer in enumerate(self.layers):
-                args = [hidden_states, attention_mask, *other_tensors]
-                hidden_states, output_this_layer = layer(*args, *other_tensors)
+                args = [hidden_states, attention_mask]
+                if branch_input is not None: # customized layer_forward with branch_input
+                    hidden_states, branch_input, output_this_layer = self.hooks['layer_forward'](*args, layer_id=torch.tensor(i), branch_input=branch_input, **kw_tensors)
+                elif 'layer_forward' in self.hooks: # customized layer_forward
+                    hidden_states, output_this_layer = self.hooks['layer_forward'](*args, layer_id=torch.tensor(i), **kw_tensors)
+                else:
+                    hidden_states, output_this_layer = layer(*args, **kw_tensors)
                 output_per_layers.append(output_this_layer) 
 
         # Final layer norm.
         logits = self.final_layernorm(hidden_states)
         
         if 'final_forward' in self.hooks:
-            logits_parallel = self.hooks['final_forward'](logits, *other_tensors)
+            logits_parallel = self.hooks['final_forward'](logits, **kw_tensors)
         else:
             logits_parallel = copy_to_model_parallel_region(logits)
             logits_parallel = F.linear(logits_parallel, self.word_embeddings.weight)
+            
+        # branch related embedding
+        if branch_input is None and 'branch_final_forward' in self.hooks:
+            branch_input = self.hooks['branch_final_forward'](branch_input, **kw_tensors)
 
         if self.parallel_output:
-            return (logits_parallel, *output_per_layers)
-        return (gather_from_model_parallel_region(logits_parallel), *output_per_layers)
+            logits_parallel = gather_from_model_parallel_region(logits_parallel)
+            
+        if branch_input is not None:
+            return (logits_parallel, branch_input, *output_per_layers)
+        
+        return (logits_parallel, *output_per_layers)
         

@@ -41,7 +41,7 @@ class Cuda2dModel(BaseModel):
         self.kernel_size2 = args.kernel_size2
         self.log_attention_weights = None
     
-    def position_embedding_forward(self, position_ids, *other_tensors):
+    def position_embedding_forward(self, position_ids, **kw_tensors):
         position = position_ids[..., :self.layout[1]]
         position_plus = position_ids[..., self.layout[1]:]
         position_embeddings = torch.cat(
@@ -53,7 +53,7 @@ class Cuda2dModel(BaseModel):
             )
         return position_embeddings
         
-    def attention_forward(self, hidden_states, mask, *other_tensors, layer_id=None):
+    def attention_forward(self, hidden_states, mask, layer_id=None, **kw_tensors):
         attn_module = self.transformer.layers[layer_id].attention
         # attention_plus on all layers
         query_key_value_plus = self.mixins[1].query_key_value[layer_id] 
