@@ -39,7 +39,9 @@ def save_checkpoint(iteration, model, optimizer,
                     lr_scheduler, args):
     """Save a model checkpoint."""
     if args.deepspeed:
-        save_ds_checkpoint(iteration, model, lr_scheduler, args)
+        if mpu.get_data_parallel_rank() == 0:
+            print('Saving Model...')
+            save_ds_checkpoint(iteration, model, lr_scheduler, args)
     else:
         raise ValueError("training without deepspeed is not supported.")
     # Wait so everyone is done (necessary)
@@ -74,8 +76,6 @@ def save_ds_checkpoint_no_optim(model, save_dir, tag=None, client_state={}, save
     os.makedirs(save_dir, exist_ok=True)
     # Ensure tag is a string
     tag = str(tag)
-    # Ensure checkpoint tag is consistent across ranks
-    model._checkpoint_tag_validation(tag)
     # Real save via deepspeed
     model._create_checkpoint_file(save_dir, tag, False)
     model._save_checkpoint(save_dir, tag, client_state=client_state)

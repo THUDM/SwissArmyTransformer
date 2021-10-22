@@ -26,7 +26,7 @@ class BaseMixin(torch.nn.Module):
 
 class PositionEmbeddingMixin(BaseMixin):
     def __init__(self, additional_sequence_length, hidden_size, 
-                init_method_std=0.02, reinit_slice=(-1024, None)
+                init_method_std=0.02, reinit_slice=slice(-1024, None)
         ):
         super(PositionEmbeddingMixin, self).__init__()
         self.reinit_slice = reinit_slice
