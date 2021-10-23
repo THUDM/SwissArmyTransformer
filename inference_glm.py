@@ -133,7 +133,9 @@ def generate_samples(model, tokenizer, args):
                         position = mask_position
                     if args.num_beams > 1:
                         strategy = BeamSearchStrategy(num_beams=args.num_beams, max_length=args.out_seq_length,
-                                                      length_penalty=args.length_penalty, end_tokens=end_tokens)
+                                                      length_penalty=args.length_penalty, end_tokens=end_tokens,
+                                                      no_repeat_ngram_size=args.no_repeat_ngram_size,
+                                                      min_tgt_length=args.min_tgt_length)
                     else:
                         strategy = BaseStrategy(temperature=args.temperature, top_k=args.top_k, top_p=args.top_p,
                                                 end_tokens=end_tokens)

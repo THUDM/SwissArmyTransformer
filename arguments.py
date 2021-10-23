@@ -159,6 +159,8 @@ def add_text_generate_args(parser):
     group.add_argument("--top_k", type=int, default=0)
     group.add_argument("--num-beams", type=int, default=1)
     group.add_argument("--length-penalty", type=float, default=0.0)
+    group.add_argument("--no-repeat-ngram-size", type=int, default=0)
+    group.add_argument("--min-tgt-length", type=int, default=0)
     group.add_argument("--out-seq-length", type=int, default=256)
     group.add_argument('--input-source', type=str, default='interactive',
                        help='what input mode to use, interactive or path')
