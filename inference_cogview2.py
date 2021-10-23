@@ -42,8 +42,8 @@ def main(args):
     # define function for each query
     query_template = '[ROI1] {} [BASE] [BOI1] [MASK]*1024 [EOI1]' if not args.full_query else '{}'
     invalid_slices = [slice(tokenizer.img_tokenizer.num_tokens, None)]
-    strategy0 = BaseStrategy(invalid_slices, 
-        temperature=args.temperature, topk=args.top_k)
+    strategy0 = BaseStrategy(invalid_slices,
+                             temperature=args.temperature, top_k=args.top_k)
     strategy1 = IterativeEntfilterStrategy(invalid_slices,
         temperature=args.temperature, topk=10) # temperature not used
     tr = transforms.Compose([

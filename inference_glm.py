@@ -20,6 +20,7 @@ from arguments import get_args
 from model.glm_model import GLMModel
 from training import load_checkpoint, initialize_distributed, set_random_seed, prepare_tokenizer
 from generation.glm_sampling import filling_sequence_glm
+from generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
 
 
 def read_context(tokenizer, args, output=None):
@@ -130,8 +131,14 @@ def generate_samples(model, tokenizer, args):
                         position = position_ids[0, mask_position].item()
                     else:
                         position = mask_position
-                    new_tokens, mems = filling_sequence_glm(model, tokenizer, position, args, mems=mems,
-                                                   end_tokens=end_tokens)
+                    if args.num_beams > 1:
+                        strategy = BeamSearchStrategy(num_beams=args.num_beams, max_length=args.out_seq_length,
+                                                      length_penalty=args.length_penalty, end_tokens=end_tokens)
+                    else:
+                        strategy = BaseStrategy(temperature=args.temperature, top_k=args.top_k, top_p=args.top_p,
+                                                end_tokens=end_tokens)
+                    new_tokens, mems = filling_sequence_glm(model, tokenizer, position, strategy, args, mems=mems,
+                                                            end_tokens=end_tokens)
                     tokens = torch.cat((tokens, new_tokens), dim=1)
             output_tokens_list = tokens.view(-1).contiguous()
             if mpu.get_model_parallel_rank() == 0:

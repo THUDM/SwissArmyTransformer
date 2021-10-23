@@ -22,6 +22,8 @@ python -m torch.distributed.launch --nproc_per_node=$MPSIZE --master_port $MASTE
        --mode inference \
        --model-parallel-size $MPSIZE \
        $MODEL_ARGS \
+       --num-beams 4 \
+       --length-penalty 0.7 \
        --fp16 \
        --out-seq-length $MAXSEQLEN \
        --temperature $TEMP \

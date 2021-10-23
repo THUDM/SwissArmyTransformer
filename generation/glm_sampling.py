@@ -5,34 +5,6 @@ from .autoregressive_sampling import update_mems
 from .sampling_strategies.beam_search_strategy import BeamSearchScorer
 
 
-def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-float('Inf')):
-    # This function has been mostly taken from huggingface conversational ai code at
-    # https://medium.com/huggingface/how-to-build-a-state-of-the-art-conversational-ai-with-transfer-learning-2d818ac26313
-
-    if top_k > 0:
-        # Remove all tokens with a probability less than the last token of the top-k
-        indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
-        logits[indices_to_remove] = filter_value
-
-    if top_p > 0.0:
-        # convert to 1D
-        logits = logits.view(logits.size()[1]).contiguous()
-        sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-        cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-
-        # Remove tokens with cumulative probability above the threshold
-        sorted_indices_to_remove = cumulative_probs > top_p
-        # Shift the indices to the right to keep also the first token above the threshold
-        sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-        sorted_indices_to_remove[..., 0] = 0
-        indices_to_remove = sorted_indices[sorted_indices_to_remove]
-        logits[indices_to_remove] = filter_value
-        # going back to 2D
-        logits = logits.view(1, -1).contiguous()
-
-    return logits
-
-
 def filling_sequence_glm(model, tokenizer, mask_position, strategy, args, mems=None, end_tokens=None, device='cuda'):
     tokens = torch.full((1, 1), tokenizer.get_command('sop').Id, device=device, dtype=torch.long)
     counter = 0
@@ -40,7 +12,7 @@ def filling_sequence_glm(model, tokenizer, mask_position, strategy, args, mems=N
         mems = []
     # if end_tokens is None:
     #     end_tokens = [tokenizer.get_command('eos').Id]
-    while counter < args.out_seq_length:
+    while counter < args.out_seq_length - 1:
         last_beam_num = tokens.size(0)
         if args.block_lm:
             if args.no_block_position:
@@ -73,5 +45,5 @@ def filling_sequence_glm(model, tokenizer, mask_position, strategy, args, mems=N
         #     prev = prev.view(1, 1)
         #     tokens = prev if tokens is None else torch.cat((tokens, prev), dim=1)
         counter += 1
-    strategy.finalize(tokens, mems)
+    tokens, mems = strategy.finalize(tokens, mems)
     return tokens, mems
