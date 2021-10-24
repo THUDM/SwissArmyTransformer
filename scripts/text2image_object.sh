@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CHECKPOINT_PATH=checkpoints/finetune2-object-test10-24-08-21
+CHECKPOINT_PATH=checkpoints/finetune2-object-test10-24-12-19
 NLAYERS=48
 NHIDDEN=2560
 NATT=40
