@@ -2,7 +2,7 @@
 
 # Change for multinode config
 
-NUM_WORKERS=1
+NUM_WORKERS=3
 NUM_GPUS_PER_WORKER=8
 MP_SIZE=1
 
@@ -12,7 +12,6 @@ main_dir=$(dirname $script_dir)
 
 OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
-HOST_FILE_PATH="hostfile_single"
 
 full_data="/dataset/fd5061f6/cogview/cogdata_new/cogdata_task_4leveltokens/merge.bin"
 small_data="/dataset/fd5061f6/cogview/cogdata_new/cogdata_task_4leveltokens/zijian/zijian.bin.part_0.cogdata"

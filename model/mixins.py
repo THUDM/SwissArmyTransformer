@@ -69,9 +69,16 @@ class AttentionMixin(BaseMixin):
             self.dense[layer_id].bias.data.copy_(old_attention.dense.bias.data)
 
 class WordEmebeddingMixin(BaseMixin):
-    def __init__(self, additional_token_num, hidden_size):
+    def __init__(self, old_token_num, additional_token_num, hidden_size,
+                init_method_std=0.02, reinit_slice=slice(-1024, None)
+        ):
         super(WordEmebeddingMixin, self).__init__()
-        self.word_embeddings = torch.nn.Embedding(additional_token_num, hidden_size)
+        self.reinit_slice = reinit_slice
+        self.word_embeddings = torch.nn.Embedding(old_token_num + additional_token_num, hidden_size)
         torch.nn.init.normal_(self.word_embeddings.weight, mean=0.0, std=init_method_std)
+
     def reinit(self, transformer, *pre_mixins):
-        old_weights = transformer.
+        old_weights = transformer.word_embedding.weight.data
+        old_len, hidden_size = old_weights.shape
+        assert hidden_size == self.word_embeddings.weight.shape[-1]
+        self.word_embeddings.weight[:old_len].data.view(-1, old_len, hidden_size).copy_(old_weights)

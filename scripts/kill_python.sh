@@ -1,0 +1,1 @@
+pdsh -w ssh:node[1-3] "pkill -9 python"
