@@ -320,8 +320,6 @@ class BaseTransformer(torch.nn.Module):
         # sanity check 
         assert len(input_ids.shape) == 2 
         batch_size, query_length = input_ids.shape
-        assert len(position_ids.shape) <= 2
-        assert position_ids.shape[-1] == query_length
         assert len(attention_mask.shape) == 2 or \
             len(attention_mask.shape) == 4 and attention_mask.shape[1] == 1
         assert branch_input is None or 'layer_forward' in self.hooks and isinstance(branch_input, torch.Tensor)
@@ -340,6 +338,8 @@ class BaseTransformer(torch.nn.Module):
         if 'position_embedding_forward' in self.hooks:
             position_embeddings = self.hooks['position_embedding_forward'](position_ids, **kw_tensors)
         else:
+            assert len(position_ids.shape) <= 2
+            assert position_ids.shape[-1] == query_length
             position_embeddings = self.position_embeddings(position_ids)    
         hidden_states = hidden_states + position_embeddings
         hidden_states = self.embedding_dropout(hidden_states)
