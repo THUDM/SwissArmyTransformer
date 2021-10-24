@@ -165,7 +165,7 @@ def add_text_generate_args(parser):
     group.add_argument('--with-id', action='store_true',
                        help='If each line is prepended with an id.')
     group.add_argument('--max-inference-batch-size', type=int, default=12)
-    group.add_argument('--device', type=int, default=0)
+    group.add_argument('--device', type=int, default=-1)
     return parser
 
 
@@ -246,8 +246,10 @@ def get_args(args_list=None):
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
     
-    if args.local_rank is not None:
-        args.device = args.local_rank
+    if args.device == -1: # not set manually
+        args.device = args.rank % torch.cuda.device_count()
+        if args.local_rank is not None:
+            args.device = args.local_rank
 
     args.model_parallel_size = min(args.model_parallel_size, args.world_size)
     if args.rank == 0:

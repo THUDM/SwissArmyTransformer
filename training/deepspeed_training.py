@@ -493,11 +493,8 @@ def set_deepspeed_activation_checkpointing(args):
 def initialize_distributed(args):
     """Initialize torch.distributed."""
 
-    # Manually set the device ids.
-    device = args.rank % torch.cuda.device_count()
-    if args.local_rank is not None:
-        device = args.local_rank
-    torch.cuda.set_device(device)
+    # the automatic assignment of devices has been moved to arguments.py 
+    torch.cuda.set_device(args.device)
     # Call the init process
     init_method = 'tcp://'
     master_ip = os.getenv('MASTER_ADDR', 'localhost')
