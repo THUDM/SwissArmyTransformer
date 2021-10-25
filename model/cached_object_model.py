@@ -17,9 +17,9 @@ class CachedObjectModel(ObjectModel):
         super().__init__(args, transformer=transformer)
         self.log_attention_weights = None
 
-    def attention_forward(self, hidden_states, mask, *other_tensors, layer_id=None):
+    def attention_forward(self, hidden_states, mask, mems=None, layer_id=None, **kwargs):
         attn_module = self.transformer.layers[layer_id].attention
-        mem = other_tensors[layer_id] if len(other_tensors) > 0 else None
+        mem = mems[layer_id] if mems is not None else None
 
         mixed_raw_layer = attn_module.query_key_value(hidden_states)
         (mixed_query_layer,
@@ -48,3 +48,4 @@ class CachedObjectModel(ObjectModel):
         new_mem = mixed_raw_layer.detach()[..., -(mixed_raw_layer.shape[-1] // 3 * 2):].contiguous()
 
         return output, new_mem
+

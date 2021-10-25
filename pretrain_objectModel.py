@@ -62,14 +62,15 @@ def get_masks_and_position_ids(data,
     position_ids = torch.zeros(batch_size, seq_length, dtype=torch.long,
                                 device=data.device)
 
+    #文字和图片部分用原来的position，object部分用新的从零开始的position
     for i in range(batch_size):
         torch.arange(64 - n_pads[i], out=position_ids[i, n_pads[i]:64],
-                     dtype=torch.long, device=data.device)
-        torch.arange(180-object_pads[i], out=position_ids[i, 64+object_pads:64+180])
+                     dtype=torch.long, device=data.device)#text
+        torch.arange(180-object_pads[i], out=position_ids[i, 64+object_pads:64+180])#object
         # breakpoint()
         torch.arange(64 - n_pads[i],  64 - n_pads[i] + seq_length - (64+180),
                      out=position_ids[i, 64+180:],
-                     dtype=torch.long, device=data.device)
+                     dtype=torch.long, device=data.device)#image
     return attention_mask, loss_mask, position_ids
 
 
@@ -97,7 +98,6 @@ def get_batch(data_iterator, args, timers):
     labels = tokens_[:, 1:].contiguous()
     loss_mask = loss_mask[:, 1:].contiguous()
     tokens = tokens_[:, :-1].contiguous()
-
     attention_mask = None
 
     # Get the masks and postition ids.
@@ -112,7 +112,6 @@ def get_batch(data_iterator, args, timers):
     # Convert
     if args.fp16:
         attention_mask = attention_mask.half()
-
     return tokens, labels, loss_mask, attention_mask, position_ids
 
 
@@ -137,50 +136,51 @@ def forward_step(data_iterator, model, args, timers):
 
 def create_dataset_function(path, args):
     tokenizer = get_tokenizer()
-    layout = [100,164,1188]
+    layout = [100,164,1188] #bin文件里的layout
     names = get_names()
     tokens = []
     for name in names:
         tokens.append(tokenizer.EncodeAsIds(name))
-    # 4 + 4 + 1 一个object需要9个token 20个需要 20*9 = 180个
+
+    # 4坐标 + 4文字 + 1POS0 一个object需要9个token 最多20个object 20个需要 20*9 = 180个
+    # 布局
+    # 前64 : [PAD] * n + [ROI] + text
+    # 64 ~ 64+180 : [PAD] * n + ([POS0] + xmin + ymin + xmax + ymax + class) * m
+    # 64+180 ~ 最后 : [BASE] [BOI] imageTokens [EOI]
     def process_fn(row):
         row = row.astype(np.int64)
         codes = [row[layout[1]:layout[2]]]
         text = row[layout[0]:layout[1]]
         text = text[text > 0][:63]  # [ROI]
         object_tokens = []
-        # print(row[:100])
-        for i in range(20):
+
+        for i in range(20): #最多20个object
             object = row[i * 5: (i+1) * 5]
             if object[0] == -1:
                 break
-            # print("object", object)
             object[2] += object[0]
             object[3] += object[1]
             object_tokens.append(tokenizer['[POS0]'])
-            object_tokens.extend([object[j] + args.old_token_num for j in range(4)])
+            object_tokens.extend([object[j] + args.old_token_num for j in range(4)]) #坐标的token是原来的token数量+坐标值
             object_tokens.extend(tokens[object[4]])
+
         object_tokens = np.array(object_tokens)
-        # print(object_tokens)
-        object_pad = 180 - object_tokens.shape[-1]
+        object_pad = 180 - object_tokens.shape[-1] #object部分补到180
         object_tokens = np.concatenate([
             np.array([tokenizer['[PAD]']] * object_pad, dtype=np.int64),
             object_tokens
         ], axis = 0)
-        # 180
         text_object = np.concatenate([text, np.array(object_tokens, dtype=np.int64)], axis=0)
-        # print(len(text), len(text_object))
-        # print(len(codes[0]))
         merged = TextCodeTemplate(text_object, codes[0], tokenizer)
-        # print(len(merged), len(text))
-        n_pad = args.new_sequence_length - len(merged)
+
+        n_pad = args.new_sequence_length - len(merged) #整体补到最大长度
         parts = [
             np.array([tokenizer['[PAD]']] * n_pad, dtype=np.int64),
             merged
         ]
         ret = np.concatenate(parts, axis=0)
         return {'text': ret,
-                'loss_mask': np.array([0] * n_pad + [1] * (len(text) + 1) + [0] * object_pad + [1] * (182 - object_pad + 1025)),
+                'loss_mask': np.array([0] * n_pad + [1] * (len(text) + 1) + [0] * object_pad + [1] * (182 - object_pad + 1025)), #两个PAD的部分loss mask 为0
                 'object_pad':object_pad,
                 'n_pad':n_pad
                 }

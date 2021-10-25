@@ -24,7 +24,7 @@ class ObjectModel(BaseModel):
         ))
         self.layout = args.layout
 
-    def position_embedding_forward(self, position_ids, *other_tensors):
+    def position_embedding_forward(self, position_ids, **kw_tensors):
         # breakpoint()
         position_text = position_ids[..., :self.layout[0]]
         position_object = position_ids[..., self.layout[0]:self.layout[1]]
@@ -39,10 +39,10 @@ class ObjectModel(BaseModel):
             )
         return position_embeddings
 
-    def word_embedding_forward(self, input_ids, *other_tensors):
+    def word_embedding_forward(self, input_ids, **kw_tensors):
         return self.mixins[1].word_embeddings(input_ids)
 
-    def final_forward(self, logits, *other_tensors):
+    def final_forward(self, logits, **kw_tensors):
         logits = copy_to_model_parallel_region(logits)
         logits = F.linear(logits, self.mixins[1].word_embeddings.weight)
         return logits
@@ -50,7 +50,7 @@ class ObjectModel(BaseModel):
     @classmethod
     def add_model_specific_args(cls, parser):
         group = parser.add_argument_group('ObjectModel', 'Object model configurations')
-        group.add_argument("--layout", type=str, default='64,246,1270')
+        group.add_argument("--layout", type=str, default='64,246,1270') #246 = 64 + 182
         group.add_argument("--old-token-num", type=int, default=58219)
         group.add_argument("--additional-token-num", type=int, default=257)
         group.add_argument("--new-sequence-length", type=int, default=1271) #1089 + 180 + 2
