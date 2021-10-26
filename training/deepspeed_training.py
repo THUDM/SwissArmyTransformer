@@ -335,13 +335,13 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
 
         # Check nan or inf in forward, preventing it from interfering loss scaler,
         # and all reduce metrics by the way
-        # !!!
+
         loss_checker = lm_loss.detach()
         for name in metrics:
             metrics[name] = metrics[name].detach().clone()
             torch.distributed.all_reduce(metrics[name].data)
             metrics[name].data /= args.world_size
-            loss_checker = metrics[name] + metrics[name]
+            loss_checker = loss_checker + metrics[name]
         if loss_checker.isnan().any() or loss_checker.isinf().any():
             print('Skipping backward and optimizer step for nan or inf in forwarding metrics/loss!')
             return lm_loss.detach(), 1, metrics
@@ -497,16 +497,13 @@ def set_deepspeed_activation_checkpointing(args):
 def initialize_distributed(args):
     """Initialize torch.distributed."""
 
-    # Manually set the device ids.
-    device = args.rank % torch.cuda.device_count()
-    if args.local_rank is not None:
-        device = args.local_rank
-    torch.cuda.set_device(device)
+    # the automatic assignment of devices has been moved to arguments.py 
+    torch.cuda.set_device(args.device)
     # Call the init process
     init_method = 'tcp://'
     master_ip = os.getenv('MASTER_ADDR', 'localhost')
     master_port = os.getenv('MASTER_PORT', '6000')
-    master_port = str(29501) # TMP!!! FIX ME!!!
+    # master_port = str(29501) # TMP!!! FIX ME!!!
     init_method += master_ip + ':' + master_port
     torch.distributed.init_process_group(
         backend=args.distributed_backend,

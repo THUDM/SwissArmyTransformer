@@ -94,26 +94,26 @@ class VideoAttentionMixin(BaseMixin):
                 init_method=output_layer_init_method)
                 for layer_id in range(num_layers)
             ])
-        self.attention_dropout = torch.mm.ModuleList(
+        self.attention_dropout = torch.nn.ModuleList(
             [torch.nn.Dropout(attention_dropout_prob)
              for layer_id in range(num_layers)]
         )
-        self.startmap_i2v = RowParallelLinear(hidden_size,
-                video_hidden_size,
-                input_is_parallel=True,
-                init_method=output_layer_init_method)
-        self.keymap_i2v = torch.nn.Modulelist(
+        # self.startmap_i2v = RowParallelLinear(hidden_size,
+        #         video_hidden_size,
+        #         input_is_parallel=True,
+        #         init_method=output_layer_init_method)
+        self.keymap_i2v = torch.nn.ModuleList(
             [RowParallelLinear(hidden_size,
                 video_hidden_size,
                 input_is_parallel=True,
-                init_method=output_layer_init_method)
+                init_method=init_method)
              for layer_id in range(num_layers)
              ])
-        self.valmap_i2v = torch.nn.Modulelist(
+        self.valmap_i2v = torch.nn.ModuleList(
             [RowParallelLinear(hidden_size,
                 video_hidden_size,
                 input_is_parallel=True,
-                init_method=output_layer_init_method)
+                init_method=init_method)
              for layer_id in range(num_layers)
              ])
 
@@ -169,9 +169,50 @@ class VideoMLPMixin(BaseMixin):
             [torch.nn.Dropout(output_dropout_prob)
              for layer_id in range(num_layers)]
         )
+        # self.endmap_v2i = RowParallelLinear(video_hidden_size,
+        #     hidden_size,
+        #     input_is_parallel=True,
+        #     init_method=output_layer_init_method)
+    def reinit(self, transformer, *pre_mixins):
+        assert self.num_layers == len(transformer.layers)
+        
+
+class VideoLayerMixin(BaseMixin):
+    def __init__(self, num_layers, video_hidden_size, hidden_size, 
+                 sandwich_ln,
+                layernorm_epsilon, 
+                init_method=unscaled_init_method(0.02)):
+        super(VideoLayerMixin, self).__init__()
+        self.num_layers = num_layers
+        self.sandwich_ln = sandwich_ln
+
+        self.startmap_i2v = RowParallelLinear(hidden_size,
+                video_hidden_size,
+                input_is_parallel=True,
+                init_method=init_method)
         self.endmap_v2i = RowParallelLinear(video_hidden_size,
             hidden_size,
             input_is_parallel=True,
-            init_method=output_layer_init_method)
+            init_method=init_method)
+        
+        self.frame_input_layernorms = torch.nn.ModuleList(
+            [ LayerNorm(video_hidden_size, eps=layernorm_epsilon)
+            for layer_id in range(num_layers)]
+        )
+        self.frame_post_attention_layernorms = torch.nn.ModuleList(
+            [ LayerNorm(video_hidden_size, eps=layernorm_epsilon)
+            for layer_id in range(num_layers)]
+        )
+        
+        if sandwich_ln:
+            self.frame_third_layernorms = torch.nn.ModuleList(
+                [ LayerNorm(video_hidden_size, eps=layernorm_epsilon)
+                for layer_id in range(num_layers)]
+            )
+            self.frame_fourth_layernorms = torch.nn.ModuleList(
+                [ LayerNorm(video_hidden_size, eps=layernorm_epsilon)
+                for layer_id in range(num_layers)]
+            )
+        
     def reinit(self, transformer, *pre_mixins):
         assert self.num_layers == len(transformer.layers)

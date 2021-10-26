@@ -135,7 +135,7 @@ def forward_step(data_iterator, model, args, timers):
 
 def create_dataset_function(path, args):
     tokenizer = get_tokenizer()
-    layout = [64, 64+1025, 64+1025*16]
+    layout = [64, 64+1024, 64+1024*16]
     def process_fn(row):
         row = row.astype(np.int64)
         codes = [row[64+1024*i:64+1024*(i+1)] for i in range(16)]
@@ -151,8 +151,10 @@ def create_dataset_function(path, args):
             np.array([tokenizer['[BASE]']], dtype=np.int64),
         ]
         for i in range(16):
-            parts += [np.array([tokenizer[begin_codes[i]]], dtype=np.int64), codes[i]]
+            # parts += [np.array([tokenizer[begin_codes[i]]], dtype=np.int64), codes[i]]
+            parts.append(np.array(codes[i])) # 每层结束需要view，最好让frame的总长是2的倍数(m*2^k，k越大越好)
         parts.append(np.array([tokenizer['[EOI1]']], dtype=np.int64))
+        
         ret = np.concatenate(parts, axis=0)
         return {'text': ret, 
             'loss_mask':  np.array([0] * (n_pad+1) + [1] * (len(ret) - n_pad - 1)) # don't predict [ROI1]

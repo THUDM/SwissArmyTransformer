@@ -1,6 +1,14 @@
 #!/bin/bash
 
-CHECKPOINT_PATH=pretrained/cogview/cogview-base
+NUM_WORKERS=4
+NUM_GPUS_PER_WORKER=8
+MP_SIZE=1
+
+OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
+HOST_FILE_PATH="hostfile"
+# HOST_FILE_PATH="hostfile_single"
+
+CHECKPOINT_PATH=pretrained/cogview/cogview2-base
 NLAYERS=48
 NHIDDEN=2560
 NATT=40
@@ -15,7 +23,7 @@ TOPK=200
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 
-MASTER_PORT=${MASTER_PORT} python inference_cogview.py \
+gpt_options=" \
        --tokenizer-type cogview \
        --img-tokenizer-path pretrained/vqvae/l1+ms-ssim+revd_percep.pt \
        --mode inference \
@@ -31,10 +39,15 @@ MASTER_PORT=${MASTER_PORT} python inference_cogview.py \
        --temperature $TEMP \
        --top_k $TOPK \
        --sandwich-ln \
-       --input-source ./input.txt \
-       --output-path samples_text2image \
-       --batch-size 8 \
-       --max-inference-batch-size 8 \
-       $@
+       --input-source ./coco30k.txt \
+       --output-path coco_samples \
+       --batch-size 60 \
+       --max-inference-batch-size 12 \
+       --with-id \
+    "
 
+run_cmd="${OPTIONS_NCCL} deepspeed --num_nodes ${NUM_WORKERS} --num_gpus ${NUM_GPUS_PER_WORKER} --hostfile ${HOST_FILE_PATH} inference_cogview2.py $@ ${gpt_options}"
+echo ${run_cmd}
+eval ${run_cmd}
 
+set +x
