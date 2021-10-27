@@ -298,6 +298,7 @@ class BlockedRandomSplitDataset(data.Dataset):
     def __init__(self, ds, indices, block_size,**kwargs):
         if type(indices) is not np.ndarray:
             indices = np.array(indices)
+            indices = np.sort(indices)
         self.block_size = block_size
         self.wrapped_data = ds
         self.wrapped_data_len = len(ds)
