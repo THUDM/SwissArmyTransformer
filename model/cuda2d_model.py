@@ -28,10 +28,10 @@ class Cuda2dModel(BaseModel):
     def __init__(self, args, transformer=None):
         super().__init__(args, transformer=transformer)
         additional_seqlen = args.new_sequence_length - args.max_sequence_length
-        self.mixins.append(PositionEmbeddingMixin(
+        self.add_mixin('extra_position_embedding', PositionEmbeddingMixin(
             additional_seqlen, args.hidden_size
         ))
-        self.mixins.append(AttentionMixin(
+        self.add_mixin('attention_plus', AttentionMixin(
             num_layers=args.num_layers,
             hidden_size=args.hidden_size
         ))
@@ -41,23 +41,24 @@ class Cuda2dModel(BaseModel):
         self.kernel_size2 = args.kernel_size2
         self.log_attention_weights = None
     
-    def position_embedding_forward(self, position_ids, **kw_tensors):
+    def position_embedding_forward(self, position_ids, **kw_args):
         position = position_ids[..., :self.layout[1]]
         position_plus = position_ids[..., self.layout[1]:]
         position_embeddings = torch.cat(
                 (
                     self.transformer.position_embeddings(position),
-                    self.mixins[0].position_embeddings(position_plus)
+                    self.get_mixin('extra_position_embedding').position_embeddings(position_plus)
                 ),
                 dim=-2
             )
         return position_embeddings
         
-    def attention_forward(self, hidden_states, mask, layer_id=None, **kw_tensors):
+    def attention_forward(self, hidden_states, mask, 
+                        layer_id=None, log_attention_weights=None, **kw_args):
         attn_module = self.transformer.layers[layer_id].attention
         # attention_plus on all layers
-        query_key_value_plus = self.mixins[1].query_key_value[layer_id] 
-        dense_plus = self.mixins[1].dense[layer_id]
+        query_key_value_plus = self.get_mixin('attention_plus').query_key_value[layer_id] 
+        dense_plus = self.get_mixin('attention_plus').dense[layer_id]
         
         # split two parts
         hidden_states_plus = hidden_states[:, self.layout[1]:]
@@ -81,7 +82,7 @@ class Cuda2dModel(BaseModel):
                 kernel_size=self.kernel_size,
                 kernel_size2=self.kernel_size2,
                 attention_dropout=dropout_fn,
-                log_attention_weights=self.log_attention_weights
+                log_attention_weights=log_attention_weights
             )
 
         output_0 = attn_module.dense(context_layer0)

@@ -33,7 +33,7 @@ MASTER_PORT=${MASTER_PORT} python inference_cogview.py \
        --sandwich-ln \
        --input-source ./input.txt \
        --output-path samples_text2image \
-       --batch-size 8 \
+       --batch-size 4 \
        --max-inference-batch-size 8 \
        $@
 

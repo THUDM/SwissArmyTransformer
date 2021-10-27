@@ -50,7 +50,7 @@ gpt_options="${gpt_options}
        --deepspeed \
        --deepspeed_config ${config_json} \
 "
-              
+
 
 run_cmd="${OPTIONS_NCCL} deepspeed --num_nodes ${NUM_WORKERS} --num_gpus ${NUM_GPUS_PER_WORKER} --hostfile ${HOST_FILE_PATH} pretrain_cogview2.py $@ ${gpt_options}"
 echo ${run_cmd}

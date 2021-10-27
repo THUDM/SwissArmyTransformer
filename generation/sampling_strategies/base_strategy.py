@@ -15,7 +15,7 @@ import torch
 import torch.nn.functional as F
 
 
-def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-float('Inf')):
+def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-65504):
     # This function has been mostly taken from huggingface conversational ai code at
     # https://medium.com/huggingface/how-to-build-a-state-of-the-art-conversational-ai-with-transfer-learning-2d818ac26313
 
@@ -69,10 +69,11 @@ class BaseStrategy:
         logits = top_k_logits(logits, self.topk, self.top_p)
         probs = F.softmax(logits.float(), dim=-1)  # float is essetial, due to a bug in Pytorch
         pred = torch.multinomial(probs, num_samples=1)
-        if pred.item() in self.end_tokens:
+        if pred.numel() == 1 and pred.item() in self.end_tokens:
             self._is_done = True
         tokens = torch.cat((tokens, pred.view(tokens.shape[0], 1)), dim=1)
         return tokens, mems
 
     def finalize(self, tokens, mems):
+        self._is_done = False
         return tokens, mems

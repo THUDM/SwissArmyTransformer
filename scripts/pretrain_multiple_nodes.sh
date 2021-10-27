@@ -19,17 +19,17 @@ small_data="/dataset/fd5061f6/cogview/cogdata_new/cogdata_task_4leveltokens/ziji
 
 config_json="$script_dir/ds_config_zero.json"
 gpt_options=" \
-       --experiment-name pretrain-gpt2-cogview-test \
+       --experiment-name pretrain-gpt2-cogview-small \
        --tokenizer-type cogview \
        --img-tokenizer-path pretrained/vqvae/vqvae_hard_biggerset_011.pt \
        --model-parallel-size ${MP_SIZE} \
        --mode pretrain \
-       --num-layers 12 \
-       --hidden-size 1024 \
-       --num-attention-heads 16 \
+       --num-layers 40 \
+       --hidden-size 2048 \
+       --num-attention-heads 32 \
        --train-iters 200000 \
        --resume-dataloader \
-       --train-data ${small_data} \
+       --train-data ${full_data} \
        --split 949,50,1 \
        --distributed-backend nccl \
        --lr-decay-style cosine \
@@ -38,9 +38,9 @@ gpt_options=" \
        --max-sequence-length 1089 \
        --sandwich-ln \
        --fp16 \
-       --save-interval 2000 \
+       --save-interval 5000 \
        --eval-interval 1000 \
-       --save $main_dir/checkpoints \
+       --save /root/checkpoints \
 "
        # --load pretrained/cogview/cogview-base
 

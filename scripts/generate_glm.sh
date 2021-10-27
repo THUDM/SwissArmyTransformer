@@ -1,7 +1,28 @@
 #!/bin/bash
-CHECKPOINT_PATH=/dataset/fd5061f6/english_data/checkpoints
+CHECKPOINT_PATH=pretrained/glm
 
-source $1
+# MODEL_ARGS="--block-lm \
+#             --cloze-eval \
+#             --num-layers 24 \
+#             --hidden-size 1024 \
+#             --num-attention-heads 16 \
+#             --max-sequence-length 513 \
+#             --tokenizer-model-type roberta \
+#             --tokenizer-type glm_GPT2BPETokenizer \
+#             --load ${CHECKPOINT_PATH}/glm-roberta-large-blank"
+
+MODEL_TYPE="blocklm-10B"
+MODEL_ARGS="--block-lm \
+            --cloze-eval \
+            --task-mask \
+            --num-layers 48 \
+            --hidden-size 4096 \
+            --num-attention-heads 64 \
+            --max-sequence-length 1025 \
+            --tokenizer-model-type gpt2 \
+            --tokenizer-type glm_GPT2BPETokenizer \
+            --old-checkpoint \
+            --load ${CHECKPOINT_PATH}/glm-en-10b"
 
 MPSIZE=1
 MAXSEQLEN=512
@@ -29,4 +50,7 @@ python -m torch.distributed.launch --nproc_per_node=$MPSIZE --master_port $MASTE
        --out-seq-length $MAXSEQLEN \
        --temperature $TEMP \
        --top_k $TOPK \
-       --top_p $TOPP
+       --output-path glm_text \
+       --batch-size 1 \
+       --out-seq-length 100 \
+       --mode inference

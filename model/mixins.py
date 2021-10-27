@@ -20,9 +20,11 @@ class BaseMixin(torch.nn.Module):
     def __init__(self):
         super(BaseMixin, self).__init__()
         # define new params
-    def reinit(self, transformer, *pre_mixins):
+    def reinit(self, *pre_mixins):
         # reload the initial params from previous trained modules
         pass
+    # can also define hook-functions here
+    # ...
 
 class PositionEmbeddingMixin(BaseMixin):
     def __init__(self, additional_sequence_length, hidden_size, 
@@ -32,8 +34,8 @@ class PositionEmbeddingMixin(BaseMixin):
         self.reinit_slice = reinit_slice
         self.position_embeddings = torch.nn.Embedding(additional_sequence_length, hidden_size)
         torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)
-    def reinit(self, transformer, *pre_mixins):
-        old_weights = transformer.position_embeddings.weight.data[self.reinit_slice]
+    def reinit(self, *pre_mixins):
+        old_weights = self.transformer.position_embeddings.weight.data[self.reinit_slice]
         old_len, hidden_size = old_weights.shape
         assert hidden_size == self.position_embeddings.weight.shape[-1]
         self.position_embeddings.weight.data.view(-1, old_len, hidden_size).copy_(old_weights)
@@ -58,11 +60,11 @@ class AttentionMixin(BaseMixin):
                 init_method=output_layer_init_method)
                 for layer_id in range(num_layers)
             ])
-    def reinit(self, transformer, *pre_mixins):
-        start_layer = len(transformer.layers) - self.num_layers
+    def reinit(self, *pre_mixins):
+        start_layer = len(self.transformer.layers) - self.num_layers
         assert start_layer >= 0
         for layer_id in range(self.num_layers):
-            old_attention = transformer.layers[start_layer + layer_id].attention
+            old_attention = self.transformer.layers[start_layer + layer_id].attention
             self.query_key_value[layer_id].weight.data.copy_(old_attention.query_key_value.weight.data)
             self.query_key_value[layer_id].bias.data.copy_(old_attention.query_key_value.bias.data)
             self.dense[layer_id].weight.data.copy_(old_attention.dense.weight.data)

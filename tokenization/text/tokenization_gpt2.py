@@ -36,12 +36,12 @@ from ..file_utils import cached_path
 logger = logging.getLogger(__name__)
 
 PRETRAINED_VOCAB_ARCHIVE_MAP = {
-    'gpt2': "pretrained/pytorch_pretrained_bert/gpt2-vocab.json",
-    "roberta": "pretrained/pytorch_pretrained_bert/roberta-vocab.json"
+    'gpt2': "pretrained/english_tokenizer/gpt2-vocab.json",
+    "roberta": "pretrained/english_tokenizer/roberta-vocab.json"
 }
 PRETRAINED_MERGES_ARCHIVE_MAP = {
-    'gpt2': "pretrained/pytorch_pretrained_bert/gpt2-merges.txt",
-    "roberta": "pretrained/pytorch_pretrained_bert/roberta-merges.txt"
+    'gpt2': "pretrained/english_tokenizer/gpt2-merges.txt",
+    "roberta": "pretrained/english_tokenizer/roberta-merges.txt"
 }
 PRETRAINED_VOCAB_POSITIONAL_EMBEDDINGS_SIZE_MAP = {
     'gpt2': 1024,

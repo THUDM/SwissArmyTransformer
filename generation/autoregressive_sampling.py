@@ -14,7 +14,7 @@ import random
 import torch
 from .sampling_strategies import BaseStrategy
 
-def get_masks_and_position_ids(seq):
+def get_masks_and_position_ids_default(seq):
     tokens = seq.unsqueeze(0)
 
     attention_mask = torch.ones((1, len(seq), len(seq)), device=tokens.device)
@@ -36,7 +36,6 @@ def update_mems(hiddens, mems, max_memory_length):
     memory_length = mems.shape[2] if mems is not None else 0
     query_length = hiddens.shape[2]
     new_memory_length = min(max_memory_length, memory_length + query_length)
-    new_mems = []
     with torch.no_grad():
         if new_memory_length <= query_length:
             return hiddens[:, :, -new_memory_length:]
@@ -55,10 +54,16 @@ def filling_sequence(
         batch_size,
         strategy=BaseStrategy(),
         max_memory_length=100000,
-        log_attention_weights=None
+        log_attention_weights=None,
+        get_masks_and_position_ids=get_masks_and_position_ids_default,
+        mems=None
         ):
     '''
         seq: [2, 3, 5, ..., -1(to be generated), -1, ...]
+        mems: [num_layers, batch_size, len_mems(index), mem_hidden_size]
+            cache, should be first mems.shape[1] parts of context_tokens.
+            mems are the first-level citizens here, but we don't assume what is memorized.
+            input mems are used when multi-phase generation.
     '''
     assert len(seq.shape) == 1
 
@@ -72,9 +77,7 @@ def filling_sequence(
     attention_mask = attention_mask.type_as(next(model.parameters())) # if fp16
     # initialize generation
     counter = context_length - 1 # Last fixed index is ``counter'' 
-    index = 0 # Next forward starting index, also the length of cache.
-    mems = None # mems are the first-level citizens here, but we don't assume what is memorized.
-        
+    index = 0 if mems is None else mems.shape[2] # Next forward starting index, also the length of cache.
     # step-by-step generation
     while counter < len(seq) - 1:
         # Now, we want to generate seq[counter + 1],
@@ -83,7 +86,7 @@ def filling_sequence(
         if seq[counter + 1] >= 0: # provided
             tokens = torch.cat(
                 (
-                    tokens, 
+                tokens, 
                     seq[counter+1: counter+2].expand(tokens.shape[0], 1)
                 ), dim=1
             )
@@ -92,13 +95,16 @@ def filling_sequence(
 
         # forward
         if log_attention_weights is not None:
-            model.log_attention_weights = log_attention_weights[..., index: counter+1, :counter+1] # TODO memlen
-        kw_tensors = {'mems': mems} if mems is not None else {}
+            log_attention_weights_part = log_attention_weights[..., index: counter+1, :counter+1] # TODO memlen
+        else:
+            log_attention_weights_part = None
+
         logits, *mem_kv = model(
             tokens[:, index:], 
             position_ids[..., index: counter+1],
             attention_mask[..., index: counter+1, :counter+1], # TODO memlen
-            **kw_tensors # if no mems, cannot pass
+            mems=mems,
+            log_attention_weights=log_attention_weights_part
         )
         mems = update_mems(mem_kv, mems, max_memory_length=max_memory_length)
         counter += 1
@@ -107,6 +113,6 @@ def filling_sequence(
         logits = logits[:, -1].expand(batch_size, -1) # [batch size, vocab size]
         tokens = tokens.expand(batch_size, -1)
         tokens, mems = strategy.forward(logits, tokens, mems)
-        
-    model.log_attention_weights = None
-    return tokens
+        if strategy.is_done:
+            break
+    return strategy.finalize(tokens, mems)

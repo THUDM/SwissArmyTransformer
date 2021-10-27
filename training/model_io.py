@@ -131,11 +131,6 @@ def load_checkpoint(model, args):
     else: # inference without deepspeed
         module = model
 
-    # Process the checkpoint for GLM
-    if args.block_lm and args.old_checkpoint:
-        sd['module']['transformer.word_embeddings.weight'] = sd['module']['word_embeddings.weight']
-        del sd['module']['word_embeddings.weight']
-
     # only load module, other hyperparameters are just for recording.
     missing_keys, unexpected_keys = module.load_state_dict(sd['module'], strict=False)
     if len(unexpected_keys) > 0:

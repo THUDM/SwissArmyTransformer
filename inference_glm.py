@@ -1,12 +1,13 @@
 # -*- encoding: utf-8 -*-
 '''
-@File    :   inference_cogview.py
-@Time    :   2021/10/09 19:41:58
+@File    :   inference_glm.py
+@Time    :   2021/10/22 19:41:58
 @Author  :   Ming Ding
 @Contact :   dm18@mail.tsinghua.edu.cn
 '''
 
 # here put the import lib
+from functools import partial
 import os
 import sys
 import random
@@ -14,163 +15,138 @@ import time
 from datetime import datetime
 import torch
 import torch.nn.functional as F
-
+import argparse
+import stat
 import mpu
+from functools import partial
 from arguments import get_args
 from model.glm_model import GLMModel
+from model.cached_autoregressive_model import CachedAutoregressiveMixin
 from training import load_checkpoint, initialize_distributed, set_random_seed, prepare_tokenizer
-from generation.glm_sampling import filling_sequence_glm
+from generation.autoregressive_sampling import filling_sequence
 from generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
+from generation.utils import timed_name, generate_continually
 
+def get_masks_and_position_ids_glm(seq, mask_position, context_length):
+    tokens = seq.unsqueeze(0)
 
-def read_context(tokenizer, args, output=None):
-    terminate_runs, skip_run = 0, 0
-    if mpu.get_model_parallel_rank() == 0:
-        while True:
-            raw_text = input("\nContext prompt (stop to exit) >>> ")
-            if not raw_text:
-                print('Prompt should not be empty!')
-                continue
-            if raw_text == "stop":
-                terminate_runs = 1
-                break
-            generation_mask = '[gMASK]' if args.task_mask else '[MASK]'
-            if args.block_lm and 'MASK]' not in raw_text:
-                raw_text += ' ' + generation_mask
-            if output is not None:
-                output.write(raw_text)
-            context_tokens = tokenizer.EncodeAsIds(raw_text).tokenization
-            if args.block_lm:
-                context_tokens = [tokenizer.get_command('ENC').Id] + context_tokens
-                if not raw_text.endswith('MASK]'):
-                    context_tokens = context_tokens + [tokenizer.get_command('eos').Id]
-            context_length = len(context_tokens)
+    attention_mask = torch.ones((1, len(seq), len(seq)), device=tokens.device)
+    attention_mask.tril_()
+    attention_mask.unsqueeze_(1)
 
-            if context_length >= args.max_sequence_length:
-                print("\nContext length", context_length,
-                      "\nPlease give smaller context than the window length!")
-                continue
-            break
-    else:
-        context_length = 0
+    position_ids = torch.zeros(2, len(seq), device=tokens.device, dtype=torch.long)
+    torch.arange(0, context_length, out=position_ids[0, :context_length])
+    position_ids[0, context_length:] = mask_position
+    torch.arange(1, len(seq) - context_length + 1, out=position_ids[1, context_length:])
 
-    terminate_runs_tensor = torch.cuda.LongTensor([terminate_runs])
-    torch.distributed.broadcast(terminate_runs_tensor, mpu.get_model_parallel_src_rank(),
-                                group=mpu.get_model_parallel_group())
-    terminate_runs = terminate_runs_tensor[0].item()
-
-    if terminate_runs == 1:
-        return terminate_runs, None, None, None
-
-    context_length_tensor = torch.cuda.LongTensor([context_length])
-
-    torch.distributed.broadcast(context_length_tensor, mpu.get_model_parallel_src_rank(),
-                                group=mpu.get_model_parallel_group())
-    context_length = context_length_tensor[0].item()
-    if mpu.get_model_parallel_rank() == 0:
-        context_tokens_tensor = torch.cuda.LongTensor(context_tokens)
-    else:
-        context_tokens_tensor = torch.cuda.LongTensor([0] * context_length)
-    torch.distributed.broadcast(context_tokens_tensor, mpu.get_model_parallel_src_rank(),
-                                group=mpu.get_model_parallel_group())
-    if mpu.get_model_parallel_rank() != 0:
-        raw_text = tokenizer.DecodeIds(context_tokens_tensor.tolist())
-    return terminate_runs, raw_text, context_tokens_tensor, context_length
-
-
-def get_batch(context_tokens, args):
-    tokens = context_tokens
-    tokens = tokens.view(1, -1).contiguous()
-    tokens = tokens.to('cuda')
-
-    # Get the masks and postition ids.
-    if args.block_lm:
-        attention_mask = torch.ones(tokens.size(1), tokens.size(1), device='cuda', dtype=torch.long)
-        if args.fp16:
-            attention_mask = attention_mask.half()
-        position_ids = torch.arange(tokens.size(1), device='cuda', dtype=torch.long)
-        if not args.no_block_position:
-            block_position_ids = torch.zeros(tokens.size(1), device='cuda', dtype=torch.long)
-            position_ids = torch.stack((position_ids, block_position_ids), dim=0)
-        position_ids = position_ids.unsqueeze(0)
-    else:
-        raise NotImplementedError
-
+    position_ids = position_ids.unsqueeze(0)
     return tokens, attention_mask, position_ids
-
-
-def generate_samples(model, tokenizer, args):
-    model.eval()
-    output_path = "./samples"
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
-    output_path = os.path.join(output_path, f"sample-{datetime.now().strftime('%m-%d-%H-%M')}.txt")
-    with torch.no_grad(), open(output_path, "w") as output:
-        while True:
-            torch.distributed.barrier(group=mpu.get_model_parallel_group())
-            terminate_runs, raw_text, context_tokens_tensor, context_length = read_context(tokenizer, args, output)
-            if terminate_runs == 1:
-                return
-            start_time = time.time()
-            if args.block_lm:
-                mems = []
-                tokens, attention_mask, position_ids = get_batch(context_tokens_tensor, args)
-                mask_tokens = ['MASK', 'sMASK', 'gMASK'] if args.task_mask else ['MASK']
-                mask_tokens = [tokenizer.get_command(token).Id for token in mask_tokens]
-                end_tokens = [tokenizer.get_command('eop').Id, tokenizer.get_command('eos').Id]
-                mask_positions = []
-                for token in mask_tokens:
-                    mask_positions += (context_tokens_tensor == token).nonzero(as_tuple=True)[0].tolist()
-                mask_positions.sort()
-                if args.no_block_position:
-                    for mask_position in mask_positions:
-                        position_ids[0, mask_position + 1:] += args.out_seq_length
-                _, *mems = model(tokens, position_ids, attention_mask, *mems)
-                for mask_position in mask_positions:
-                    if args.no_block_position:
-                        position = position_ids[0, mask_position].item()
-                    else:
-                        position = mask_position
-                    if args.num_beams > 1:
-                        strategy = BeamSearchStrategy(num_beams=args.num_beams, max_length=args.out_seq_length,
-                                                      length_penalty=args.length_penalty, end_tokens=end_tokens,
-                                                      no_repeat_ngram_size=args.no_repeat_ngram_size,
-                                                      min_tgt_length=args.min_tgt_length)
-                    else:
-                        strategy = BaseStrategy(temperature=args.temperature, top_k=args.top_k, top_p=args.top_p,
-                                                end_tokens=end_tokens)
-                    new_tokens, mems = filling_sequence_glm(model, tokenizer, position, strategy, args, mems=mems,
-                                                            end_tokens=end_tokens)
-                    tokens = torch.cat((tokens, new_tokens), dim=1)
-            output_tokens_list = tokens.view(-1).contiguous()
-            if mpu.get_model_parallel_rank() == 0:
-                os.system('clear')
-                print("\nTaken time {:.2f}\n".format(time.time() - start_time), flush=True)
-                print("\nContext:", raw_text, flush=True)
-                decode_tokens = tokenizer.DecodeIds(output_tokens_list.tolist())
-                trim_decode_tokens = decode_tokens
-                print("\nGLM:", trim_decode_tokens, flush=True)
-                output.write(trim_decode_tokens + "\n")
-
-            torch.distributed.barrier(group=mpu.get_model_parallel_group())
 
 
 def main(args):
     initialize_distributed(args)
     tokenizer = prepare_tokenizer(args)
-    # build model
+    # build model 
     model = GLMModel(args)
+    model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
     if args.fp16:
         model = model.half()
     model = model.to(args.device)
     load_checkpoint(model, args)
     set_random_seed(args.seed)
     model.eval()
-    generate_samples(model, tokenizer, args)
 
+    end_tokens = [tokenizer.get_command('eop').Id, tokenizer.get_command('eos').Id]
+    # define function for each query
+    strategy = BaseStrategy(temperature=args.temperature, top_k=args.top_k,end_tokens=end_tokens)
+    
+    def process(raw_text):
+        if args.with_id:
+            query_id, raw_text = raw_text.split('\t')
+        # add MASK
+        generation_mask = '[gMASK]' if args.task_mask else '[MASK]'
+        if 'MASK]' not in raw_text:
+            raw_text += ' ' + generation_mask
+        seq = tokenizer.EncodeAsIds(raw_text).tokenization
+        seq = [tokenizer.get_command('ENC').Id] + seq
+        if not raw_text.endswith('MASK]'):
+            seq = seq + [tokenizer.get_command('eos').Id]
+        print('raw text: ', raw_text)
+        if len(seq) > args.max_sequence_length:
+            raise ValueError('text too long.')
+        
+        # find mask tokens positions
+        mask_tokens = ['MASK', 'sMASK', 'gMASK'] if args.task_mask else ['MASK']
+        mask_tokens = [tokenizer.get_command(token).Id for token in mask_tokens]
+        mask_positions = []
+        context_tokens_tensor = torch.tensor(seq, dtype=torch.long, device=args.device)
+        for token in mask_tokens:
+            mask_positions += (context_tokens_tensor == token).nonzero(as_tuple=True)[0].tolist()
+        mask_positions.sort()
+        
+        # generation
+        mbz = args.max_inference_batch_size
+        assert args.batch_size < mbz or args.batch_size % mbz == 0
+        output_list = []
+        # call for each position
+        for mp_idx, mask_position in enumerate(mask_positions):
+            get_func = partial(get_masks_and_position_ids_glm, mask_position=mask_position, context_length=len(seq))
+            for tim in range(max(args.batch_size // mbz, 1)):
+                input_seq = torch.cuda.LongTensor(seq + [tokenizer.get_command('sop').Id] + [-1] * (args.out_seq_length-len(seq)-1), device=args.device)
+                output, _mems = filling_sequence(model, input_seq,
+                        batch_size=min(args.batch_size, mbz),
+                        strategy=strategy,
+                        log_attention_weights=None,
+                        get_masks_and_position_ids=get_func
+                        ) # we don't use mems, fill back
+                if isinstance(output, torch.Tensor): # different strategies
+                    output = list(output)
+                
+                output_list.extend(output)
+
+            # clip -1s and fill back generated things into seq
+            for i in range(len(output_list)):
+                output = output_list[i].tolist()
+                try:
+                    unfinished = output.index(-1)
+                except ValueError:
+                    unfinished = len(output)
+                bog = output.index(tokenizer.get_command('sop').Id)
+                output_list[i] = output[:mask_position] + output[bog+1:unfinished] + output[mask_position+1:bog]
+            
+            # prepare the next auto-regressive generation
+            if mp_idx < len(mask_positions) - 1: 
+                # TODO, here to select the best for this time, inverse prompting?
+                seq = output_list[0]
+                output_list = []
+
+        # decoding
+        txts = []
+        for seq in output_list:
+            decode_tokens = tokenizer.DecodeIds(seq)
+            txts.append(decode_tokens)
+
+        # save
+        if args.with_id:
+            full_path = os.path.join(args.output_path, query_id + '.txt')
+        else:
+            prefix = raw_text.replace('/', '')[:20]
+            full_path = timed_name(prefix, '.txt', args.output_path)
+            print(txts[0]) # print the first.
+        with open(full_path, 'w') as fout:
+            for txt in txts:
+                fout.write(txt + '\n')
+        os.chmod(full_path, stat.S_IRWXO+stat.S_IRWXG+stat.S_IRWXU)
+
+    os.makedirs(args.output_path, exist_ok=True)
+    generate_continually(process, args.input_source)
 
 if __name__ == "__main__":
-    args = get_args()
+    py_parser = argparse.ArgumentParser(add_help=False)
 
+    known, args_list = py_parser.parse_known_args()
+    args = get_args(args_list)
+    args = argparse.Namespace(**vars(args), **vars(known))
+    
     with torch.no_grad():
         main(args)

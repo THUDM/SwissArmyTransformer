@@ -14,11 +14,13 @@ import random
 import torch
 
 from mpu import BaseTransformer
+from .mixins import BaseMixin
 
 class BaseModel(torch.nn.Module):
     def __init__(self, args, transformer=None):
         super(BaseModel, self).__init__()
-        self.hooks = self.collect_hooks()
+        self.mixins = torch.nn.ModuleDict()
+        self.collect_hooks_()
         if transformer is not None:
             self.transformer = transformer
         else:
@@ -37,12 +39,25 @@ class BaseModel(torch.nn.Module):
                 parallel_output=True,
                 hooks=self.hooks
             )
-        self.mixins = torch.nn.ModuleList()
         
-    def reinit(self):
+    def reinit(self): # will be called when loading model
         # if some mixins are loaded, overrides this function
-        for m in self.mixins: 
+        for m in self.mixins.values(): 
             m.reinit(self.transformer)
+            
+    def add_mixin(self, name, new_mixin, reinit=False):
+        assert name not in self.mixins
+        assert isinstance(new_mixin, BaseMixin)
+        
+        self.mixins[name] = new_mixin # will auto-register parameters
+        object.__setattr__(new_mixin, 'transformer', self.transformer) # cannot use pytorch set_attr
+        
+        if reinit:
+            new_mixin.reinit(self.transformer, **self.mixins) # also pass current mixins
+        self.collect_hooks_()
+        
+    def get_mixin(self, name):
+        return self.mixins[name]
     
     def forward(self, *args, **kwargs):
         # update hooks as the current model (overrided forwards)
@@ -51,16 +66,28 @@ class BaseModel(torch.nn.Module):
         self.transformer.hooks.update(self.hooks)
         return self.transformer(*args, **kwargs)
         
-    def collect_hooks(self):
+    def collect_hooks_(self):
         names = ['word_embedding_forward', 'position_embedding_forward',
                 'attention_forward', 'mlp_forward', 'final_forward', 'layer_forward',
                 'branch_embedding_forward', 'branch_final_forward'
                 ]
         hooks = {}
+        hook_origins = {}
         for name in names:
+            for mixin_name, m in self.mixins.items():
+                if hasattr(m, name):
+                    if name in hooks: # conflict
+                        raise ValueError(f'Hook {name} conflicts at {mixin_name} and {hook_origins[name]}.')
+                    hooks[name] = getattr(m, name)
+                    hook_origins[name] = mixin_name
             if hasattr(self, name):
+                # if name in hooks: # defined in mixins, can override
+                #     print(f'Override {name} in {hook_origins[name]}...')
                 hooks[name] = getattr(self, name)
+                hook_origins[name] = 'model'
+        self.hooks = hooks
+        self.hook_origins = hook_origins
         return hooks
-
+    
     def disable_untrainable_params(self):
         pass
