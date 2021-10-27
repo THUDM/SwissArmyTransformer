@@ -14,14 +14,18 @@ import random
 import torch
 import torch.nn.functional as F
 
+from mpu import transformer
+
 
 from .base_model import BaseModel
-from .mixins import PositionEmbeddingMixin, VideoAttentionMixin, VideoMLPMixin
+from .mixins import PositionEmbeddingMixin, VideoAttentionMixin, VideoMLPMixin, VideoLayerMixin
 
 from mpu.transformer import split_tensor_along_last_dim
 from mpu.local_attention_function import f_similar, f_weighting
 from mpu.utils import sqrt, gelu
 from deepspeed.runtime.activation_checkpointing.checkpointing import get_cuda_rng_tracker
+from mpu.transformer import unscaled_init_method
+import time
 
 
 
@@ -38,22 +42,38 @@ class VideoModel(BaseModel):
             hidden_size=args.hidden_size,
             video_hidden_size=args.video_hidden_size,
             video_n_head=args.video_n_head,
-            attention_dropout_prob=args.attention_dropout
+            attention_dropout_prob=args.attention_dropout,
+            init_method=self.transformer.init_method,
+            output_layer_init_method=self.transformer.output_layer_init_method
         ))
         self.mixins.append(VideoMLPMixin(
             num_layers=args.num_layers,
             video_hidden_size=args.video_hidden_size,
             hidden_size=args.hidden_size,
             output_dropout_prob=args.hidden_dropout,
+            init_method=self.transformer.init_method,
+            output_layer_init_method=self.transformer.output_layer_init_method
         ))
+        self.mixins.append(VideoLayerMixin(
+            num_layers=args.num_layers,
+            video_hidden_size=args.video_hidden_size,
+            hidden_size=args.hidden_size,
+            sandwich_ln=args.sandwich_ln,
+            layernorm_epsilon=args.layernorm_epsilon,
+            init_method=self.transformer.init_method
+        ))
+        
         self.layout = args.layout
+        self.sandwich_ln = args.sandwich_ln
+        self.hidden_size = args.hidden_size
+        self.video_hidden_size = args.video_hidden_size
         # [PAD]... [ROI1] text ...  {layout[0]} [BOI1] 1024 {layout[1]} [BOI2] 1024 [BOI3] 1024 [EOI2] 1024 ... (16 frames)[POS8]1024 {layout[2]}
         # output ends with [EOI1]
         # frame beginer: [BOI1][BOI2][BOI3][EOI2][EOI3][ROI2][ROI3][POS0][POS1][POS2][POS3][POS4][POS5][POS6][POS7][POS8]
         # self.frame_nums = args.frame_nums
         # attend to 1 frame before
         
-    def position_embedding_forward(self, position_ids, *other_tensors):
+    def position_embedding_forward(self, position_ids, **kw_tensors):
         position = position_ids[..., :self.layout[1]]
         position_plus = position_ids[..., self.layout[1]:]
         position_embeddings = torch.cat(
@@ -65,7 +85,7 @@ class VideoModel(BaseModel):
             )
         return position_embeddings
     
-    def attention_forward(self, hidden_states, mask, *other_tensors, layer_id=None):
+    def my_attention_forward(self, hidden_states, mask, layer_id=None, **kw_tensors):
         per_frame_len = self.layout[1]-self.layout[0]
         text_image_len = self.layout[1]
         
@@ -84,11 +104,10 @@ class VideoModel(BaseModel):
         mixed_raw_layer = attn_module.query_key_value(hidden_states_image)
         qi, ki, vi = split_tensor_along_last_dim(mixed_raw_layer, 3)
         # video frames qkv
-        if layer_id ==0:
-            hidden_states_frame = attn_mixin.startmap_i2v(hidden_states_frame)
+        # if layer_id ==0:
+        #     hidden_states_frame = attn_mixin.startmap_i2v(hidden_states_frame)
         mixed_raw_layer = attn_mixin.query_key_value[layer_id](hidden_states_frame)
         qf, kf, vf = split_tensor_along_last_dim(mixed_raw_layer, 3)
-        # 初始化到和原来一样!!!
         dropout_fn = attn_module.attention_dropout if self.training else None
         dropout_fn_frame = attn_mixin.attention_dropout[layer_id] if self.training else None
               
@@ -113,16 +132,73 @@ class VideoModel(BaseModel):
                 
         return (output_image, output_frame), None
     
-    def mlp_forward(self, hidden_states, *other_tensors, layer_id=None):
+    def my_mlp_forward(self, hidden_states, layer_id=None, **kw_tensors):
         image_hidden_states, frame_hidden_states = hidden_states
-        intermediate_parallel_image = self.dense_h_to_4h(image_hidden_states)
+        intermediate_parallel_image = self.transformer.layers[layer_id].mlp.dense_h_to_4h(image_hidden_states)
         intermediate_parallel_image = gelu(intermediate_parallel_image)
-        output_image = self.dense_4h_to_h(intermediate_parallel_image)
-        intermediate_paralle_frame = self.mixin[2].dense_h_to_4h(frame_hidden_states)
-        intermediate_paralle_frame = gelu(intermediate_paralle_frame)
-        output_frame = self.mixin[2].dense_4h_to_h(intermediate_paralle_frame)
+        output_image = self.transformer.layers[layer_id].mlp.dense_4h_to_h(intermediate_parallel_image)
+        intermediate_parallel_frame = self.mixins[2].dense_h_to_4h[layer_id](frame_hidden_states)
+        intermediate_parallel_frame = gelu(intermediate_parallel_frame)
+        output_frame = self.mixins[2].dense_4h_to_h[layer_id](intermediate_parallel_frame)
         
         return output_image, output_frame
+    
+    def layer_forward(self, hidden_states, mask, layer_id=None, **kw_tensors):
+        # starttime = time.time()
+        if layer_id == 0:
+            hidden_state_image = hidden_states[..., :self.layout[1], :]
+            hidden_state_frame = hidden_states[..., self.layout[1]:, :]
+            hidden_state_frame = self.mixins[3].startmap_i2v(hidden_state_frame)
+            
+        else:
+            hidden_state_image = hidden_states[..., :self.layout[1], :]
+            hidden_state_frame = hidden_states[..., self.layout[1]:, :].reshape(hidden_states.shape[0], -1, self.video_hidden_size)
+            # hidden_state_image, hidden_state_frame = hidden_states
+            
+        # Layer norm at the begining of the transformer layer.
+        layernorm_output1_image = self.transformer.layers[layer_id].input_layernorm(hidden_state_image)
+        layernorm_output1_frame = self.mixins[3].frame_input_layernorms[layer_id](hidden_state_frame)
+        # self attention
+        # attention_start_time = time.time()
+        attention_output, output_this_layer = self.my_attention_forward((layernorm_output1_image, layernorm_output1_frame), 
+                                                                    mask, **kw_tensors, layer_id=layer_id)
+        # attention_end_time = time.time()
+        attention_output_image, attention_output_frame = attention_output
+        # third layernorm
+        if self.sandwich_ln:
+            attention_output_image = self.transformer.layers[layer_id].third_layernorm(attention_output_image)
+            attention_output_frame = self.mixins[3].frame_third_layernorms[layer_id](attention_output_frame)
+        # attention_timer = time.time()
+        # Residual connection.
+        layernorm_input_image = hidden_state_image + attention_output_image
+        layernorm_input_frame = hidden_state_frame + attention_output_frame
+        # Layer norm post the self attention.
+        layernorm_output_image = self.transformer.layers[layer_id].post_attention_layernorm(layernorm_input_image)
+        layernorm_output_frame = self.mixins[3].frame_post_attention_layernorms[layer_id](layernorm_input_frame)
+        # MLP.
+        mlp_output_image, mlp_output_frame = self.my_mlp_forward((layernorm_output_image, layernorm_output_frame), layer_id=layer_id)
+        # Fourth LayerNorm
+        if self.sandwich_ln:
+            mlp_output_image = self.transformer.layers[layer_id].fourth_layernorm(mlp_output_image)
+            mlp_output_frame = self.mixins[3].frame_fourth_layernorms[layer_id](mlp_output_frame)
+        # Second residual connection.
+        output_image = layernorm_input_image + mlp_output_image
+        output_frame = layernorm_input_frame + mlp_output_frame
+
+        # print("Attention TIme1 = ", attention_start_time-starttime)
+        # print("Attention time2 = ", attention_end_time-attention_start_time)
+        # print("Attention time3 = ", attention_timer-attention_end_time)
+        if layer_id != len(self.transformer.layers)-1:
+            output_frame = output_frame.reshape(output_frame.shape[0], -1, output_image.shape[-1])
+            output = torch.cat((output_image, output_frame), dim=-2)
+            return output, output_this_layer
+            # return (output_image, output_frame), output_this_layer
+        else:
+            # the last layer
+            output_frame = self.mixins[3].endmap_v2i(output_frame) / math.sqrt(self.video_hidden_size)
+            output = torch.cat((output_image, output_frame), dim=-2)
+            
+            return output, output_this_layer
     
     def disable_untrainable_params(self):
         self.transformer.requires_grad_(False)
@@ -148,17 +224,17 @@ def video_attention_attend1(qi, ki, vi, qf, kf, vf, n_head, video_n_head, text_i
     # map to video hidden size
     ki_small = keymap_i2v(ki)
     vi_small = valmap_i2v(vi)
-    
+        
     # standard attention for image(frame 0) to image
     hi = hi0 // n_head
     qi = qi.reshape(b, si0, n_head, hi).permute(0, 2, 1, 3)
     vi = vi.reshape(b, si0, n_head, hi).permute(0, 2, 1, 3)
     kiT = ki.reshape(b, si0, n_head, hi).permute(0, 2, 3, 1)
-    attention_scores = torch.matmul(qi / math.sqrt(qi.shape[-1]), kiT) # 97MB
+    attention_scores = torch.matmul(qi / math.sqrt(qi.shape[-1]), kiT) # 0.21ms
 
     attention_scores = torch.mul(attention_scores, attention_mask_i2i) - \
-                    10000.0 * (1.0 - attention_mask_i2i) # 92MB
-    attention_probs_image = F.softmax(attention_scores, dim=-1) # 92MB
+                    10000.0 * (1.0 - attention_mask_i2i)
+    attention_probs_image = F.softmax(attention_scores, dim=-1) 
     
     # special attention for other frames
     attention_mask_f2i = attention_mask_f2i.unsqueeze(2)
@@ -168,28 +244,31 @@ def video_attention_attend1(qi, ki, vi, qf, kf, vf, n_head, video_n_head, text_i
     q11 = qf.reshape(b, frame_num, per_frame_len, video_n_head, hf).permute(0, 3, 1, 2, 4) # (b, n_head, frame_num, per_frame_len, h)
     k11T = kf.reshape(b, frame_num, per_frame_len, video_n_head, hf).permute(0, 3, 1, 4, 2)
     v11 = vf.reshape(b, frame_num, per_frame_len, video_n_head, hf).permute(0, 3, 1, 2, 4)
-    attention_scores11 = torch.matmul(q11 / math.sqrt(q11.shape[-1]), k11T) #1204MB
+    attention_scores11 = torch.matmul(q11 / math.sqrt(q11.shape[-1]), k11T) #0.4ms(video hidden=320)
     attention_scores11 = torch.mul(attention_scores11, attention_mask_f2f) - \
-                    10000.0 * (1.0 - attention_mask_f2f)    # 1204MB+1204
+                    10000.0 * (1.0 - attention_mask_f2f)
+    # attention_scores11 = torch.mul(attention_scores11, attention_mask_f2f)
+    # attention_scores11 -= 10000.0 * (1.0 - attention_mask_f2f)
+                    
     # attend to image(frame 0)
     ki_smallT = ki_small.reshape(b, si0, video_n_head, hf).permute(0, 2, 3, 1)
     vi_small = vi_small.reshape(b, si0, video_n_head, hf).transpose(1, 2)
     qf2i = qf.reshape(b, sf0, video_n_head, hf).transpose(1, 2)
-    attention_scoresf2i = torch.matmul(qf2i / math.sqrt(qf2i.shape[-1]), ki_smallT) #1278MB
+    attention_scoresf2i = torch.matmul(qf2i / math.sqrt(qf2i.shape[-1]), ki_smallT) # 中间相乘的那一维变短（总video hidden从320变成40），时间反而增加了
     attention_scoresf2i = attention_scoresf2i.reshape(b, video_n_head, frame_num, per_frame_len, si0)
     attention_scoresf2i = torch.mul(attention_scoresf2i, attention_mask_f2i) - \
-                    10000.0 * (1.0 - attention_mask_f2i) #1278MB+1278MB
+                    10000.0 * (1.0 - attention_mask_f2i)
     # attend to frame before
-    # in place!!!
-    attention_scores10 = torch.matmul(q11[:, :, 1:] / math.sqrt(q11.shape[-1]), k11T[:, :, :-1, :, :])
-    attention_scores10 = torch.cat((torch.full(attention_scores10[:, :, :1].shape, -10000.0), attention_scores10), 
-                                   dim=2)
+    attention_scores10 = torch.matmul(q11[:, :, 1:] / math.sqrt(q11.shape[-1]), k11T[:, :, :-1])
+    # frame_before_midtime = time.time()
+    attention_scores10 = torch.cat((torch.full(attention_scores10[:, :, :1].shape, -10000.0, device=attention_scores10.device).type(torch.float16),
+                                    attention_scores10), dim=2)
     # attention probs
     attention_score_frame = torch.cat((attention_scoresf2i, 
                                       attention_scores10, 
                                       attention_scores11), 
-                                      dim=-1) #3684MB
-    attention_probs_frame = F.softmax(attention_score_frame, dim=-1) #3684MB
+                                      dim=-1) # 这个cat和下面的softmax很费时间，softmax要3.5ms
+    attention_probs_frame = F.softmax(attention_score_frame, dim=-1)
 
     if attention_dropout_i is not None:
         with get_cuda_rng_tracker().fork():
@@ -200,15 +279,14 @@ def video_attention_attend1(qi, ki, vi, qf, kf, vf, n_head, video_n_head, text_i
 
     
     # images' context
-    context_image = torch.matmul(attention_probs_image, vi) # [b, n_head, si0, hi]
+    context_image = torch.matmul(attention_probs_image, vi) # [b, n_head, si0, hi] # L1 1.3ms
     # frame's context
-    contextf2i = torch.matmul(attention_probs_frame[..., :text_image_len].reshape(b, video_n_head, sf0, text_image_len), vi_small)
-    context11 = torch.matmul(attention_probs_frame[..., text_image_len+per_frame_len:], v11)
+    contextf2i = torch.matmul(attention_probs_frame[..., :text_image_len].reshape(b, video_n_head, sf0, text_image_len), vi_small) # L1 0.91ms
+    context11 = torch.matmul(attention_probs_frame[..., text_image_len+per_frame_len:], v11) # L1 0.91ms
     v10 = torch.cat((v11[:, :, -1:, :, :], v11[:, :, :-1, :, :]), dim=2)
-    context10 = torch.matmul(attention_probs_frame[..., text_image_len:text_image_len+per_frame_len], v10)
+    context10 = torch.matmul(attention_probs_frame[..., text_image_len:text_image_len+per_frame_len], v10) # L1 0.91ms
     context_frame = (context11+context10).reshape(b, video_n_head, sf0, hf)+contextf2i
-    # if context_frame.isnan().any():
-    #     breakpoint()
+
     return context_image.transpose(1, 2).reshape(b, si0, hi0), context_frame.transpose(1, 2).reshape(b, sf0, hf0)
     
     

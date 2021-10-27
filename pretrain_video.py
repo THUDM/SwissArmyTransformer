@@ -116,7 +116,12 @@ def forward_step(data_iterator, model, args, timers):
     img_indices_bool = (tokens < img_txt_sep) & (loss_mask > 0)
     txt_indices_bool = (~img_indices_bool) & (loss_mask > 0)
     # Forward model.
+    
+    # with torch.autograd.profiler.profile(enabled=True, use_cuda=True, record_shapes=False, profile_memory=False) as prof:
     logits, *mems = model(tokens, position_ids, attention_mask)
+    # print(prof.table())
+    # prof.export_chrome_trace('trace/pretrain_video_320_2_profile.json')
+    
     losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
     # scaling loss mask
     loss_mask[txt_indices_bool] *= args.txt_loss_scale

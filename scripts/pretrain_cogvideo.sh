@@ -11,31 +11,29 @@ script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
 
 OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
-# HOST_FILE_PATH="hostfile"
+HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
 full_data="/dataset/fd5061f6/HWY/cogdata_video/cogdata_task_video16frame_zh_animal/merge.bin"
 small_data="/dataset/fd5061f6/HWY/cogdata_video/cogdata_task_video16frame_zh_animal/howto100m_animal/howto100m_animal.bin.part_0.cogdata"
 
-cogvew_model="/workspace/dm/SwissArmyTransformer/pretrained/cogview/cogview-base"
-
 config_json="$script_dir/ds_config_zero.json"
 gpt_options=" \
-       --experiment-name finetune-cogvideo-test \
+       --experiment-name pretrain-cogvideo-test \
        --tokenizer-type cogview \
        --img-tokenizer-path /dataset/fd5061f6/cogview/vqvae_hard_biggerset_011.pt \
        --model-parallel-size ${MP_SIZE} \
-       --mode finetune \
+       --mode pretrain \
        --num-layers 48 \
        --hidden-size 2560 \
-       --video-hidden-size 640 \
+       --num-attention-heads 40 \
        --video-n-head 10 \
+       --video-hidden-size 320 \
        --layout 64,1088,16448 \
        --new-sequence-length 16464 \
-       --num-attention-heads 40 \
        --train-iters 200000 \
        --resume-dataloader \
-       --train-data ${full_data} \
+       --train-data ${small_data} \
        --split 949,50,1 \
        --distributed-backend nccl \
        --lr-decay-style cosine \
@@ -44,11 +42,9 @@ gpt_options=" \
        --max-sequence-length 1089 \
        --sandwich-ln \
        --fp16 \
-       --save-interval 1000 \
-       --eval-interval 100 \
-       --log-interval 40 \
+       --save-interval 2000 \
+       --eval-interval 1000 \
        --save $main_dir/checkpoints \
-       --load $cogvew_model
 "
        # --load pretrained/cogview/cogview-base
 
