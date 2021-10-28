@@ -8,5 +8,4 @@ MODEL_ARGS="--block-lm \
             --max-sequence-length 1025 \
             --tokenizer-model-type gpt2 \
             --tokenizer-type GPT2BPETokenizer \
-            --old-checkpoint \
             --load ${CHECKPOINT_PATH}/blocklm-10b-1024"

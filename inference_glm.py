@@ -27,6 +27,7 @@ from generation.autoregressive_sampling import filling_sequence
 from generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
 from generation.utils import timed_name, generate_continually
 
+
 def get_masks_and_position_ids_glm(seq, mask_position, context_length):
     tokens = seq.unsqueeze(0)
 
@@ -45,6 +46,7 @@ def get_masks_and_position_ids_glm(seq, mask_position, context_length):
 
 
 def main(args):
+    args.do_train = False
     initialize_distributed(args)
     tokenizer = prepare_tokenizer(args)
     # build model 
@@ -77,14 +79,14 @@ def main(args):
             raise ValueError('text too long.')
         
         # find mask tokens positions
-        mask_tokens = ['MASK', 'sMASK', 'gMASK'] if args.task_mask else ['MASK']
-        mask_tokens = [tokenizer.get_command(token).Id for token in mask_tokens]
-        mask_positions = []
-        context_tokens_tensor = torch.tensor(seq, dtype=torch.long, device=args.device)
-        for token in mask_tokens:
-            mask_positions += (context_tokens_tensor == token).nonzero(as_tuple=True)[0].tolist()
-        mask_positions.sort()
-        
+        # mask_tokens = ['MASK', 'sMASK', 'gMASK'] if args.task_mask else ['MASK']
+        # mask_tokens = [tokenizer.get_command(token).Id for token in mask_tokens]
+        # mask_positions = []
+        # context_tokens_tensor = torch.tensor(seq, dtype=torch.long, device=args.device)
+        # for token in mask_tokens:
+        #     mask_positions += (context_tokens_tensor == token).nonzero(as_tuple=True)[0].tolist()
+        # mask_positions.sort()
+
         # generation
         mbz = args.max_inference_batch_size
         assert args.batch_size < mbz or args.batch_size % mbz == 0
@@ -107,7 +109,9 @@ def main(args):
             get_func = partial(get_masks_and_position_ids_glm, mask_position=mask_position, context_length=len(seq))
             output_list = []
             for tim in range(max(args.batch_size // mbz, 1)):
-                input_seq = torch.cuda.LongTensor(seq + [tokenizer.get_command('sop').Id] + [-1] * (args.out_seq_length-len(seq)-1), device=args.device)
+                input_seq = torch.cuda.LongTensor(
+                    seq + [tokenizer.get_command('sop').Id] + [-1] * (args.out_seq_length - len(seq) - 1),
+                    device=args.device)
                 output, _mems = filling_sequence(model, input_seq,
                         batch_size=min(args.batch_size, mbz),
                         strategy=strategy,
@@ -116,7 +120,7 @@ def main(args):
                         ) # we don't use mems, fill back
                 if isinstance(output, torch.Tensor): # different strategies
                     output = list(output)
-                
+
                 output_list.extend(output)
 
             # clip -1s and fill back generated things into seq
@@ -126,10 +130,10 @@ def main(args):
                     unfinished = output.index(-1)
                 except ValueError:
                     unfinished = len(output)
-                if output[unfinished-1] in end_tokens:
+                if output[unfinished - 1] in end_tokens:
                     unfinished -= 1
                 bog = output.index(tokenizer.get_command('sop').Id)
-                output_list[i] = output[:mask_position] + output[bog+1:unfinished] + output[mask_position+1:bog]
+                output_list[i] = output[:mask_position] + output[bog + 1:unfinished] + output[mask_position + 1:bog]
 
         # decoding
         txts = []
@@ -147,10 +151,11 @@ def main(args):
         with open(full_path, 'w') as fout:
             for txt in txts:
                 fout.write(txt + '\n')
-        os.chmod(full_path, stat.S_IRWXO+stat.S_IRWXG+stat.S_IRWXU)
+        os.chmod(full_path, stat.S_IRWXO + stat.S_IRWXG + stat.S_IRWXU)
 
     os.makedirs(args.output_path, exist_ok=True)
     generate_continually(process, args.input_source)
+
 
 if __name__ == "__main__":
     py_parser = argparse.ArgumentParser(add_help=False)
