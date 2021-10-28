@@ -203,6 +203,12 @@ def get_params_for_weight_decay_optimization(module):
             no_weight_decay_params['params'].extend(
                 [p for n, p in list(module_._parameters.items())
                  if p is not None and n == 'bias' and p.requires_grad])
+
+    if len(weight_decay_params['params']) == 0:
+        return tuple(no_weight_decay_params)
+    elif len(no_weight_decay_params['params']) == 0:
+        return tuple(weight_decay_params)
+
     return weight_decay_params, no_weight_decay_params
 
 def get_optimizer_param_groups(model):
