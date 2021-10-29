@@ -19,7 +19,7 @@ small_data="/dataset/fd5061f6/HWY/cogdata_video/cogdata_task_video16frame_zh_ani
 
 config_json="$script_dir/ds_config_zero.json"
 gpt_options=" \
-       --experiment-name pretrain-cogvideo-test \
+       --experiment-name pretrain-cogvideo \
        --tokenizer-type cogview \
        --img-tokenizer-path /dataset/fd5061f6/cogview/vqvae_hard_biggerset_011.pt \
        --model-parallel-size ${MP_SIZE} \
@@ -27,8 +27,9 @@ gpt_options=" \
        --num-layers 48 \
        --hidden-size 2560 \
        --num-attention-heads 40 \
-       --video-n-head 10 \
-       --video-hidden-size 320 \
+       --video-n-head 12 \
+       --video-hidden-size 480 \
+       --masked-softmax-fusion \
        --layout 64,1088,16448 \
        --new-sequence-length 16464 \
        --train-iters 200000 \

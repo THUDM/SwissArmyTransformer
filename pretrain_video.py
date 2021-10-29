@@ -120,11 +120,12 @@ def forward_step(data_iterator, model, args, timers):
     # with torch.autograd.profiler.profile(enabled=True, use_cuda=True, record_shapes=False, profile_memory=False) as prof:
     logits, *mems = model(tokens, position_ids, attention_mask)
     # print(prof.table())
-    # prof.export_chrome_trace('trace/pretrain_video_320_2_profile.json')
+    # prof.export_chrome_trace('trace/pretrain_video_nofuse_8head_profile.json')
     
     losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
     # scaling loss mask
     loss_mask[txt_indices_bool] *= args.txt_loss_scale
+    loss_mask[..., 1088:2112] *= args.second_frame_scale
     loss_mask = loss_mask.view(-1)  
 
     losses_1d = losses.view(-1) * loss_mask

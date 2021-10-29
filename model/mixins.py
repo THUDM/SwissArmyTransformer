@@ -15,6 +15,9 @@ import random
 import torch
 from mpu import ColumnParallelLinear, RowParallelLinear
 from mpu.transformer import unscaled_init_method, LayerNorm
+from fused_kernel.fused_softmax import FusedScaleMaskSoftmax
+from fused_kernel.enums import AttnMaskType
+
 
 class BaseMixin(torch.nn.Module):
     def __init__(self):
@@ -58,6 +61,7 @@ class AttentionMixin(BaseMixin):
                 init_method=output_layer_init_method)
                 for layer_id in range(num_layers)
             ])
+        
     def reinit(self, transformer, *pre_mixins):
         start_layer = len(transformer.layers) - self.num_layers
         assert start_layer >= 0
@@ -75,7 +79,9 @@ class VideoAttentionMixin(BaseMixin):
                 video_n_head,
                 attention_dropout_prob,
                 init_method=unscaled_init_method(0.02),
-                output_layer_init_method=unscaled_init_method(0.02)
+                output_layer_init_method=unscaled_init_method(0.02),
+                masked_softmax_fusion=False,
+                args=None
         ):
         super(VideoAttentionMixin, self).__init__()
         self.num_layers = num_layers # replace attention in the LAST n layers
@@ -116,6 +122,32 @@ class VideoAttentionMixin(BaseMixin):
                 init_method=init_method)
              for layer_id in range(num_layers)
              ])
+        
+        self.masked_softmax_fusion = masked_softmax_fusion
+        if masked_softmax_fusion:
+            from fused_kernel.initialize import initialize_fused_kernel
+            initialize_fused_kernel(args)
+            # mask=1 means being masked out in this function
+            self.mask_softmax = FusedScaleMaskSoftmax(
+                                        input_in_fp16=True, 
+                                        input_in_bf16=False,
+                                        attn_mask_type=None,
+                                        scaled_masked_softmax_fusion=True,
+                                        mask_func=self.attention_mask_func,
+                                        softmax_in_fp32=False,
+                                        scale=None)
+            self.causal_mask_softmax = FusedScaleMaskSoftmax(
+                                        input_in_fp16=True, 
+                                        input_in_bf16=False,
+                                        attn_mask_type=AttnMaskType.causal,
+                                        scaled_masked_softmax_fusion=True,
+                                        mask_func=self.attention_mask_func,
+                                        softmax_in_fp32=False,
+                                        scale=None)
+            
+    def attention_mask_func(attention_scores, attention_mask):
+        attention_scores.masked_fill_(attention_mask, -10000.0)
+        return attention_scores
 
     def reinit(self, transformer, *pre_mixins):
         assert self.num_layers == len(transformer.layers)
