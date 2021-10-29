@@ -14,7 +14,7 @@ import random
 import torch
 import numpy as np
 
-import SwissArmyTransformer.mpu
+from SwissArmyTransformer import mpu
 from .utils import print_rank_0
 
 

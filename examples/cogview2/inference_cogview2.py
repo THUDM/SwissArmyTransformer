@@ -19,7 +19,7 @@ from torchvision import transforms
 from arguments import get_args
 from model.cached_autoregressive_model import CachedAutoregressiveModel
 from model.cuda2d_model import Cuda2dModel
-from training import load_checkpoint, initialize_distributed, set_random_seed, prepare_tokenizer
+from training import load_checkpoint, initialize_distributed, set_random_seed
 from tokenization import get_tokenizer
 from generation.sampling_strategies import BaseStrategy, IterativeEntfilterStrategy
 from generation.autoregressive_sampling import filling_sequence
@@ -28,7 +28,7 @@ from generation.utils import timed_name, save_multiple_images, generate_continua
 
 def main(args):
     initialize_distributed(args)
-    tokenizer = prepare_tokenizer(args)
+    tokenizer = get_tokenizer(args)
     # build model 
     model = Cuda2dModel(args)
     if args.fp16:

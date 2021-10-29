@@ -62,7 +62,7 @@ def main(args):
                     batch_size=min(args.batch_size, mbz),
                     strategy=strategy,
                     log_attention_weights=log_attention_weights
-                    )
+                    )[0]
                 )
         output_tokens = torch.cat(output_list, dim=0)
         # decoding

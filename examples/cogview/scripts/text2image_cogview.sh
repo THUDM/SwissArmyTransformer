@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CHECKPOINT_PATH=pretrained/cogview/cogview-base
+CHECKPOINT_PATH=/workspace/dm/SwissArmyTransformer/pretrained/cogview/cogview-base
 NLAYERS=48
 NHIDDEN=2560
 NATT=40
@@ -17,7 +17,7 @@ script_dir=$(dirname $script_path)
 
 MASTER_PORT=${MASTER_PORT} python inference_cogview.py \
        --tokenizer-type cogview \
-       --img-tokenizer-path pretrained/vqvae/l1+ms-ssim+revd_percep.pt \
+       --img-tokenizer-path /workspace/dm/SwissArmyTransformer/pretrained/vqvae/l1+ms-ssim+revd_percep.pt \
        --mode inference \
        --distributed-backend nccl \
        --max-sequence-length 1089 \

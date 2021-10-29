@@ -16,13 +16,13 @@ import argparse
 
 from arguments import get_args
 from model.base_model import BaseModel
-from training import load_checkpoint, initialize_distributed, set_random_seed, prepare_tokenizer
+from training import load_checkpoint, initialize_distributed, set_random_seed
 from generation.autoregressive_sampling import get_masks_and_position_ids
 from generation.utils import timed_name, save_multiple_images, generate_continually
 
 def main(args):
     initialize_distributed(args)
-    tokenizer = prepare_tokenizer(args)
+    tokenizer = get_tokenizer(args)
     # build model 
     model = BaseModel(args)
     if args.fp16:

@@ -29,7 +29,7 @@ def _export_vocab_size_to_args(args, original_num_tokens):
                  'tokens (new size: {})'.format(
         before, after - before, after))
     args.vocab_size = after
-    print_rank_0("prepare tokenizer done", flush=True)
+    print_rank_0("prepare tokenizer done")
     return tokenizer
 
 def get_tokenizer(args=None, outer_tokenizer=None):

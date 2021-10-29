@@ -19,3 +19,5 @@ coco_scores/*
 checkpoints/
 *coco*
 runs
+dist/
+*.egg-info

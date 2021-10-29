@@ -22,7 +22,7 @@ from functools import partial
 from arguments import get_args
 from model.glm_model import GLMModel
 from model.cached_autoregressive_model import CachedAutoregressiveMixin
-from training import load_checkpoint, initialize_distributed, set_random_seed, prepare_tokenizer
+from training import load_checkpoint, initialize_distributed, set_random_seed
 from generation.autoregressive_sampling import filling_sequence
 from generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
 from generation.utils import timed_name, generate_continually
@@ -48,7 +48,7 @@ def get_masks_and_position_ids_glm(seq, mask_position, context_length):
 def main(args):
     args.do_train = False
     initialize_distributed(args)
-    tokenizer = prepare_tokenizer(args)
+    tokenizer = get_tokenizer(args)
     # build model 
     model = GLMModel(args)
     model.add_mixin('auto-regressive', CachedAutoregressiveMixin())

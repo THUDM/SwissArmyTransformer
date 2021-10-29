@@ -26,7 +26,7 @@ def new_module(config):
     if not "target" in config:
         raise KeyError("Expected key `target` to instantiate.")
     module, cls = config.get("target").rsplit(".", 1)
-    model = getattr(importlib.import_module(module, package=None), cls)(**config.get("params", dict()))
+    model = getattr(importlib.import_module(module, package=__package__), cls)(**config.get("params", dict()))
 
     device = config.get("device", "cpu")
     model = model.to(device)
@@ -45,7 +45,7 @@ def new_module(config):
 
 def load_decoder_default(device=0, path="pretrained/vqvae/l1+ms-ssim+revd_percep.pt"):
     # exp: load currently best decoder
-    target = "vqvae.vqvae_diffusion.Decoder"
+    target = ".vqvae_diffusion.Decoder"
     params = {
         "double_z": False,
         "z_channels": 256,
@@ -100,7 +100,7 @@ def load_model_default(device=0,
     }
 
     config = {
-        'target': "vqvae.vqvae_zc.VQVAE",
+        'target': ".vqvae_zc.VQVAE",
         'params': params,
         'ckpt': path,
         'device': device
@@ -116,7 +116,7 @@ def test_decode(configs, testcase, device=0, output_path=None):
         output_path = os.path.join("sample", f"{datetime.now().strftime('%m-%d-%H-%M-%S')}.jpg")
 
     quantize_config = {
-        "target": "vqvae.vqvae_zc.Quantize",
+        "target": ".vqvae_zc.Quantize",
         "params": {
             "dim": 256,
             "n_embed": 8192,
@@ -149,7 +149,7 @@ def test_decode_default(device=0):
     # testing 3 decoders: original/l1+ms-ssim/l1+ms-ssim+perceptual
     configs = [
         {
-            "target": "vqvae.vqvae_zc.Decoder",
+            "target": ".vqvae_zc.Decoder",
             "params": {
                 "in_channel": 256, 
                 "out_channel": 3,
