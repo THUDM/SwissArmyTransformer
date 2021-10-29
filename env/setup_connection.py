@@ -11,7 +11,6 @@ import os
 import sys
 import math
 import random
-import base64
 
 def main(ip_list, port=2222):
     ssh_config = ''

@@ -15,4 +15,7 @@ pretrained/
 *.jpeg
 input*.txt
 *samples*/
-
+coco_scores/*
+checkpoints/
+*coco*
+runs
