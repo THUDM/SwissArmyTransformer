@@ -1,4 +1,3 @@
-
 # -*- encoding: utf-8 -*-
 '''
 @File    :   model_io.py
@@ -18,6 +17,7 @@ import numpy as np
 import mpu
 from .utils import print_rank_0
 
+
 def get_checkpoint_name(checkpoints_path, iteration, release=False, zero=False):
     if release:
         d = 'release'
@@ -27,6 +27,7 @@ def get_checkpoint_name(checkpoints_path, iteration, release=False, zero=False):
         dp_rank = mpu.get_data_parallel_rank()
         d += '_zero_dp_rank_{}'.format(dp_rank)
     return os.path.join(checkpoints_path, d, 'mp_rank_{:02d}_model_states.pt'.format(mpu.get_model_parallel_rank()))
+
 
 def get_checkpoint_tracker_filename(checkpoints_path, old_checkpoint=False):
     if old_checkpoint:
@@ -70,9 +71,9 @@ def save_ds_checkpoint(iteration, model, lr_scheduler, args):
         sd['cuda_rng_state'] = torch.cuda.get_rng_state()
         sd['rng_tracker_states'] = mpu.get_cuda_rng_tracker().get_states()
     save_ds_checkpoint_no_optim(model, args.save, str(iteration), client_state=sd)
-    
+
+
 def save_ds_checkpoint_no_optim(model, save_dir, tag=None, client_state={}, save_latest=True):
-    
     os.makedirs(save_dir, exist_ok=True)
     # Ensure tag is a string
     tag = str(tag)
@@ -112,6 +113,7 @@ def get_checkpoint_iteration(args):
 
     return iteration, release, True
 
+
 def load_checkpoint(model, args):
     """Load a model checkpoint."""
 
@@ -131,10 +133,17 @@ def load_checkpoint(model, args):
     else: # inference without deepspeed
         module = model
 
+    # sd['module']['transformer.word_embeddings.weight'] = sd['module']['word_embeddings.weight']
+    # del sd['module']['word_embeddings.weight']
+    # sd['module']['mixins.block_position_embedding.block_position_embeddings.weight'] = sd['module'][
+    #     'transformer.block_position_embeddings.weight']
+    # del sd['module']['transformer.block_position_embeddings.weight']
+
     # only load module, other hyperparameters are just for recording.
     missing_keys, unexpected_keys = module.load_state_dict(sd['module'], strict=False)
     if len(unexpected_keys) > 0:
-        print_rank_0(f'Will continue but found unexpected_keys! Check whether you are loading correct checkpoints: {unexpected_keys}.')
+        print_rank_0(
+            f'Will continue but found unexpected_keys! Check whether you are loading correct checkpoints: {unexpected_keys}.')
     if len(missing_keys) > 0:
         if not args.do_train:
             raise ValueError(f'Missing keys for inference: {missing_keys}.')

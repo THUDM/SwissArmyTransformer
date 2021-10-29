@@ -1,5 +1,5 @@
 #!/bin/bash
-CHECKPOINT_PATH=pretrained/glm
+#CHECKPOINT_PATH=/workspace/dm/SwissArmyTransformer/pretrained/glm
 
 # MODEL_ARGS="--block-lm \
 #             --cloze-eval \
@@ -11,19 +11,20 @@ CHECKPOINT_PATH=pretrained/glm
 #             --tokenizer-type glm_GPT2BPETokenizer \
 #             --load ${CHECKPOINT_PATH}/glm-roberta-large-blank"
 
-MODEL_TYPE="blocklm-10B"
-MODEL_ARGS="--block-lm \
-            --cloze-eval \
-            --task-mask \
-            --num-layers 48 \
-            --hidden-size 4096 \
-            --num-attention-heads 64 \
-            --max-sequence-length 1025 \
-            --tokenizer-model-type gpt2 \
-            --tokenizer-type glm_GPT2BPETokenizer \
-            --old-checkpoint \
-            --load ${CHECKPOINT_PATH}/glm-en-10b"
+#MODEL_TYPE="blocklm-10B"
+#MODEL_ARGS="--block-lm \
+#            --cloze-eval \
+#            --task-mask \
+#            --num-layers 48 \
+#            --hidden-size 4096 \
+#            --num-attention-heads 64 \
+#            --max-sequence-length 1025 \
+#            --tokenizer-model-type gpt2 \
+#            --tokenizer-type glm_GPT2BPETokenizer \
+#            --old-checkpoint \
+#            --load ${CHECKPOINT_PATH}/glm-en-10b"
 
+source $1
 MPSIZE=1
 MAXSEQLEN=512
 MASTER_PORT=$(shuf -n 1 -i 10000-65535)
@@ -52,5 +53,5 @@ python -m torch.distributed.launch --nproc_per_node=$MPSIZE --master_port $MASTE
        --top_k $TOPK \
        --output-path glm_text \
        --batch-size 1 \
-       --out-seq-length 100 \
+       --out-seq-length 512 \
        --mode inference

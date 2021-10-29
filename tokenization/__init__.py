@@ -34,7 +34,7 @@ def get_tokenizer(args=None):
                 get_tokenizer.tokenizer = GPT2BPETokenizer(args.tokenizer_model_type, **kwargs)
             elif args.tokenizer_type == "glm_ChineseSPTokenizer":
                 from .text import ChineseSPTokenizer
-                get_tokenizer.tokenizer = ChineseSPTokenizer(**kwargs)
+                get_tokenizer.tokenizer = ChineseSPTokenizer(args.tokenizer_model_type, **kwargs)
         else:
             assert args.vocab_size > 0
             get_tokenizer.tokenizer = FakeTokenizer(args.vocab_size)
