@@ -162,7 +162,6 @@ class Tokenizer(object):
         self.command_id_map = {tok.Id: tok for tok in self.command_tokens}
 
         # parse tokens and vocabs from tokenizer
-        # TODO Update interface here
         max_token_id = max(len(self.text_tokenizer.tokens) - 1, max(self.command_id_map.keys()))
         self._tokens = [self.text_tokenizer.tokens[i] if i < len(self.text_tokenizer.tokens) else f'[UNUSED{i}]' for i
                         in range(max_token_id + 1)]
