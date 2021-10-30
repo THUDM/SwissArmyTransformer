@@ -88,7 +88,7 @@ class BertTokenizer(object):
                          value (if specified) and the underlying BERT model's
                          sequence length.
           never_split: List of tokens which will never be split during tokenization.
-                         Only has an effect when do_wordpiece_only=False
+                         Only has an effect when do_basic_tokenize=True
         """
         if not os.path.isfile(vocab_file):
             raise ValueError(

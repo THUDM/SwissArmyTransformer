@@ -3,6 +3,12 @@ from https://github.com/openai/gpt-2/, changed for chinese
 """
 import json
 import os
+import csv
+import nltk
+import random
+from tokenization import print_rank_0
+
+from nltk import tokenize as nltk_tokenize
 import sentencepiece as spm
 
 """
@@ -22,129 +28,72 @@ python setup.py install
 PRETRAINED_MODEL_FILE = "pretrained/chinese_sentencepiece/cog-pretrain.model"
 
 
-def get_pairs(word):
-    pairs = set()
-    prev_char = word[0]
-    for char in word[1:]:
-        pairs.add((prev_char, char))
-        prev_char = char
-    return pairs
+class SentencePieceTokenizer:
+    """Trains and uses sentencepiece for text tokenization"""
 
+    def __init__(self, model_path=None, **kwargs):
+        self.spm_model = model_path
+        self._tokens = []
+        self._vocab = {}
+        self.sp, self.vocab_size = None, 0
+        self.load_spm_model()
 
-class Encoder:
-    def __init__(self, encoder, bpe_merges):
-        self.encoder = encoder
-        self.decoder = {v: k for k, v in self.encoder.items()}
-        self.bpe_ranks = dict(zip(bpe_merges, range(len(bpe_merges))))
-        self.cache = {}
-        self.max_len = 0
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, cache_dir=None, *inputs, **kwargs):
+        if pretrained_model_name_or_path in ['glm-large', 'glm-10b']:
+            return cls(model_path=PRETRAINED_MODEL_FILE)
+        else:
+            return cls(model_path=pretrained_model_name_or_path)
 
-    def bpe(self, token):
-        if token in self.cache:
-            return self.cache[token]
-        word = tuple(token)
-        pairs = get_pairs(word)
-        if not pairs:
-            return token
+    def __len__(self):
+        return self.num_text_tokens
 
-        while True:
-            bigram = min(pairs, key=lambda pair: self.bpe_ranks.get(pair, float('inf')))
-            if bigram not in self.bpe_ranks:
-                break
-            first, second = bigram
-            new_word = []
-            i = 0
-            while i < len(word):
-                try:
-                    j = word.index(first, i)
-                    new_word.extend(word[i:j])
-                    i = j
-                except:
-                    new_word.extend(word[i:])
-                    break
-
-                if word[i] == first and i < len(word) - 1 and word[i + 1] == second:
-                    new_word.append(first + second)
-                    i += 2
-                else:
-                    new_word.append(word[i])
-                    i += 1
-            new_word = tuple(new_word)
-            word = new_word
-            if len(word) == 1:
-                break
-            else:
-                pairs = get_pairs(word)
-        word = ' '.join(word)
-        self.cache[token] = word
-        return word
-
-    def encode(self, text):
-        return [self.encoder.get(token, 1) for token in self.tokenize(text)]
-
-    def decode(self, tokens):
-        text = ''.join([self.decoder[token] for token in tokens])
-        return text
-
-    def tokenize(self, text):
-        bpe_tokens = []
-        bpe_tokens.extend(bpe_token for bpe_token in self.bpe(text).split(' '))
-        return bpe_tokens
-
-    def convert_tokens_to_ids(self, tokens):
-        return [self.encoder.get(token, 1) for token in tokens]
-
-
-class Encoder_SP:
-    def __init__(self, model_path):
+    def load_spm_model(self):
+        """load sentencepiece model and parse vocab"""
+        if not os.path.exists(self.spm_model) and not self.spm_model.endswith('.model'):
+            self.spm_model = self.spm_model + '.model'
         self.sp = spm.SentencePieceProcessor()
-        self.sp.Load(model_path)
+        self.sp.Load(self.spm_model)
+        self.vocab_size = self.num_text_tokens = len(self.sp)
+        self._tokens = [self.IdToToken(t) for t in range(self.vocab_size)]
+        self._vocab = {t: i for i, t in enumerate(self._tokens)}
+
+    @property
+    def tokens(self):
+        return self._tokens
+
+    @property
+    def vocab(self):
+        return self._vocab
+
+    @staticmethod
+    def exists(model_path):
+        if model_path is None:
+            return False
+        # check if path exists
+        dne = not os.path.exists(model_path)
+        # check if path.model exists
+        if dne and not model_path.endswith('.model'):
+            dne = not os.path.exists(model_path + '.model')
+        return not dne
 
     def encode(self, text):
-        """
-        text="...."
-        """
-        return self.sp.EncodeAsIds(text)
+        """convert text to sentencepiece Ids"""
+        tokens = self.sp.EncodeAsIds(text)
+        return tokens
 
-    def decode(self, tokens):
-        """
-        tokens=[x1,x2,...]
-        """
-        text = [int(token) for token in tokens]
-        # print(text)
-        return self.sp.DecodeIds(text)
+    def IdToToken(self, Id):
+        """convert Id to sentencpiece token"""
+        return self.sp.IdToPiece(Id)
 
-    def tokenize(self, text):
-        return self.sp.EncodeAsPieces(text)
-
-    def convert_tokens_to_ids(self, tokens):
-        return [self.sp.PieceToId(token) for token in tokens]
-
-    def convert_token_to_id(self, token):
+    def TokenToId(self, token):
+        """convert sentencpiece token to Id"""
         return self.sp.PieceToId(token)
 
-    def convert_id_to_token(self, idx):
-        return self.sp.IdToPiece(idx)
-
-
-def get_encoder(encoder_file, bpe_file):
-    # 以下是为了同一个函数入兼容sentencepiece
-    filepath, filename = os.path.split(encoder_file)
-    shotname, extension = os.path.splitext(filename)
-
-    if (".model" == extension) and (bpe_file == ""):
-        return Encoder_SP(encoder_file)
-    else:
-        with open(encoder_file, 'r', encoding="utf-8") as f:
-            encoder = json.load(f)
-        with open(bpe_file, 'r', encoding="utf-8") as f:
-            bpe_data = f.read()
-        bpe_merges = [tuple(merge_str.split()) for merge_str in bpe_data.split('\n')[1:-1]]
-        return Encoder(
-            encoder=encoder,
-            bpe_merges=bpe_merges,
-        )
+    def decode(self, Ids):
+        """converts ids to a text string"""
+        return self.sp.DecodeIds(Ids)
 
 
 def from_pretrained():
-    return get_encoder(PRETRAINED_MODEL_FILE, "")
+    return SentencePieceTokenizer(model_path=PRETRAINED_MODEL_FILE)

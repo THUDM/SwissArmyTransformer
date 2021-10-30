@@ -6,5 +6,5 @@ MODEL_ARGS="--block-lm \
             --num-attention-heads 16 \
             --max-sequence-length 513 \
             --tokenizer-model-type roberta \
-            --tokenizer-type GPT2BPETokenizer \
+            --tokenizer-type glm_GPT2BPETokenizer \
             --load ${CHECKPOINT_PATH}/blocklm-roberta-large-blank"

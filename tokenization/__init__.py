@@ -47,3 +47,11 @@ class FakeTokenizer(object):
 
     def __len__(self):
         return self.num_tokens
+
+
+def print_rank_0(*messages):
+    if torch.distributed.is_initialized():
+        if torch.distributed.get_rank() == 0:
+            print(*messages, flush=True)
+    else:
+        print(*messages, flush=True)

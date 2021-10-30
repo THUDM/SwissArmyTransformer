@@ -166,6 +166,14 @@ class GPT2Tokenizer(object):
         self.special_tokens_decoder = {}
         self.set_special_tokens(special_tokens)
 
+    @property
+    def tokens(self):
+        return self.decoder
+
+    @property
+    def vocab(self):
+        return self.encoder
+
     def __len__(self):
         return len(self.encoder) + len(self.special_tokens)
 
