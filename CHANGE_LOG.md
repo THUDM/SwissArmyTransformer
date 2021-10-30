@@ -23,6 +23,10 @@ for k in list(oldm.keys()):
 torch.save(old, 'xxxxx/mp_rank_00_model_states.pt')
 
 ```
-
+for the older framework, you also need:
+```python
+old['module']['transformer.word_embeddings.weight'] = old['module']['word_embeddings.weight']
+del old['module']['word_embeddings.weight']
+```
 
 

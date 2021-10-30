@@ -17,15 +17,15 @@ import torch
 import torch.nn.functional as F
 import argparse
 import stat
-import mpu
 from functools import partial
-from arguments import get_args
-from model.glm_model import GLMModel
-from model.cached_autoregressive_model import CachedAutoregressiveMixin
-from training import load_checkpoint, initialize_distributed, set_random_seed
-from generation.autoregressive_sampling import filling_sequence
-from generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
-from generation.utils import timed_name, generate_continually
+
+from SwissArmyTransformer import mpu, get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
+
+from SwissArmyTransformer.model import GLMModel
+from SwissArmyTransformer.model.mixins import CachedAutoregressiveMixin
+from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence
+from SwissArmyTransformer.generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
+from SwissArmyTransformer.generation.utils import timed_name, generate_continually
 
 
 def get_masks_and_position_ids_glm(seq, mask_position, context_length):

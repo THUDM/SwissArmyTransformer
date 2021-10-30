@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CHECKPOINT_PATH=pretrained/cogview/cogview2-base
+CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/cogview/cogview2-base
 NLAYERS=48
 NHIDDEN=2560
 NATT=40
@@ -17,7 +17,7 @@ script_dir=$(dirname $script_path)
 
 MASTER_PORT=${MASTER_PORT} python inference_cogview2.py \
        --tokenizer-type cogview \
-       --img-tokenizer-path pretrained/vqvae/l1+ms-ssim+revd_percep.pt \
+       --img-tokenizer-path /dataset/fd5061f6/sat_pretrained/vqvae/l1+ms-ssim+revd_percep.pt \
        --mode inference \
        --distributed-backend nccl \
        --max-sequence-length 1089 \

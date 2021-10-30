@@ -14,11 +14,12 @@ import random
 import torch
 import argparse
 
-from arguments import get_args
-from model.base_model import BaseModel
-from training import load_checkpoint, initialize_distributed, set_random_seed
-from generation.autoregressive_sampling import get_masks_and_position_ids
-from generation.utils import timed_name, save_multiple_images, generate_continually
+from SwissArmyTransformer import get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
+from SwissArmyTransformer.model import BaseModel
+from SwissArmyTransformer.generation.sampling_strategies import BaseStrategy
+from SwissArmyTransformer.generation.autoregressive_sampling import get_masks_and_position_ids_default
+from SwissArmyTransformer.generation.utils import generate_continually
+
 
 def main(args):
     initialize_distributed(args)
@@ -60,7 +61,7 @@ def main(args):
                 ) 
             batch_input = torch.stack(input_list)
             # forward
-            tokens, attention_mask, position_ids = get_masks_and_position_ids(batch_input[0])
+            tokens, attention_mask, position_ids = get_masks_and_position_ids_default(batch_input[0])
             attention_mask = attention_mask.type_as(next(model.parameters()))
             tokens = batch_input # get_masks_and_position_ids only accept bz=1
             logits, *mems = model(tokens, position_ids, attention_mask)

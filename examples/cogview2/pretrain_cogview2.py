@@ -15,13 +15,11 @@ import torch
 import argparse
 import numpy as np
 
-import mpu
-from arguments import get_args
-from model.cuda2d_model import Cuda2dModel
-from training.deepspeed_training import training_main
-from data_utils import BinaryDataset
-from tokenization import get_tokenizer
-from tokenization.cogview import TextCodeTemplate
+from SwissArmyTransformer import mpu, get_args, get_tokenizer
+from SwissArmyTransformer.model import Cuda2dModel
+from SwissArmyTransformer.training.deepspeed_training import training_main
+from SwissArmyTransformer.data_utils import BinaryDataset
+from SwissArmyTransformer.tokenization.cogview import TextCodeTemplate
 
 def get_masks_and_position_ids(data,
                             loss_mask=None,

@@ -1,1 +1,1 @@
-from .tokenization import BertWordPieceTokenizer, GPT2BPETokenizer, ChineseSPTokenizer
+from .tokenization import GPT2BPETokenizer, ChineseSPTokenizer

@@ -1,5 +1,5 @@
 #!/bin/bash
-#CHECKPOINT_PATH=/workspace/dm/SwissArmyTransformer/pretrained/glm
+CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/glm
 
 # MODEL_ARGS="--block-lm \
 #             --cloze-eval \
@@ -51,7 +51,7 @@ python -m torch.distributed.launch --nproc_per_node=$MPSIZE --master_port $MASTE
        --out-seq-length $MAXSEQLEN \
        --temperature $TEMP \
        --top_k $TOPK \
-       --output-path glm_text \
+       --output-path samples_glm \
        --batch-size 1 \
-       --out-seq-length 512 \
+       --out-seq-length 200 \
        --mode inference

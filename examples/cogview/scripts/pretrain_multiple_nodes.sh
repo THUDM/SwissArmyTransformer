@@ -21,7 +21,7 @@ config_json="$script_dir/ds_config_zero.json"
 gpt_options=" \
        --experiment-name pretrain-gpt2-cogview-small \
        --tokenizer-type cogview \
-       --img-tokenizer-path pretrained/vqvae/vqvae_hard_biggerset_011.pt \
+       --img-tokenizer-path /dataset/fd5061f6/sat_pretrained/vqvae/vqvae_hard_biggerset_011.pt \
        --model-parallel-size ${MP_SIZE} \
        --mode pretrain \
        --num-layers 40 \

@@ -43,7 +43,7 @@ PRETRAINED_VOCAB_ARCHIVE_MAP = {
 }
 PRETRAINED_MERGES_ARCHIVE_MAP = {
     'gpt2': os.path.join(PRETRAINED_DIR, "english_tokenizer/gpt2-merges.txt"),
-    "roberta": os.path.join(PRETRAINED_DIR, "pretrained/english_tokenizer/roberta-merges.txt")
+    "roberta": os.path.join(PRETRAINED_DIR, "english_tokenizer/roberta-merges.txt")
 }
 PRETRAINED_VOCAB_POSITIONAL_EMBEDDINGS_SIZE_MAP = {
     'gpt2': 1024,

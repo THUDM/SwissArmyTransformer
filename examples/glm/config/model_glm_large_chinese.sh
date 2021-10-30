@@ -8,4 +8,4 @@ MODEL_ARGS="--block-lm \
             --max-sequence-length 1025 \
             --tokenizer-type glm_ChineseSPTokenizer \
             --tokenizer-model-type glm-large \
-            --load /dataset/fd5061f6/english_data/checkpoints/blocklm-large-chinese"
+            --load ${CHECKPOINT_PATH}/glm-large-zh"

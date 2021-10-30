@@ -16,15 +16,12 @@ import torch
 import argparse
 from torchvision import transforms
 
-from arguments import get_args
-from model.cached_autoregressive_model import CachedAutoregressiveModel
-from model.cuda2d_model import Cuda2dModel
-from training import load_checkpoint, initialize_distributed, set_random_seed
-from tokenization import get_tokenizer
-from generation.sampling_strategies import BaseStrategy, IterativeEntfilterStrategy
-from generation.autoregressive_sampling import filling_sequence
-from generation.cuda2d_sampling import filling_sequence_cuda2d
-from generation.utils import timed_name, save_multiple_images, generate_continually
+from SwissArmyTransformer import get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
+from SwissArmyTransformer.model import CachedAutoregressiveModel, Cuda2dModel
+from SwissArmyTransformer.generation.sampling_strategies import BaseStrategy, IterativeEntfilterStrategy
+from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence
+from SwissArmyTransformer.generation.cuda2d_sampling import filling_sequence_cuda2d
+from SwissArmyTransformer.generation.utils import timed_name, save_multiple_images, generate_continually
 
 def main(args):
     initialize_distributed(args)
@@ -70,7 +67,7 @@ def main(args):
         assert args.batch_size < mbz or args.batch_size % mbz == 0
         output_list = []
         for tim in range(max(args.batch_size // mbz, 1)):
-            output0 = filling_sequence(model0, seq.clone(),
+            output0, mems = filling_sequence(model0, seq.clone(),
                     batch_size=min(args.batch_size, mbz),
                     strategy=strategy0,
                     log_attention_weights=log_attention_weights

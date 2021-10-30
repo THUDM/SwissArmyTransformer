@@ -21,7 +21,7 @@ config_json="$script_dir/ds_config_zero.json"
 gpt_options=" \
        --experiment-name finetune-cogview2-test \
        --tokenizer-type cogview \
-       --img-tokenizer-path pretrained/vqvae/vqvae_hard_biggerset_011.pt \
+       --img-tokenizer-path /dataset/fd5061f6/sat_pretrained/vqvae/vqvae_hard_biggerset_011.pt \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
        --num-layers 48 \
@@ -41,7 +41,7 @@ gpt_options=" \
        --save-interval 2000 \
        --eval-interval 1000 \
        --save $main_dir/checkpoints \
-       --load pretrained/cogview/cogview-base
+       --load /dataset/fd5061f6/sat_pretrained/cogview/cogview-base
 "
        # --load pretrained/cogview/cogview-base
 
