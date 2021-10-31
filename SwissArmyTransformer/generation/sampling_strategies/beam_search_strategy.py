@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 
 class BeamSearchStrategy:
-    def __init__(self, num_beams, length_penalty=1., return_only_end=False,
+    def __init__(self, num_beams, length_penalty=1., consider_end=False,
                 end_tokens=[], invalid_slices=[], no_repeat_ngram_size=0, min_tgt_length=0):
         self.num_beams = num_beams
         self.length_penalty = length_penalty
@@ -19,7 +19,7 @@ class BeamSearchStrategy:
         self.ngram = no_repeat_ngram_size
         self.min_tgt_length = min_tgt_length
         self.invalid_slices = invalid_slices
-        self.return_only_end = return_only_end
+        self.consider_end = consider_end
         self._init_cache()
 
     def _init_cache(self):
@@ -34,10 +34,10 @@ class BeamSearchStrategy:
         for i in range(len(self.end_beams), -1, -1):
             if i == 0 or score < self.end_beams_penalized_scores[i-1]:
                 break
-        self.num_beams.insert(i, beam)
+        self.end_beams.insert(i, beam)
         self.end_beams_penalized_scores.insert(i, score)
 
-        self.num_beams = self.num_beams[:self.num_beams]
+        self.end_beams = self.end_beams[:self.num_beams]
         self.end_beams_penalized_scores = self.end_beams_penalized_scores[:self.num_beams]
 
     def forward(self, logits, tokens, mems):
@@ -52,11 +52,14 @@ class BeamSearchStrategy:
         if self.ngram > 0 and seq_len > self.ngram:
             for i in range(batch_size):
                 ngram_prefix = tokens[i, -(self.ngram-1):].tolist() # TODO ngram=1
-                for banned_index in self.cached_beam_ngram_bans.get(tuple(ngram_prefix), default=[]):
+                for banned_index in self.cached_beam_ngram_bans[i].get(tuple(ngram_prefix), []):
                     logits[i, banned_index] = -65504
         
         next_token_scores = F.log_softmax(logits, dim=-1) # [batch_size, vocab_size]
-        next_token_scores = next_token_scores + self.cached_beam_scores[:, None].expand_as(next_token_scores)
+        prev_scores = self.cached_beam_scores
+        if isinstance(self.cached_beam_scores, torch.Tensor):
+            prev_scores = prev_scores[:, None].expand_as(next_token_scores)
+        next_token_scores = next_token_scores + prev_scores
         
         next_token_scores = next_token_scores.view(batch_size * vocab_size)
 
@@ -70,12 +73,14 @@ class BeamSearchStrategy:
         next_tokens = next_tokens % vocab_size
 
         # select out end beams or continue beams
+        if mems.shape[1] < batch_size:
+            mems = mems.expand(-1, batch_size, -1, -1)
         beam_continue = []
         scores_continue = []
         bans_continue = []
         mems_contiue = []
         for i in range(len(next_tokens)):
-            beam = torch.cat(tokens[next_indices[i]], next_tokens[i:i+1])
+            beam = torch.cat((tokens[next_indices[i]], next_tokens[i:i+1]))
             if int(next_tokens[i]) in self.end_tokens:
                 self._add_end_beams(next_token_scores[i], beam)
             elif len(beam_continue) < batch_size:
@@ -98,10 +103,13 @@ class BeamSearchStrategy:
         # TODO is_done
         return tokens, mems
 
-    def finalize(self, tokens):
-        if not self.return_only_end:
+    def finalize(self, tokens, mems):
+        if self.consider_end:
             for i in range(tokens.shape[0]):
                 self._add_end_beams(self.cached_beam_scores[i], tokens[i])
-        ret = self.end_beams
+            mems = None
+            ret = self.end_beams
+        else:
+            ret = tokens
         self._init_cache()
-        return ret
+        return ret, mems

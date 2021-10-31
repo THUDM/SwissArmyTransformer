@@ -61,7 +61,12 @@ def main(args):
 
     end_tokens = [tokenizer.get_command('eop').Id, tokenizer.get_command('eos').Id]
     # define function for each query
-    strategy = BaseStrategy(temperature=args.temperature, top_k=args.top_k,end_tokens=end_tokens)
+    if args.sampling_strategy == 'BaseStrategy':
+        strategy = BaseStrategy(temperature=args.temperature, top_k=args.top_k,end_tokens=end_tokens)
+    elif args.sampling_strategy == 'BeamSearchStrategy':
+        strategy = BeamSearchStrategy(args.batch_size, length_penalty=args.length_penalty, consider_end=True, end_tokens=end_tokens, no_repeat_ngram_size=args.no_repeat_ngram_size, min_tgt_length=args.min_tgt_length)
+    else:
+        raise ValueError(f'unknown strategy {args.sampling_strategy}')
     
     def process(raw_text):
         if args.with_id:
@@ -77,15 +82,6 @@ def main(args):
         print('raw text: {}\n'.format(raw_text))
         if len(seq) > args.max_sequence_length:
             raise ValueError('text too long.')
-        
-        # find mask tokens positions
-        # mask_tokens = ['MASK', 'sMASK', 'gMASK'] if args.task_mask else ['MASK']
-        # mask_tokens = [tokenizer.get_command(token).Id for token in mask_tokens]
-        # mask_positions = []
-        # context_tokens_tensor = torch.tensor(seq, dtype=torch.long, device=args.device)
-        # for token in mask_tokens:
-        #     mask_positions += (context_tokens_tensor == token).nonzero(as_tuple=True)[0].tolist()
-        # mask_positions.sort()
 
         # generation
         mbz = args.max_inference_batch_size
@@ -112,12 +108,12 @@ def main(args):
                 input_seq = torch.cuda.LongTensor(
                     seq + [tokenizer.get_command('sop').Id] + [-1] * (args.out_seq_length - len(seq) - 1),
                     device=args.device)
-                output, _mems = filling_sequence(model, input_seq,
+                output = filling_sequence(model, input_seq,
                         batch_size=min(args.batch_size, mbz),
                         strategy=strategy,
                         log_attention_weights=None,
                         get_masks_and_position_ids=get_func
-                        ) # we don't use mems, fill back
+                        )[0] # we don't use mems, fill back
                 if isinstance(output, torch.Tensor): # different strategies
                     output = list(output)
 
@@ -159,7 +155,7 @@ def main(args):
 
 if __name__ == "__main__":
     py_parser = argparse.ArgumentParser(add_help=False)
-
+    py_parser.add_argument('--sampling-strategy', type=str, default='BaseStrategy', help='type name of sampling strategy')
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-NUM_WORKERS=4
+NUM_WORKERS=5
 NUM_GPUS_PER_WORKER=8
 MP_SIZE=1
 
@@ -8,7 +8,7 @@ OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 # HOST_FILE_PATH="hostfile_single"
 
-CHECKPOINT_PATH=pretrained/cogview/cogview2-base
+CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/cogview/cogview2-base
 NLAYERS=48
 NHIDDEN=2560
 NATT=40
@@ -25,7 +25,7 @@ script_dir=$(dirname $script_path)
 
 gpt_options=" \
        --tokenizer-type cogview \
-       --img-tokenizer-path pretrained/vqvae/l1+ms-ssim+revd_percep.pt \
+       --img-tokenizer-path /dataset/fd5061f6/sat_pretrained/vqvae/l1+ms-ssim+revd_percep.pt \
        --mode inference \
        --distributed-backend nccl \
        --max-sequence-length 1089 \
@@ -42,7 +42,7 @@ gpt_options=" \
        --input-source ./coco30k.txt \
        --output-path coco_samples \
        --batch-size 60 \
-       --max-inference-batch-size 12 \
+       --max-inference-batch-size 6 \
        --with-id \
     "
 

@@ -53,7 +53,7 @@ def main(args):
         print('raw text: ', raw_text)
         text = query_template.format(raw_text)
         seq = tokenizer.parse_query(text, img_size=args.img_size)
-        if len(seq) > 1088:
+        if len(seq) > 1088:  
             raise ValueError('text too long.')
         # calibrate text length
         txt_len = seq.index(tokenizer['[BASE]'])
@@ -67,11 +67,12 @@ def main(args):
         assert args.batch_size < mbz or args.batch_size % mbz == 0
         output_list = []
         for tim in range(max(args.batch_size // mbz, 1)):
-            output0, mems = filling_sequence(model0, seq.clone(),
+            output0 = filling_sequence(model0, seq.clone(),
                     batch_size=min(args.batch_size, mbz),
                     strategy=strategy0,
                     log_attention_weights=log_attention_weights
-                    )
+                    )[0]
+             # auto del mems to save CUDA memory as possible
             imgs = [tr(tokenizer.img_tokenizer.DecodeIds(x[-1025:-1].tolist())) for x in output0]
             blur64 = tokenizer.img_tokenizer.EncodeAsIds(torch.cat(imgs, dim=0).to(args.device), add_normalization=True) # [batch_size, 4096]
             len_tim = output0.shape[0]
