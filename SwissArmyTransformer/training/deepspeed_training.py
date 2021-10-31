@@ -204,9 +204,9 @@ def get_params_for_weight_decay_optimization(module):
                  if p is not None and n == 'bias' and p.requires_grad])
 
     if len(weight_decay_params['params']) == 0:
-        return tuple(no_weight_decay_params)
+        return (no_weight_decay_params,)
     elif len(no_weight_decay_params['params']) == 0:
-        return tuple(weight_decay_params)
+        return (weight_decay_params,)
 
     return weight_decay_params, no_weight_decay_params
 
