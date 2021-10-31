@@ -15,6 +15,7 @@ import torch
 
 from SwissArmyTransformer.training.utils import print_rank_0
 
+
 def _export_vocab_size_to_args(args, original_num_tokens):
     tokenizer = get_tokenizer(args)
     num_tokens = original_num_tokens
@@ -31,6 +32,7 @@ def _export_vocab_size_to_args(args, original_num_tokens):
     args.vocab_size = after
     print_rank_0("prepare tokenizer done")
     return tokenizer
+
 
 def get_tokenizer(args=None, outer_tokenizer=None):
     '''
@@ -53,7 +55,7 @@ def get_tokenizer(args=None, outer_tokenizer=None):
             )
         elif args.tokenizer_type.startswith('glm_'):
             kwargs = {"add_block_symbols": True, "add_task_mask": args.task_mask,
-              "add_decoder_mask": False}
+                      "add_decoder_mask": False}
             if args.tokenizer_type == "glm_GPT2BPETokenizer":
                 from .glm import GPT2BPETokenizer
                 get_tokenizer.tokenizer = GPT2BPETokenizer(args.tokenizer_model_type, **kwargs)
