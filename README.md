@@ -11,6 +11,6 @@
 
 ### Run GLM
 ```
-    cd examples/cogview2
+    cd examples/glm
     ./scripts/generate-glm.sh config/model_glm_10B_chinese.sh
 ```
