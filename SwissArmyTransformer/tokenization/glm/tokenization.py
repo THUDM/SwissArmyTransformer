@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Utilities for using and training tokenizers (char, wordpiece, sentencepiece)"""
+
 from collections import namedtuple
 import random
 import os
@@ -440,12 +441,12 @@ class ChineseSPTokenizer(Tokenizer):
                 CommandToken('sop', '<|startofpiece|>', num_tokens + 1),
                 CommandToken('eop', '<|endofpiece|>', num_tokens + 2)
             ])
-            if model_type_or_path == 'glm-large':
+            if model_type_or_path != 'glm-10b':
                 num_tokens += 3
             else:
                 num_tokens += 2
             if add_task_mask:
-                if model_type_or_path == 'glm-large':
+                if model_type_or_path != 'glm-10b':
                     command_tokens.extend([
                         CommandToken('sMASK', '[sMASK]', num_tokens, lstrip=True),
                         CommandToken('gMASK', '[gMASK]', num_tokens + 1, lstrip=True)
