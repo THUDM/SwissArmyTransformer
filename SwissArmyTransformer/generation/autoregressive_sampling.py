@@ -116,3 +116,36 @@ def filling_sequence(
         if strategy.is_done:
             break
     return strategy.finalize(tokens, mems)
+
+
+
+def evaluate_perplexity(model, tokens, attention_mask, position_ids, loss_mask, invalid_slices=[], reduction='mean'):
+    # sanity check
+    assert len(tokens.shape) <= 2 and len(loss_mask.shape)
+    if len(tokens.shape) == 1:
+        tokens = tokens.unsqueeze(0)
+    if len(loss_mask.shape) == 1:
+        loss_mask = loss_mask.unsqueeze(0).expand(tokens.shape)
+    pad_pos = tokens < 0
+    if pad_pos.any():
+        print('Find -1 in tokens, automatically ignore them.')
+        tokens[pad_pos] = 0
+        loss_mask[pad_pos] = 0
+
+    attention_mask = attention_mask.type_as(next(model.parameters()))
+    logits = model(tokens, position_ids, attention_mask)[0]
+    logits = logits.float()
+    for slc in invalid_slices:
+        logits[..., slc] = -float('Inf')
+    log_probs = torch.log(torch.nn.functional.softmax(logits, dim=-1))
+
+    pred = log_probs[:, :-1, :] 
+    target = tokens[:, 1:].unsqueeze(-1) 
+    loss_mask = loss_mask[..., 1:]
+    scores = torch.gather(pred, dim=2, index=target).squeeze(-1) # [batch_size, seq_len-1]
+    if reduction == 'mean':
+        return (scores * loss_mask).sum(dim=-1) / loss_mask.sum(dim=-1)
+    elif reduction == 'none':
+        return (scores * loss_mask)
+    else:
+        raise ValueError('Unknown reduction type')
