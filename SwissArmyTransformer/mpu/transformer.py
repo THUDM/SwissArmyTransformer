@@ -405,7 +405,7 @@ class BaseTransformer(torch.nn.Module):
         if branch_input is None and 'branch_final_forward' in self.hooks:
             branch_input = self.hooks['branch_final_forward'](branch_input, **kw_args)
 
-        if self.parallel_output:
+        if not self.parallel_output:
             logits_parallel = gather_from_model_parallel_region(logits_parallel)
             
         if branch_input is not None:

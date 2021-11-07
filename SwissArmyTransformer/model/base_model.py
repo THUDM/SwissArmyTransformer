@@ -26,7 +26,7 @@ class BaseMixin(torch.nn.Module):
     # ...
 
 class BaseModel(torch.nn.Module):
-    def __init__(self, args, transformer=None):
+    def __init__(self, args, transformer=None, parallel_output=True):
         super(BaseModel, self).__init__()
         self.mixins = torch.nn.ModuleDict()
         self.collect_hooks_()
@@ -45,7 +45,7 @@ class BaseModel(torch.nn.Module):
                 checkpoint_activations=args.checkpoint_activations,
                 checkpoint_num_layers=args.checkpoint_num_layers,
                 sandwich_ln=args.sandwich_ln,
-                parallel_output=True,
+                parallel_output=parallel_output,
                 hooks=self.hooks
             )
         

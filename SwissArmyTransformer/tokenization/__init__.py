@@ -55,7 +55,7 @@ def get_tokenizer(args=None, outer_tokenizer=None):
             )
         elif args.tokenizer_type.startswith('glm_'):
             kwargs = {"add_block_symbols": True, "add_task_mask": args.task_mask,
-                      "add_decoder_mask": False}
+                      "add_decoder_mask": args.block_mask_prob > 0.0}
             if args.tokenizer_type == "glm_GPT2BPETokenizer":
                 from .glm import GPT2BPETokenizer
                 get_tokenizer.tokenizer = GPT2BPETokenizer(args.tokenizer_model_type, **kwargs)
