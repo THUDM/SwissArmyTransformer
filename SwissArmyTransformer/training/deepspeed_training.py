@@ -512,9 +512,9 @@ def initialize_distributed(args):
     torch.cuda.set_device(args.device)
     # Call the init process
     init_method = 'tcp://'
-    master_ip = os.getenv('MASTER_ADDR', 'localhost')
-    master_port = os.getenv('MASTER_PORT', '6000')
-    init_method += master_ip + ':' + master_port
+    args.master_ip = os.getenv('MASTER_ADDR', 'localhost')
+    args.master_port = os.getenv('MASTER_PORT', '6000')
+    init_method += args.master_ip + ':' + args.master_port
     torch.distributed.init_process_group(
         backend=args.distributed_backend,
         world_size=args.world_size, rank=args.rank,
@@ -525,7 +525,7 @@ def initialize_distributed(args):
 
     # Optional DeepSpeed Activation Checkpointing Features
     if hasattr(args, "deepspeed") and args.deepspeed and args.deepspeed_activation_checkpointing:
-        set_deepspeed_activation_checkpointing(args) # TODO manual model-parallel seed
+        set_deepspeed_activation_checkpointing(args)  # TODO manual model-parallel seed
 
 
 def set_random_seed(seed):
