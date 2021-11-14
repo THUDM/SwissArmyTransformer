@@ -48,33 +48,38 @@ class BaseModel(torch.nn.Module):
                 parallel_output=parallel_output,
                 hooks=self.hooks
             )
-        
+
     def reinit(self): # will be called when loading model
         # if some mixins are loaded, overrides this function
-        for m in self.mixins.values(): 
+        for m in self.mixins.values():
             m.reinit(self.transformer)
-            
+
     def add_mixin(self, name, new_mixin, reinit=False):
         assert name not in self.mixins
         assert isinstance(new_mixin, BaseMixin)
-        
+
         self.mixins[name] = new_mixin # will auto-register parameters
         object.__setattr__(new_mixin, 'transformer', self.transformer) # cannot use pytorch set_attr
-        
+
         if reinit:
             new_mixin.reinit(self.transformer, **self.mixins) # also pass current mixins
         self.collect_hooks_()
-        
+
+    def del_mixin(self, name):
+        assert name in self.mixins
+        del self.mixins[name]
+        self.collect_hooks_()
+
     def get_mixin(self, name):
         return self.mixins[name]
-    
+
     def forward(self, *args, **kwargs):
         # update hooks as the current model (overrided forwards)
         # Attention! the transformer might be shared by multiple models
         self.transformer.hooks.clear()
         self.transformer.hooks.update(self.hooks)
         return self.transformer(*args, **kwargs)
-        
+
     def collect_hooks_(self):
         names = ['word_embedding_forward', 'position_embedding_forward',
                 'attention_forward', 'mlp_forward', 'final_forward', 'layer_forward',
@@ -97,6 +102,6 @@ class BaseModel(torch.nn.Module):
         self.hooks = hooks
         self.hook_origins = hook_origins
         return hooks
-    
+
     def disable_untrainable_params(self):
         pass
