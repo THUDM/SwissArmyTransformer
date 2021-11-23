@@ -328,8 +328,11 @@ def train(model, optimizer, lr_scheduler,
 
 
 def train_step(data_iterator, model, optimizer, lr_scheduler,
-               args, timers, hooks={}):
+               args, timers, hooks=None, single_step=False):
     """Single training step."""
+    if hooks is None:
+        hooks = {}
+    lm_loss_total, metrics_total, count = 0.0, {}, 0
     forward_step = hooks['forward_step']
     
     while True:
@@ -354,6 +357,13 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
             print('Skipping backward and optimizer step for nan or inf in forwarding metrics/loss!')
             return lm_loss.detach(), 1, metrics
 
+        # Accumulate the statistics
+        lm_loss_total += lm_loss_reduced
+        for name in metrics:
+            if name not in metrics_total:
+                metrics_total[name] = 0.0
+            metrics_total[name] += metrics[name]
+        count += 1
         # Calculate gradients, reduce across processes, and clip.
         timers('backward').start()
         backward_step(optimizer, model, lm_loss, args, timers)
@@ -374,9 +384,11 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
         else:
             raise ValueError('Currently, we only support training with deepspeed.')
         timers('optimizer').stop()
-        if complete:
+        if complete or single_step:
             break
-    return lm_loss_reduced, skipped_iter, metrics
+    lm_loss_total /= count
+    metrics_total = {key: value / count for key, value in metrics_total.items()}
+    return lm_loss_total, skipped_iter, metrics_total
 
 def backward_step(optimizer, model, loss, args, timers):
     """Backward step."""
@@ -500,9 +512,9 @@ def initialize_distributed(args):
     torch.cuda.set_device(args.device)
     # Call the init process
     init_method = 'tcp://'
-    master_ip = os.getenv('MASTER_ADDR', 'localhost')
-    master_port = os.getenv('MASTER_PORT', '6000')
-    init_method += master_ip + ':' + master_port
+    args.master_ip = os.getenv('MASTER_ADDR', 'localhost')
+    args.master_port = os.getenv('MASTER_PORT', '6000')
+    init_method += args.master_ip + ':' + args.master_port
     torch.distributed.init_process_group(
         backend=args.distributed_backend,
         world_size=args.world_size, rank=args.rank,
@@ -513,7 +525,7 @@ def initialize_distributed(args):
 
     # Optional DeepSpeed Activation Checkpointing Features
     if hasattr(args, "deepspeed") and args.deepspeed and args.deepspeed_activation_checkpointing:
-        set_deepspeed_activation_checkpointing(args) # TODO manual model-parallel seed
+        set_deepspeed_activation_checkpointing(args)  # TODO manual model-parallel seed
 
 
 def set_random_seed(seed):
