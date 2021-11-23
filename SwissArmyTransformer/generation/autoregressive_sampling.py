@@ -3,7 +3,7 @@
 @File    :   autoregressive_sampling.py
 @Time    :   2021/10/08 15:43:59
 @Author  :   Ming Ding 
-@Contact :   dm18@mail.tsinghua.edu.cn
+@Contact :   dm18@mails.tsinghua.edu.cn
 '''
 
 # here put the import lib

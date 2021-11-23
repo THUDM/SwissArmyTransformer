@@ -130,7 +130,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         if args.do_valid:
             prefix = 'the end of training for val data'
             val_loss = evaluate_and_print_results(prefix, val_data_iterator,
-                model, args, timers, False)
+                model, args, timers, False, hooks=hooks)
 
     # final save
     if args.save and iteration != 0: # TODO save
@@ -140,7 +140,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     if args.do_test and test_data is not None:
         prefix = 'the end of training for test data'
         evaluate_and_print_results(prefix, iter(test_data),
-            model, args, timers, True)
+            model, args, timers, True, hooks=hooks)
 
 def get_model(args, model_cls):
     """Build the model."""

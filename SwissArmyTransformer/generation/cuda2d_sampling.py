@@ -3,7 +3,7 @@
 @File    :   cuda2d_sampling.py
 @Time    :   2021/10/09 00:46:04
 @Author  :   Ming Ding 
-@Contact :   dm18@mail.tsinghua.edu.cn
+@Contact :   dm18@mails.tsinghua.edu.cn
 '''
 
 # here put the import lib
