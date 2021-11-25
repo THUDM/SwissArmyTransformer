@@ -92,6 +92,7 @@ class DecoderModel(BaseModel):
         super().__init__(dec_args, transformer=transformer)
         self.add_mixin('cross_attention',
             CrossAttentionMixin(
+                dec_args.num_layers,
                 dec_args.hidden_size, dec_args.num_attention_heads,
                 dec_args.attention_dropout, dec_args.hidden_dropout,
                 self.transformer.init_method, 
