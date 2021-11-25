@@ -29,11 +29,11 @@ class CrossAttentionMixin(BaseMixin):
                 attention_dropout_prob, output_dropout_prob,
                 init_method, enc_hidden_size=enc_hidden_size, inner_hidden_size=inner_hidden_size, 
                 output_layer_init_method=output_layer_init_method
-            )] for layer_id in range(num_layers)
+            ) for layer_id in range(num_layers)]
         ) # Just copy args
         self.cross_lns = torch.nn.ModuleList(
-            [LayerNorm(hidden_size, 1e-5)]
-            for layer_id in range(num_layers)
+            [LayerNorm(hidden_size, 1e-5)
+            for layer_id in range(num_layers)]
         )
         
 
