@@ -467,6 +467,8 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
         summary_writer.add_scalar(f'Train/lr', lr, step)
         summary_writer.add_scalar(f'Train/train_loss', loss, step)
         summary_writer.add_scalar(f'Train/elapsed_time', elapsed_time, step)
+        for key in avg_metrics:
+            summary_writer.add_scalar('Train/'+key, avg_metrics[key], step)
 
 
 def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step):

@@ -1,4 +1,4 @@
-# 2021.10.29
+# 2021.10.29 v0.1
 1. change `mixins` from `ModuleList` to `ModuleDict`
 2. return tokens and mems in `fill_sequence`, and mems becomes a tensor.
 3. `CachedAutoRegressiveMixin`
@@ -28,5 +28,8 @@ for the older framework, you also need:
 old['module']['transformer.word_embeddings.weight'] = old['module']['word_embeddings.weight']
 del old['module']['word_embeddings.weight']
 ```
+# 2021.11.5 v0.1.2
+1. Add generation.autoregressive_sampling.evalute_perplexity
+2. fix Runtime Error in skipping Nan Loss
 
 

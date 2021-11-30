@@ -141,8 +141,9 @@ class SelfAttention(torch.nn.Module):
 
 class MLP(torch.nn.Module):
     def __init__(self, hidden_size, output_dropout_prob, init_method,
-                output_layer_init_method=None, hooks={}):
+                output_layer_init_method=None, layer_id=None, hooks={}):
         super(MLP, self).__init__()
+        self.layer_id = layer_id
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
             output_layer_init_method = init_method
@@ -225,6 +226,7 @@ class BaseTransformerLayer(torch.nn.Module):
             output_dropout_prob,
             init_method,
             output_layer_init_method=output_layer_init_method,
+            layer_id=layer_id,
             hooks=hooks
         )
     
