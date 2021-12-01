@@ -3,7 +3,7 @@
 @File    :   inference_glm.py
 @Time    :   2021/10/22 19:41:58
 @Author  :   Ming Ding
-@Contact :   dm18@mail.tsinghua.edu.cn
+@Contact :   dm18@mails.tsinghua.edu.cn
 '''
 
 # here put the import lib
@@ -23,7 +23,7 @@ from SwissArmyTransformer import mpu, get_args, get_tokenizer, load_checkpoint, 
 
 from SwissArmyTransformer.model import GLMModel
 from SwissArmyTransformer.model.mixins import CachedAutoregressiveMixin
-from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence
+from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence, evaluate_perplexity
 from SwissArmyTransformer.generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
 from SwissArmyTransformer.generation.utils import timed_name, generate_continually
 

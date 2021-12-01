@@ -3,7 +3,7 @@
 @File    :   mixins.py
 @Time    :   2021/10/01 17:52:40
 @Author  :   Ming Ding 
-@Contact :   dm18@mail.tsinghua.edu.cn
+@Contact :   dm18@mails.tsinghua.edu.cn
 '''
 
 # here put the import lib

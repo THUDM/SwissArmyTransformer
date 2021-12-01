@@ -3,7 +3,7 @@
 @File    :   cuda2d_model.py
 @Time    :   2021/10/02 01:36:32
 @Author  :   Ming Ding 
-@Contact :   dm18@mail.tsinghua.edu.cn
+@Contact :   dm18@mails.tsinghua.edu.cn
 '''
 
 # here put the import lib

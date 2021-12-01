@@ -51,9 +51,10 @@ def standard_attention(query_layer, key_layer, value_layer, attention_mask,
     )
     if log_attention_weights is not None:
         attention_scores += log_attention_weights
-
-    # if attention_mask.shape[-2] > 1: # if auto-regressive, skip
-    attention_scores = torch.mul(attention_scores, attention_mask) - \
+    
+    if not(attention_mask.shape[-2] == 1 and (attention_mask > 0).all()):
+        # if auto-regressive, skip
+        attention_scores = torch.mul(attention_scores, attention_mask) - \
                 10000.0 * (1.0 - attention_mask)
 
     attention_probs = F.softmax(attention_scores, dim=-1)
@@ -140,8 +141,9 @@ class SelfAttention(torch.nn.Module):
 
 class MLP(torch.nn.Module):
     def __init__(self, hidden_size, output_dropout_prob, init_method,
-                output_layer_init_method=None, hooks={}):
+                output_layer_init_method=None, layer_id=None, hooks={}):
         super(MLP, self).__init__()
+        self.layer_id = layer_id
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
             output_layer_init_method = init_method
@@ -224,6 +226,7 @@ class BaseTransformerLayer(torch.nn.Module):
             output_dropout_prob,
             init_method,
             output_layer_init_method=output_layer_init_method,
+            layer_id=layer_id,
             hooks=hooks
         )
 

@@ -120,7 +120,6 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
             with ExitStack() as stack:
                 def save_on_exit(args_, model_, optimizer_, lr_scheduler_):
                     save_checkpoint(args_.iteration, model_, optimizer_, lr_scheduler_, args_)
-
                 iteration, skipped = train(model, optimizer,
                                            lr_scheduler,
                                            train_data_iterator,
@@ -131,7 +130,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         if args.do_valid:
             prefix = 'the end of training for val data'
             val_loss = evaluate_and_print_results(prefix, val_data_iterator,
-                                                  model, args, timers, False)
+                model, args, timers, False, hooks=hooks)
 
     # final save
     if args.save and iteration != 0:  # TODO save
@@ -141,7 +140,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     if args.do_test and test_data is not None:
         prefix = 'the end of training for test data'
         evaluate_and_print_results(prefix, iter(test_data),
-                                   model, args, timers, True)
+            model, args, timers, True, hooks=hooks)
 
 
 def get_model(args, model_cls):
@@ -477,6 +476,8 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
         summary_writer.add_scalar(f'Train/lr', lr, step)
         summary_writer.add_scalar(f'Train/train_loss', loss, step)
         summary_writer.add_scalar(f'Train/elapsed_time', elapsed_time, step)
+        for key in avg_metrics:
+            summary_writer.add_scalar('Train/'+key, avg_metrics[key], step)
 
 
 def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step):

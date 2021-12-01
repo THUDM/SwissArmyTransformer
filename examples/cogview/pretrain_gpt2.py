@@ -3,7 +3,7 @@
 @File    :   pretrain_gpt2.py
 @Time    :   2021/10/06 00:58:32
 @Author  :   Ming Ding 
-@Contact :   dm18@mail.tsinghua.edu.cn
+@Contact :   dm18@mails.tsinghua.edu.cn
 '''
 
 # here put the import lib
@@ -99,7 +99,6 @@ def forward_step(data_iterator, model, args, timers):
 
     losses = losses.view(-1) * loss_mask
     loss = torch.sum(losses) / loss_mask.sum()
-    
     return loss, {}
 
 def create_dataset_function(path, args):

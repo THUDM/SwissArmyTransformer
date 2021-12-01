@@ -3,7 +3,7 @@
 @File    :   __init__.py
 @Time    :   2021/10/06 17:58:04
 @Author  :   Ming Ding 
-@Contact :   dm18@mail.tsinghua.edu.cn
+@Contact :   dm18@mails.tsinghua.edu.cn
 '''
 
 # here put the import lib
@@ -47,13 +47,14 @@ def get_tokenizer(args=None, outer_tokenizer=None):
         return outer_tokenizer
     if not hasattr(get_tokenizer, 'tokenizer'):
         # the first time to load the tokenizer
-        if args.tokenizer_type == 'cogview':
+        if args.tokenizer_type.startswith('cogview'): # or cogview_ICE
             from .cogview import UnifiedTokenizer
             get_tokenizer.tokenizer = UnifiedTokenizer(
                 args.img_tokenizer_path,
+                # txt_tokenizer_type=args.tokenizer_type,
                 device=torch.cuda.current_device()
             )
-        elif args.tokenizer_type.startswith('glm_'):
+        elif args.tokenizer_type.startswith('glm'):
             kwargs = {"add_block_symbols": True, "add_task_mask": args.task_mask,
                       "add_decoder_mask": args.block_mask_prob > 0.0}
             if args.tokenizer_type == "glm_GPT2BPETokenizer":

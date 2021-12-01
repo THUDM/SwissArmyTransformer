@@ -3,7 +3,7 @@
 @File    :   base_model.py
 @Time    :   2021/10/01 22:40:33
 @Author  :   Ming Ding 
-@Contact :   dm18@mail.tsinghua.edu.cn
+@Contact :   dm18@mails.tsinghua.edu.cn
 '''
 
 # here put the import lib

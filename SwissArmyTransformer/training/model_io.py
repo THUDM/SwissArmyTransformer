@@ -3,7 +3,7 @@
 @File    :   model_io.py
 @Time    :   2021/10/05 18:39:55
 @Author  :   Ming Ding 
-@Contact :   dm18@mail.tsinghua.edu.cn
+@Contact :   dm18@mails.tsinghua.edu.cn
 '''
 
 # here put the import lib

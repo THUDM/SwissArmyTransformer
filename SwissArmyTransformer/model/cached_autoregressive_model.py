@@ -3,7 +3,7 @@
 @File    :   cached_autoregressive_model.py
 @Time    :   2021/10/02 01:36:24
 @Author  :   Ming Ding 
-@Contact :   dm18@mail.tsinghua.edu.cn
+@Contact :   dm18@mails.tsinghua.edu.cn
 '''
 
 # here put the import lib
