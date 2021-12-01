@@ -15,10 +15,11 @@ import torch
 from SwissArmyTransformer.mpu.utils import divide, split_tensor_along_last_dim
 from SwissArmyTransformer.mpu.transformer import standard_attention, LayerNorm
 
+
 class CrossAttention(torch.nn.Module):
     def __init__(self, hidden_size, num_attention_heads,
-                attention_dropout_prob, output_dropout_prob,
-                init_method, enc_hidden_size=None, inner_hidden_size=None, output_layer_init_method=None):
+                 attention_dropout_prob, output_dropout_prob,
+                 init_method, enc_hidden_size=None, inner_hidden_size=None, output_layer_init_method=None):
         super(CrossAttention, self).__init__()
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
@@ -57,35 +58,34 @@ class CrossAttention(torch.nn.Module):
         output_layer_init_method(self.dense.weight)
         self.output_dropout = torch.nn.Dropout(output_dropout_prob)
 
-
     def _transpose_for_scores(self, tensor):
         """Transpose a 3D tensor [b, s, np*hn] into a 4D tensor with
         size [b, np, s, hn].
         """
         new_tensor_shape = tensor.size()[:-1] + \
-                            (self.num_attention_heads_per_partition,
+                           (self.num_attention_heads_per_partition,
                             self.hidden_size_per_attention_head)
         tensor = tensor.view(*new_tensor_shape)
         return tensor.permute(0, 2, 1, 3)
 
     def forward(self, hidden_states, mask, encoder_outputs, **kw_args):
-        
+
         query_layer = self.q_linear(hidden_states)
         key_layer, value_layer = split_tensor_along_last_dim(self.kv_linear(encoder_outputs), 2)
-        
+
         dropout_fn = self.attention_dropout if self.training else None
 
         query_layer = self._transpose_for_scores(query_layer)
         key_layer = self._transpose_for_scores(key_layer)
         value_layer = self._transpose_for_scores(value_layer)
-        
+
         context_layer = standard_attention(query_layer, key_layer, value_layer, mask, dropout_fn)
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
         context_layer = context_layer.view(*new_context_layer_shape)
         output = self.dense(context_layer)
-        
+
         if self.training:
             output = self.output_dropout(output)
-        
+
         return output

@@ -31,17 +31,20 @@ from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint,
 from .utils import divide, sqrt, scaled_init_method, unscaled_init_method, gelu
 from .utils import split_tensor_along_last_dim
 
+
 class LayerNorm(FusedLayerNorm):
     def __init__(self, *args, pb_relax=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.pb_relax = pb_relax
+
     def forward(self, x):
         if not self.pb_relax:
             return super().forward(x)
-        return super().forward(x / (x.abs().max().detach()/8))
+        return super().forward(x / (x.abs().max().detach() / 8))
+
 
 def standard_attention(query_layer, key_layer, value_layer, attention_mask,
-                    attention_dropout=None, log_attention_weights=None):
+                       attention_dropout=None, log_attention_weights=None):
     # We disable the PB-relax-Attention and only changes the order of computation, because it is enough for most of training. 
     # The implementation in the paper can be done very easily, if you really need it to train very deep transformers. 
 
@@ -51,11 +54,11 @@ def standard_attention(query_layer, key_layer, value_layer, attention_mask,
     )
     if log_attention_weights is not None:
         attention_scores += log_attention_weights
-    
-    if not(attention_mask.shape[-2] == 1 and (attention_mask > 0).all()):
+
+    if not (attention_mask.shape[-2] == 1 and (attention_mask > 0).all()):
         # if auto-regressive, skip
         attention_scores = torch.mul(attention_scores, attention_mask) - \
-                10000.0 * (1.0 - attention_mask)
+                           10000.0 * (1.0 - attention_mask)
 
     attention_probs = F.softmax(attention_scores, dim=-1)
 
@@ -66,11 +69,12 @@ def standard_attention(query_layer, key_layer, value_layer, attention_mask,
     context_layer = torch.matmul(attention_probs, value_layer)
     return context_layer
 
+
 class SelfAttention(torch.nn.Module):
     def __init__(self, hidden_size, num_attention_heads,
-                attention_dropout_prob, output_dropout_prob,
-                init_method, layer_id, output_layer_init_method=None,
-                hooks={}):
+                 attention_dropout_prob, output_dropout_prob,
+                 init_method, layer_id, output_layer_init_method=None,
+                 hooks={}):
         super(SelfAttention, self).__init__()
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
@@ -86,7 +90,7 @@ class SelfAttention(torch.nn.Module):
         # Strided linear layer.
         self.query_key_value = ColumnParallelLinear(
             hidden_size,
-            3*hidden_size,
+            3 * hidden_size,
             stride=3,
             gather_output=False,
             init_method=init_method
@@ -101,13 +105,12 @@ class SelfAttention(torch.nn.Module):
         )
         self.output_dropout = torch.nn.Dropout(output_dropout_prob)
 
-
     def _transpose_for_scores(self, tensor):
         """Transpose a 3D tensor [b, s, np*hn] into a 4D tensor with
         size [b, np, s, hn].
         """
         new_tensor_shape = tensor.size()[:-1] + \
-                            (self.num_attention_heads_per_partition,
+                           (self.num_attention_heads_per_partition,
                             self.hidden_size_per_attention_head)
         tensor = tensor.view(*new_tensor_shape)
         return tensor.permute(0, 2, 1, 3)
@@ -118,8 +121,8 @@ class SelfAttention(torch.nn.Module):
         else:
             mixed_raw_layer = self.query_key_value(hidden_states)
             (mixed_query_layer,
-                mixed_key_layer,
-                mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, 3)
+             mixed_key_layer,
+             mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, 3)
 
             dropout_fn = self.attention_dropout if self.training else None
 
@@ -141,7 +144,7 @@ class SelfAttention(torch.nn.Module):
 
 class MLP(torch.nn.Module):
     def __init__(self, hidden_size, output_dropout_prob, init_method,
-                output_layer_init_method=None, layer_id=None, hooks={}):
+                 output_layer_init_method=None, layer_id=None, hooks={}):
         super(MLP, self).__init__()
         self.layer_id = layer_id
         # Set output layer initialization if not provided.
@@ -151,13 +154,13 @@ class MLP(torch.nn.Module):
         # Project to 4h.
         self.dense_h_to_4h = ColumnParallelLinear(
             hidden_size,
-            4*hidden_size,
+            4 * hidden_size,
             gather_output=False,
             init_method=init_method
         )
         # Project back to h.
         self.dense_4h_to_h = RowParallelLinear(
-            4*hidden_size,
+            4 * hidden_size,
             hidden_size,
             input_is_parallel=True,
             init_method=output_layer_init_method
@@ -179,17 +182,17 @@ class MLP(torch.nn.Module):
 
 class BaseTransformerLayer(torch.nn.Module):
     def __init__(
-        self,
-        hidden_size,
-        num_attention_heads,
-        attention_dropout_prob,
-        output_dropout_prob,
-        layernorm_epsilon,
-        init_method,
-        layer_id,
-        output_layer_init_method=None,
-        sandwich_ln=True,
-        hooks={}
+            self,
+            hidden_size,
+            num_attention_heads,
+            attention_dropout_prob,
+            output_dropout_prob,
+            layernorm_epsilon,
+            init_method,
+            layer_id,
+            output_layer_init_method=None,
+            sandwich_ln=True,
+            hooks={}
     ):
         super(BaseTransformerLayer, self).__init__()
         # Set output layer initialization if not provided.
@@ -259,7 +262,8 @@ class BaseTransformerLayer(torch.nn.Module):
         # Second residual connection.
         output = layernorm_input + mlp_output
 
-        return output, output_this_layer # temporally, output_this_layer is only from attention
+        return output, output_this_layer  # temporally, output_this_layer is only from attention
+
 
 class BaseTransformer(torch.nn.Module):
     def __init__(self,
@@ -286,7 +290,7 @@ class BaseTransformer(torch.nn.Module):
         self.checkpoint_activations = checkpoint_activations
         self.checkpoint_num_layers = checkpoint_num_layers
         self.max_sequence_length = max_sequence_length
-        self.hooks = copy.copy(hooks) # hooks will be updated each forward
+        self.hooks = copy.copy(hooks)  # hooks will be updated each forward
 
         # create embedding parameters
         self.embedding_dropout = torch.nn.Dropout(embedding_dropout_prob)
@@ -300,6 +304,7 @@ class BaseTransformer(torch.nn.Module):
         # create all layers
         self.output_layer_init_method = scaled_init_method(init_method_std, num_layers)
         self.init_method = unscaled_init_method(init_method_std)
+
         def get_layer(layer_id):
             return BaseTransformerLayer(
                 hidden_size,
@@ -312,7 +317,8 @@ class BaseTransformer(torch.nn.Module):
                 output_layer_init_method=self.output_layer_init_method,
                 sandwich_ln=sandwich_ln,
                 hooks=self.hooks
-                )
+            )
+
         self.layers = torch.nn.ModuleList(
             [get_layer(layer_id) for layer_id in range(num_layers)])
 
@@ -325,7 +331,7 @@ class BaseTransformer(torch.nn.Module):
         assert len(input_ids.shape) == 2
         batch_size, query_length = input_ids.shape
         assert len(attention_mask.shape) == 2 or \
-            len(attention_mask.shape) == 4 and attention_mask.shape[1] == 1
+               len(attention_mask.shape) == 4 and attention_mask.shape[1] == 1
         assert branch_input is None or 'layer_forward' in self.hooks and isinstance(branch_input, torch.Tensor)
         # branch_input is a new part of input need layer-by-layer update,
         #   but with different hidden_dim and computational routine.
@@ -334,7 +340,7 @@ class BaseTransformer(torch.nn.Module):
         # embedding part
         if 'word_embedding_forward' in self.hooks:
             hidden_states = self.hooks['word_embedding_forward'](input_ids, **kw_args)
-        else: # default
+        else:  # default
             hidden_states = self.word_embeddings(input_ids)
 
         if 'position_embedding_forward' in self.hooks:
@@ -358,7 +364,7 @@ class BaseTransformer(torch.nn.Module):
                 def custom_forward(*inputs):
                     layers_ = self.layers[start:end]
                     x_, mask = inputs[0], inputs[1]
-                    if len(inputs) > 2: # have branch_input
+                    if len(inputs) > 2:  # have branch_input
                         branch_ = inputs[2]
                     output_per_layers_part = []
                     for i, layer in enumerate(layers_):
@@ -374,6 +380,7 @@ class BaseTransformer(torch.nn.Module):
                             x_, output_this_layer = layer(x_, mask, **kw_args)
                         output_per_layers_part.append(output_this_layer)
                     return x_, output_per_layers_part
+
                 return custom_forward
 
             l, num_layers = 0, len(self.layers)
@@ -381,7 +388,8 @@ class BaseTransformer(torch.nn.Module):
             while l < num_layers:
                 args = [hidden_states, attention_mask]
                 if branch_input is not None:
-                    hidden_states, branch_input, output_per_layers_part = checkpoint(custom(l, l + chunk_length), *args, branch_input)
+                    hidden_states, branch_input, output_per_layers_part = checkpoint(custom(l, l + chunk_length), *args,
+                                                                                     branch_input)
                 else:
                     hidden_states, output_per_layers_part = checkpoint(custom(l, l + chunk_length), *args)
                 if output_hidden_states:
@@ -391,10 +399,15 @@ class BaseTransformer(torch.nn.Module):
         else:
             for i, layer in enumerate(self.layers):
                 args = [hidden_states, attention_mask]
-                if branch_input is not None: # customized layer_forward with branch_input
-                    hidden_states, branch_input, output_this_layer = self.hooks['layer_forward'](*args, layer_id=torch.tensor(i), branch_input=branch_input, **kw_args)
-                elif 'layer_forward' in self.hooks: # customized layer_forward
-                    hidden_states, output_this_layer = self.hooks['layer_forward'](*args, layer_id=torch.tensor(i), **kw_args)
+                if branch_input is not None:  # customized layer_forward with branch_input
+                    hidden_states, branch_input, output_this_layer = self.hooks['layer_forward'](*args,
+                                                                                                 layer_id=torch.tensor(
+                                                                                                     i),
+                                                                                                 branch_input=branch_input,
+                                                                                                 **kw_args)
+                elif 'layer_forward' in self.hooks:  # customized layer_forward
+                    hidden_states, output_this_layer = self.hooks['layer_forward'](*args, layer_id=torch.tensor(i),
+                                                                                   **kw_args)
                 else:
                     hidden_states, output_this_layer = layer(*args, **kw_args)
                 if output_hidden_states:
@@ -425,4 +438,3 @@ class BaseTransformer(torch.nn.Module):
         outputs.extend(output_per_layers)
 
         return outputs
-
