@@ -13,20 +13,23 @@ import math
 import random
 import torch
 
-from SwissArmyTransformer.mpu import BaseTransformer
+from SwissArmyTransformer.mpu import BaseTransformer, LayerNorm
+
 
 class BaseMixin(torch.nn.Module):
     def __init__(self):
         super(BaseMixin, self).__init__()
         # define new params
+
     def reinit(self, *pre_mixins):
         # reload the initial params from previous trained modules
         pass
     # can also define hook-functions here
     # ...
 
+
 class BaseModel(torch.nn.Module):
-    def __init__(self, args, transformer=None, parallel_output=True):
+    def __init__(self, args, transformer=None, **kwargs):
         super(BaseModel, self).__init__()
         self.mixins = torch.nn.ModuleDict()
         self.collect_hooks_()
@@ -42,14 +45,16 @@ class BaseModel(torch.nn.Module):
                 embedding_dropout_prob=args.hidden_dropout,
                 attention_dropout_prob=args.attention_dropout,
                 output_dropout_prob=args.hidden_dropout,
+                inner_hidden_size=args.inner_hidden_size,
+                hidden_size_per_attention_head=args.hidden_size_per_attention_head,
                 checkpoint_activations=args.checkpoint_activations,
                 checkpoint_num_layers=args.checkpoint_num_layers,
                 sandwich_ln=args.sandwich_ln,
-                parallel_output=parallel_output,
-                hooks=self.hooks
+                hooks=self.hooks,
+                **kwargs
             )
 
-    def reinit(self): # will be called when loading model
+    def reinit(self):  # will be called when loading model
         # if some mixins are loaded, overrides this function
         for m in self.mixins.values():
             m.reinit(self.transformer)
@@ -58,11 +63,11 @@ class BaseModel(torch.nn.Module):
         assert name not in self.mixins
         assert isinstance(new_mixin, BaseMixin)
 
-        self.mixins[name] = new_mixin # will auto-register parameters
-        object.__setattr__(new_mixin, 'transformer', self.transformer) # cannot use pytorch set_attr
+        self.mixins[name] = new_mixin  # will auto-register parameters
+        object.__setattr__(new_mixin, 'transformer', self.transformer)  # cannot use pytorch set_attr
 
         if reinit:
-            new_mixin.reinit(self.transformer, **self.mixins) # also pass current mixins
+            new_mixin.reinit(self.transformer, **self.mixins)  # also pass current mixins
         self.collect_hooks_()
 
     def del_mixin(self, name):
@@ -82,15 +87,15 @@ class BaseModel(torch.nn.Module):
 
     def collect_hooks_(self):
         names = ['word_embedding_forward', 'position_embedding_forward',
-                'attention_forward', 'mlp_forward', 'final_forward', 'layer_forward',
-                'branch_embedding_forward', 'branch_final_forward'
-                ]
+                 'attention_forward', 'mlp_forward', 'final_forward', 'layer_forward',
+                 'branch_embedding_forward', 'branch_final_forward'
+                 ]
         hooks = {}
         hook_origins = {}
         for name in names:
             for mixin_name, m in self.mixins.items():
                 if hasattr(m, name):
-                    if name in hooks: # conflict
+                    if name in hooks:  # conflict
                         raise ValueError(f'Hook {name} conflicts at {mixin_name} and {hook_origins[name]}.')
                     hooks[name] = getattr(m, name)
                     hook_origins[name] = mixin_name
