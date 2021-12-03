@@ -1,0 +1,3 @@
+include requirements.txt
+global-exclude __pycache__/*
+graft SwissArmyTransformer/tokenization/embed_assets

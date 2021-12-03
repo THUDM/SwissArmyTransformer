@@ -3,7 +3,7 @@
 @File    :   setup_connection.py
 @Time    :   2021/01/16 16:50:36
 @Author  :   Ming Ding 
-@Contact :   dm18@mail.tsinghua.edu.cn
+@Contact :   dm18@mails.tsinghua.edu.cn
 '''
 
 # here put the import lib
@@ -11,7 +11,6 @@ import os
 import sys
 import math
 import random
-import base64
 
 def main(ip_list, port=2222):
     ssh_config = ''
