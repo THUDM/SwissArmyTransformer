@@ -15,7 +15,6 @@ import torch
 import argparse
 from .base_model import BaseModel, BaseMixin
 from SwissArmyTransformer.mpu.mappings import copy_to_model_parallel_region
-from .common_layers import LayerNorm
 
 
 def get_extended_attention_mask(attention_mask, input_shape, device, dtype=torch.float32, is_decoder=False):
