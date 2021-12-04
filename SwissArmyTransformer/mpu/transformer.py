@@ -527,6 +527,8 @@ class BaseTransformer(torch.nn.Module):
 
             l, num_layers = 0, len(self.layers)
             chunk_length = self.checkpoint_num_layers
+            if self.training:
+                hidden_states.requires_grad_(True)
             while l < num_layers:
                 if branch_input is not None:
                     args = [hidden_states, attention_mask, branch_input]
