@@ -49,7 +49,7 @@ def standard_attention(query_layer, key_layer, value_layer, attention_mask,
     # The implementation in the paper can be done very easily, if you really need it to train very deep transformers. 
 
     if scaling_attention_score:
-        query_layer / math.sqrt(query_layer.shape[-1])
+        query_layer = query_layer / math.sqrt(query_layer.shape[-1])
     attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
     if log_attention_weights is not None:
         attention_scores += log_attention_weights
@@ -469,6 +469,7 @@ class BaseTransformer(torch.nn.Module):
 
     def forward(self, input_ids, position_ids, attention_mask, *, branch_input=None, encoder_outputs=None,
                 output_hidden_states=False, **kw_args):
+        breakpoint()
         # sanity check
         assert len(input_ids.shape) == 2
         batch_size, query_length = input_ids.shape
