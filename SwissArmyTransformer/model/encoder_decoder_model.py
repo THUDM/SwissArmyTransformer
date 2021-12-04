@@ -56,6 +56,8 @@ def get_extended_attention_mask(attention_mask, input_shape, device, dtype=torch
                          causal_mask], axis=-1)
 
                 extended_attention_mask = causal_mask[:, None, :, :] * attention_mask[:, None, None, :]
+            else:
+                extended_attention_mask = causal_mask[:, None, :, :]
         else:
             if attention_mask is None:
                 extended_attention_mask = torch.ones(1, 1, 1, seq_length, device=device, dtype=dtype)
@@ -108,16 +110,20 @@ class EncoderDecoderModel(torch.nn.Module):
         self.decoder.disable_untrainable_params()
 
     def forward(self, input_ids=None, input_position_ids=None, attention_mask=None, decoder_input_ids=None,
-                decoder_position_ids=None, decoder_attention_mask=None,
+                decoder_position_ids=None, decoder_attention_mask=None, encoder_outputs=None,
                 **kw_args):
         dtype = self.encoder.transformer.word_embeddings.weight.dtype
-        batch_size, encoder_seq_length = input_ids.size()[:2]
+        if encoder_outputs is None:
+            batch_size, encoder_seq_length = input_ids.size()[:2]
+        else:
+            batch_size, encoder_seq_length = encoder_outputs.size()[:2]
         encoder_attention_mask = get_extended_attention_mask(attention_mask, (batch_size, encoder_seq_length),
                                                              device=input_ids.device, dtype=dtype)
         decoder_seq_length = decoder_input_ids.size(1)
-        encoder_outputs, *_dumps = self.encoder(input_ids, input_position_ids, encoder_attention_mask, **kw_args)
+        if encoder_outputs is None:
+            encoder_outputs, *_dumps = self.encoder(input_ids, input_position_ids, encoder_attention_mask, **kw_args)
         decoder_attention_mask = get_extended_attention_mask(decoder_attention_mask, (batch_size, decoder_seq_length),
-                                                             device=input_ids.device, dtype=dtype)
+                                                             device=input_ids.device, dtype=dtype, is_decoder=True)
         decoder_outputs, *decoder_mems = self.decoder(decoder_input_ids, decoder_position_ids, decoder_attention_mask,
                                                       encoder_outputs=encoder_outputs,
                                                       cross_attention_mask=encoder_attention_mask, **kw_args)

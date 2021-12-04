@@ -1,9 +1,11 @@
 import math
 import torch
+import torch.nn.functional as F
 from .mixins import BaseMixin
 from .encoder_decoder_model import EncoderDecoderModel
 from SwissArmyTransformer.mpu import get_model_parallel_world_size
 from SwissArmyTransformer.mpu.transformer import standard_attention
+from SwissArmyTransformer.mpu.mappings import copy_to_model_parallel_region
 from SwissArmyTransformer.mpu.utils import divide, split_tensor_along_last_dim
 
 
@@ -164,9 +166,22 @@ class T5AttentionMixin(BaseMixin):
         return output
 
 
+class T5DecoderFinalMixin(BaseMixin):
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.hidden_size = hidden_size
+
+    def final_forward(self, logits, **kwargs):
+        logits_parallel = copy_to_model_parallel_region(logits)
+        logits_parallel = logits_parallel * (self.hidden_size ** -0.5)
+        logits_parallel = F.linear(logits_parallel, self.transformer.word_embeddings.weight)
+        return logits_parallel
+
+
 class T5Model(EncoderDecoderModel):
     def __init__(self, args, **kwargs):
-        super().__init__(args, **kwargs, use_bias=False, layernorm=T5LayerNorm)
+        super().__init__(args, **kwargs, use_bias=False, layernorm=T5LayerNorm,
+                         activation_func=torch.nn.functional.relu)
         self.encoder.add_mixin(
             "t5-attention", T5AttentionMixin(args.relative_attention_num_buckets, args.num_attention_heads)
         )
@@ -180,6 +195,9 @@ class T5Model(EncoderDecoderModel):
         )
         self.decoder.add_mixin(
             "t5-position", T5PositionEmbeddingMixin()
+        )
+        self.decoder.add_mixin(
+            "t5-final", T5DecoderFinalMixin(args.hidden_size)
         )
         del self.decoder.transformer.position_embeddings
         self.decoder.transformer.word_embeddings = self.encoder.transformer.word_embeddings

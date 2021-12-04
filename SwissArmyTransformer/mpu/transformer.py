@@ -198,11 +198,11 @@ class CrossAttention(torch.nn.Module):
         tensor = tensor.view(*new_tensor_shape)
         return tensor.permute(0, 2, 1, 3)
 
-    def forward(self, hidden_states, encoder_outputs, *args, cross_attention_mask=None, **kw_args):
+    def forward(self, hidden_states, cross_attention_mask, encoder_outputs, *args, **kw_args):
         # hidden_states: [b, s, h]
         if 'cross_attention_forward' in self.hooks:
-            return self.hooks['cross_attention_forward'](hidden_states, encoder_outputs,
-                                                         cross_attention_mask=cross_attention_mask, **kw_args,
+            return self.hooks['cross_attention_forward'](hidden_states, cross_attention_mask, encoder_outputs,
+                                                         **kw_args,
                                                          layer_id=self.layer_id)
         else:
             mixed_query_layer = self.query(hidden_states)
@@ -231,9 +231,10 @@ class CrossAttention(torch.nn.Module):
 
 class MLP(torch.nn.Module):
     def __init__(self, hidden_size, output_dropout_prob, init_method, inner_hidden_size=None,
-                 output_layer_init_method=None, layer_id=None, hooks={}, bias=True):
+                 output_layer_init_method=None, layer_id=None, hooks={}, bias=True, activation_func=gelu):
         super(MLP, self).__init__()
         self.layer_id = layer_id
+        self.activation_func = activation_func
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
             output_layer_init_method = init_method
@@ -263,7 +264,7 @@ class MLP(torch.nn.Module):
             output = self.hooks['mlp_forward'](hidden_states, **kw_args, layer_id=self.layer_id)
         else:
             intermediate_parallel = self.dense_h_to_4h(hidden_states)
-            intermediate_parallel = gelu(intermediate_parallel)
+            intermediate_parallel = self.activation_func(intermediate_parallel)
             output = self.dense_4h_to_h(intermediate_parallel)
 
         if self.training:
@@ -288,6 +289,7 @@ class BaseTransformerLayer(torch.nn.Module):
             layernorm=LayerNorm,
             is_decoder=False,
             use_bias=True,
+            activation_func=gelu,
             hooks={}
     ):
         super(BaseTransformerLayer, self).__init__()
@@ -347,10 +349,11 @@ class BaseTransformerLayer(torch.nn.Module):
             output_layer_init_method=output_layer_init_method,
             bias=use_bias,
             layer_id=layer_id,
+            activation_func=activation_func,
             hooks=hooks
         )
 
-    def forward(self, hidden_states, mask, encoder_outputs=None, **kw_args):
+    def forward(self, hidden_states, mask, encoder_outputs=None, cross_attention_mask=None, **kw_args):
         '''
             hidden_states: [batch, seq_len, hidden_size]
             mask: [(1, 1), seq_len, seq_len]
@@ -372,9 +375,9 @@ class BaseTransformerLayer(torch.nn.Module):
 
         if self.is_decoder and encoder_outputs is not None:
             # Cross attention
-            attention_output = self.cross_attention(layernorm_output, encoder_outputs, **kw_args)
+            attention_output = self.cross_attention(layernorm_output, cross_attention_mask, encoder_outputs, **kw_args)
             # Residual connection.
-            layernorm_input = layernorm_output + attention_output
+            layernorm_input = layernorm_input + attention_output
             # Layer norm post the cross attention
             layernorm_output = self.post_cross_attention_layernorm(layernorm_input)
 
@@ -411,6 +414,7 @@ class BaseTransformer(torch.nn.Module):
                  parallel_output=True,
                  is_decoder=False,
                  use_bias=True,
+                 activation_func=gelu,
                  layernorm=LayerNorm,
                  hooks={}
                  ):
@@ -453,6 +457,7 @@ class BaseTransformer(torch.nn.Module):
                 sandwich_ln=sandwich_ln,
                 layernorm=layernorm,
                 use_bias=use_bias,
+                activation_func=activation_func,
                 hooks=self.hooks
             )
 
@@ -464,7 +469,7 @@ class BaseTransformer(torch.nn.Module):
 
     def forward(self, input_ids, position_ids, attention_mask, *, branch_input=None, encoder_outputs=None,
                 output_hidden_states=False, **kw_args):
-        # sanity check 
+        # sanity check
         assert len(input_ids.shape) == 2
         batch_size, query_length = input_ids.shape
         assert len(attention_mask.shape) == 2 or \
@@ -504,7 +509,11 @@ class BaseTransformer(torch.nn.Module):
                     x_, mask, encoder_outputs_ = inputs[0], inputs[1], inputs[2]
                     output_per_layers_part = []
                     for i, layer in enumerate(layers_):
-                        if 'layer_forward' in self.hooks:
+                        if branch_input is not None:
+                            x_, encoder_outputs_, output_this_layer = self.hooks['layer_forward'](
+                                x_, mask, layer_id=layer.layer_id, branch_input=encoder_outputs_, **kw_args
+                            )
+                        elif 'layer_forward' in self.hooks:
                             x_, output_this_layer = self.hooks['layer_forward'](
                                 x_, mask, encoder_outputs_, layer_id=layer.layer_id, **kw_args
                             )
@@ -518,11 +527,11 @@ class BaseTransformer(torch.nn.Module):
             l, num_layers = 0, len(self.layers)
             chunk_length = self.checkpoint_num_layers
             while l < num_layers:
-                args = [hidden_states, attention_mask, encoder_outputs]
                 if branch_input is not None:
-                    hidden_states, branch_input, output_per_layers_part = checkpoint(custom(l, l + chunk_length), *args,
-                                                                                     branch_input)
+                    args = [hidden_states, attention_mask, branch_input]
+                    hidden_states, branch_input, output_per_layers_part = checkpoint(custom(l, l + chunk_length), *args)
                 else:
+                    args = [hidden_states, attention_mask, encoder_outputs]
                     hidden_states, output_per_layers_part = checkpoint(custom(l, l + chunk_length), *args)
                 if output_hidden_states:
                     hidden_states_outputs.append(hidden_states)
