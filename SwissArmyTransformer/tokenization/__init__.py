@@ -51,7 +51,7 @@ def get_tokenizer(args=None, outer_tokenizer=None):
             from .cogview import UnifiedTokenizer
             get_tokenizer.tokenizer = UnifiedTokenizer(
                 args.img_tokenizer_path,
-                # txt_tokenizer_type=args.tokenizer_type,
+                txt_tokenizer_type='cogview',
                 device=torch.cuda.current_device()
             )
         elif args.tokenizer_type.startswith('glm'):

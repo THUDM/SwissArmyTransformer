@@ -20,10 +20,10 @@ from .sp_tokenizer import from_pretrained
 from .vqvae_tokenizer import VQVAETokenizer, sqrt_int
 
 class UnifiedTokenizer(object):
-    def __init__(self, img_tokenizer_path, device):
+    def __init__(self, img_tokenizer_path, txt_tokenizer_type, device):
         self.device = device
         self.img_tokenizer = VQVAETokenizer(model_path=img_tokenizer_path, device=self.device)
-        self.txt_tokenizer = from_pretrained()
+        self.txt_tokenizer = from_pretrained(txt_tokenizer_type)
         self.num_tokens = self.img_tokenizer.num_tokens + self.txt_tokenizer.num_tokens
         self.raw_command_tokens = [
             ('[PAD]', 0),
