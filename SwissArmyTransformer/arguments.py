@@ -146,7 +146,8 @@ def add_evaluation_args(parser):
                             'validation/test for')
     group.add_argument('--eval-interval', type=int, default=1000,
                        help='interval between running evaluation on validation set')
-
+    group.add_argument('--strict-eval', action='store_true',
+                       help='won\'t enlarge or randomly map eval-data, and eval full eval-data.')
     return parser
 
 

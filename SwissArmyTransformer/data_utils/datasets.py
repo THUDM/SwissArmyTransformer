@@ -65,3 +65,18 @@ class BinaryDataset(Dataset):
     def __getitem__(self, index):
         return self.process_fn(self.bin[index])
 
+class TSVDataset(Dataset):
+    def __init__(self, path, process_fn, with_heads=True, **kwargs):
+        self.process_fn = process_fn
+        with open(path, 'r') as fin:
+            if with_heads:
+                self.heads = fin.readline().split('\t')
+            else:
+                self.heads = None
+            self.items = [line.split('\t') for line in fin]
+
+    def __len__(self):
+        return len(self.items)
+    
+    def __getitem__(self, index):
+        return self.process_fn(self.items[index])

@@ -22,6 +22,8 @@ python setup.py install
 
 PRETRAINED_MODEL_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)),
      'embed_assets', 'chinese_sentencepiece/cog-pretrain.model')
+PRETRAINED_MODEL_FILE_ICE = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+     'embed_assets', 'chinese_sentencepiece/ice.model') # merge xlnet 3,2000 En tokens
 
 
 def get_pairs(word):
@@ -148,5 +150,10 @@ def get_encoder(encoder_file, bpe_file):
         )
 
 
-def from_pretrained():
-    return get_encoder(PRETRAINED_MODEL_FILE, "")
+def from_pretrained(tokenizer_type='cogview'):
+    if tokenizer_type == 'cogview_ICE':
+        return get_encoder(PRETRAINED_MODEL_FILE_ICE, "")
+    elif tokenizer_type == 'cogview':
+        return get_encoder(PRETRAINED_MODEL_FILE, "")
+    else:
+        raise ValueError('Unknown cogview tokenizer.')

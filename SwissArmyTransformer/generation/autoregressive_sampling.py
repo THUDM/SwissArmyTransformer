@@ -56,7 +56,8 @@ def filling_sequence(
         max_memory_length=100000,
         log_attention_weights=None,
         get_masks_and_position_ids=get_masks_and_position_ids_default,
-        mems=None
+        mems=None,
+        **kw_args
         ):
     '''
         seq: [2, 3, 5, ..., -1(to be generated), -1, ...]
@@ -104,7 +105,8 @@ def filling_sequence(
             position_ids[..., index: counter+1],
             attention_mask[..., index: counter+1, :counter+1], # TODO memlen
             mems=mems,
-            log_attention_weights=log_attention_weights_part
+            log_attention_weights=log_attention_weights_part,
+            **kw_args
         )
         mems = update_mems(mem_kv, mems, max_memory_length=max_memory_length)
         counter += 1
