@@ -44,7 +44,7 @@ class LayerNorm(FusedLayerNorm):
 
 
 def standard_attention(query_layer, key_layer, value_layer, attention_mask,
-                       attention_dropout=None, log_attention_weights=None, scaling_attention_score=True):
+                       attention_dropout=None, log_attention_weights=None, scaling_attention_score=True, **kwargs):
     # We disable the PB-relax-Attention and only changes the order of computation, because it is enough for most of training. 
     # The implementation in the paper can be done very easily, if you really need it to train very deep transformers. 
 
@@ -124,6 +124,10 @@ class SelfAttention(torch.nn.Module):
         if 'attention_forward' in self.hooks:
             return self.hooks['attention_forward'](hidden_states, mask, **kw_args, layer_id=self.layer_id)
         else:
+            attention_fn = standard_attention
+            if 'attention_fn' in self.hooks:
+                attention_fn = self.hooks['attention_fn']
+
             mixed_raw_layer = self.query_key_value(hidden_states)
             (mixed_query_layer,
              mixed_key_layer,
@@ -135,7 +139,8 @@ class SelfAttention(torch.nn.Module):
             key_layer = self._transpose_for_scores(mixed_key_layer)
             value_layer = self._transpose_for_scores(mixed_value_layer)
 
-            context_layer = standard_attention(query_layer, key_layer, value_layer, mask, dropout_fn)
+            context_layer = attention_fn(query_layer, key_layer, value_layer, mask, dropout_fn, layer_id=self.layer_id, **kw_args)
+
             context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
             new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
             context_layer = context_layer.view(*new_context_layer_shape)
@@ -198,7 +203,7 @@ class CrossAttention(torch.nn.Module):
         tensor = tensor.view(*new_tensor_shape)
         return tensor.permute(0, 2, 1, 3)
 
-    def forward(self, hidden_states, cross_attention_mask, encoder_outputs, *, **kw_args):
+    def forward(self, hidden_states, cross_attention_mask, encoder_outputs, **kw_args):
         # hidden_states: [b, s, h]
         if 'cross_attention_forward' in self.hooks:
             return self.hooks['cross_attention_forward'](hidden_states, cross_attention_mask, encoder_outputs,

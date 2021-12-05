@@ -7,6 +7,7 @@
 '''
 
 # here put the import lib
+from functools import partial
 import os
 import sys
 import math
@@ -14,6 +15,11 @@ import random
 import torch
 
 from SwissArmyTransformer.mpu import BaseTransformer
+from SwissArmyTransformer.mpu.transformer import standard_attention
+
+def non_conflict(func):
+    func.non_conflict = True
+    return func
 
 class BaseMixin(torch.nn.Module):
     def __init__(self):
@@ -23,8 +29,21 @@ class BaseMixin(torch.nn.Module):
     def reinit(self, *pre_mixins):
         # reload the initial params from previous trained modules
         pass
-    # can also define hook-functions here
+
+    # can define hook-functions here
     # ...
+
+    # If the hook is just a pre- or post- transformation,
+    # You can use @non_conflict to mark it,
+    # and run `old_impl` to make it compatible with other mixins.
+    # Eg., 
+    # 
+    # @non_conflict
+    # def attention_fn(q, k, v, mask, dropout_fn, old_impl=standard_attention, **kwargs):
+    #     new_q, new_k, new_v = pre_hack(q, k, v)
+    #     attn_result = old_impl(q, k, v, mask, dropout_fn, **kwargs)
+    #     attn_result = post_hack(attn_result)
+    #     return attn_result
 
 
 class BaseModel(torch.nn.Module):
@@ -87,17 +106,24 @@ class BaseModel(torch.nn.Module):
     def collect_hooks_(self):
         names = ['word_embedding_forward', 'position_embedding_forward',
                  'attention_forward', 'cross_attention_forward', 'mlp_forward', 'final_forward', 'layer_forward',
-                 'branch_embedding_forward', 'branch_final_forward'
+                 'branch_embedding_forward', 'branch_final_forward',
+                 'attention_fn'
                  ]
         hooks = {}
         hook_origins = {}
         for name in names:
             for mixin_name, m in self.mixins.items():
                 if hasattr(m, name):
-                    if name in hooks:  # conflict
-                        raise ValueError(f'Hook {name} conflicts at {mixin_name} and {hook_origins[name]}.')
-                    hooks[name] = getattr(m, name)
-                    hook_origins[name] = mixin_name
+                    if name in hooks: # if this hook name is already registered
+                        if hasattr(getattr(m, name), 'non_confict'):
+                            hooks[name] = partial(getattr(m, name), old_impl=hooks[name])
+                            hook_origins[name] = mixin_name + ' -> ' + hook_origins[name]
+                        else: # conflict
+                            raise ValueError(f'Hook {name} conflicts at {mixin_name} and {hook_origins[name]}.')
+                    else: # new hook
+                        hooks[name] = getattr(m, name)
+                        hook_origins[name] = mixin_name
+
             if hasattr(self, name):
                 # if name in hooks: # defined in mixins, can override
                 #     print(f'Override {name} in {hook_origins[name]}...')

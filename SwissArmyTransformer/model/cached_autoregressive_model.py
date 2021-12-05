@@ -13,7 +13,7 @@ import math
 import random
 import torch
 
-from .base_model import BaseModel, BaseMixin
+from .base_model import BaseModel, BaseMixin, non_conflict
 from SwissArmyTransformer.mpu.transformer import standard_attention, split_tensor_along_last_dim
 
 class CachedAutoregressiveMixin(BaseMixin):
