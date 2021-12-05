@@ -180,8 +180,8 @@ class T5DecoderFinalMixin(BaseMixin):
 
 class T5Model(EncoderDecoderModel):
     def __init__(self, args, **kwargs):
-        super().__init__(args, **kwargs, use_bias=False, layernorm=T5LayerNorm,
-                         activation_func=torch.nn.functional.relu)
+        super().__init__(args, tie_word_embeddings=True, **kwargs, use_bias=False, 
+        layernorm=T5LayerNorm, activation_func=torch.nn.functional.relu)
         self.encoder.add_mixin(
             "t5-attention", T5AttentionMixin(args.relative_attention_num_buckets, args.num_attention_heads)
         )
@@ -200,7 +200,6 @@ class T5Model(EncoderDecoderModel):
             "t5-final", T5DecoderFinalMixin(args.hidden_size)
         )
         del self.decoder.transformer.position_embeddings
-        self.decoder.transformer.word_embeddings = self.encoder.transformer.word_embeddings
 
     @classmethod
     def add_model_specific_args(cls, parser):

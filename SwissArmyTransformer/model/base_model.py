@@ -13,8 +13,7 @@ import math
 import random
 import torch
 
-from SwissArmyTransformer.mpu import BaseTransformer, LayerNorm
-
+from SwissArmyTransformer.mpu import BaseTransformer
 
 class BaseMixin(torch.nn.Module):
     def __init__(self):

@@ -100,14 +100,6 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         if val_data is not None:
             start_iter_val = (args.train_iters // args.save_interval) * args.eval_interval
             val_data.batch_sampler.start_iter = start_iter_val % len(val_data)
-    if train_data is not None:
-        train_data_iterator = iter(train_data)
-    else:
-        train_data_iterator = None
-    if val_data is not None:
-        val_data_iterator = iter(val_data)
-    else:
-        val_data_iterator = None
 
     # init hook before training
     if hooks['init_function'] is not None:
@@ -121,16 +113,12 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
                 def save_on_exit(args_, model_, optimizer_, lr_scheduler_):
                     save_checkpoint(args_.iteration, model_, optimizer_, lr_scheduler_, args_)
                 iteration, skipped = train(model, optimizer,
-                                           lr_scheduler,
-                                           train_data_iterator,
-                                           val_data_iterator,
-                                           timers, args, summary_writer=summary_writer,
-                                           hooks=hooks
-                                           )
-        if args.do_valid:
-            prefix = 'the end of training for val data'
-            val_loss = evaluate_and_print_results(prefix, val_data_iterator,
-                model, args, timers, False, hooks=hooks)
+                    lr_scheduler,
+                    train_data,
+                    val_data,
+                    timers, args, summary_writer=summary_writer,
+                    hooks=hooks
+                    )
 
     # final save
     if args.save and iteration != 0:  # TODO save
@@ -140,7 +128,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     if args.do_test and test_data is not None:
         prefix = 'the end of training for test data'
         evaluate_and_print_results(prefix, iter(test_data),
-            model, args, timers, True, hooks=hooks)
+            model, len(test_data) if args.strict_eval else args.eval_iters, args, timers, True, hooks=hooks)
 
 
 def get_model(args, model_cls):
@@ -258,11 +246,21 @@ def get_learning_rate_scheduler(optimizer, iteration, args,
 
 
 def train(model, optimizer, lr_scheduler,
-          train_data_iterator, val_data_iterator, timers, args,
-          summary_writer=None, hooks={}):
+        train_data, val_data, timers, args, 
+        summary_writer=None, hooks={}):
     """Train the model."""
+    if train_data is not None:
+        train_data_iterator = iter(train_data)
+    else:
+        train_data_iterator = None
+    if val_data is not None:
+        val_data_iterator = iter(val_data)
+    else:
+        val_data_iterator = None
+        
     # Turn on training mode which enables dropout.
     model.train()
+    
 
     # Tracking loss.
     total_lm_loss = 0.0
@@ -316,10 +314,14 @@ def train(model, optimizer, lr_scheduler,
 
         # Evaluation
         if args.eval_interval and args.iteration % args.eval_interval == 0 and args.do_valid:
+            if args.strict_eval:
+                val_data_iterator = iter(val_data)
+                eval_iters = len(val_data)
+            else:
+                eval_iters = args.eval_iters
             prefix = 'iteration {}'.format(args.iteration)
             evaluate_and_print_results(
-                prefix, val_data_iterator, model, args, timers, False, step=args.iteration,
-                summary_writer=summary_writer, hooks=hooks)
+                prefix, val_data_iterator, model, eval_iters, args, timers, False, step=args.iteration, summary_writer=summary_writer, hooks=hooks)
 
         if args.exit_interval and args.iteration % args.exit_interval == 0:
             torch.distributed.barrier()
@@ -412,21 +414,19 @@ def backward_step(optimizer, model, loss, args, timers):
 
     return
 
-
-def evaluate(data_iterator, model, args, timers, verbose=False, hooks={}):
+def evaluate(data_iterator, model, eval_iters, args, timers, verbose=False, hooks={}):
     """Evaluation."""
     forward_step = hooks['forward_step']
-
     # Turn on evaluation mode which disables dropout.
     model.eval()
 
-    total_lm_loss = 0
+    total_lm_loss, metrics_total = 0, {}
     with torch.no_grad():
         iteration = 0
-        while iteration < args.eval_iters:
+        while iteration < eval_iters:
             iteration += 1
             if verbose and iteration % args.log_interval == 0:
-                print_rank_0('Evaluating iter {}/{}'.format(iteration, args.eval_iters))
+                print_rank_0('Evaluating iter {}/{}'.format(iteration, eval_iters))
             # Forward evaluation.
             lm_loss, metrics = forward_step(data_iterator, model, args, timers)
             '''when contiguous memory optimizations are enabled, the buffers
@@ -436,27 +436,31 @@ def evaluate(data_iterator, model, args, timers, verbose=False, hooks={}):
             if args.deepspeed and args.deepspeed_activation_checkpointing:
                 deepspeed.checkpointing.reset()
             total_lm_loss += lm_loss.data.detach().float().item()
+            for name in metrics:
+                if name not in metrics_total:
+                    metrics_total[name] = 0.0
+                metrics_total[name] += metrics[name]
 
     # Move model back to the train mode.
     model.train()
 
-    total_lm_loss /= args.eval_iters
-    return total_lm_loss
+    total_lm_loss /= eval_iters
+    metrics_avg = {key: value / eval_iters for key, value in metrics_total.items()}
+    return total_lm_loss, metrics_avg
 
-
-def evaluate_and_print_results(prefix, data_iterator, model,
-                               args, timers, verbose=False, step=None, summary_writer=None, hooks={}):
+def evaluate_and_print_results(prefix, data_iterator, model, eval_iters,
+                            args, timers, verbose=False, step=None, summary_writer=None, hooks={}):
     """Helper function to evaluate and dump results on screen."""
     # import line_profiler
     # profile = line_profiler.LineProfiler(model.module.module.transformer.layers[0].forward)
     # profile.enable()
     # torch.cuda.empty_cache()
-    lm_loss = evaluate(data_iterator, model, args, timers, verbose, hooks=hooks)
+    lm_loss, metrics = evaluate(data_iterator, model, eval_iters, args, timers, verbose, hooks=hooks)
     # profile.disable()
     # import sys
     # profile.print_stats(sys.stdout)
     lm_ppl = math.exp(min(20, lm_loss))
-    report_evaluate_metrics(summary_writer, prefix, lm_loss, lm_ppl, step)
+    report_evaluate_metrics(summary_writer, prefix, lm_loss, lm_ppl, step, metrics)
 
     return lm_loss
 
@@ -480,10 +484,12 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
             summary_writer.add_scalar('Train/'+key, avg_metrics[key], step)
 
 
-def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step):
+def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step, avg_metrics):
     string = ' validation loss at {} | '.format(prefix)
     string += 'LM loss: {:.6E} | '.format(loss)
     string += 'LM PPL: {:.6E}'.format(ppl)
+    for key in avg_metrics:
+        string += ' {} {:.6E} |'.format(key, avg_metrics[key])
     length = len(string) + 1
     print_rank_0('-' * 100)
     print_rank_0('-' * length)
@@ -492,7 +498,9 @@ def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step):
     if summary_writer is not None:
         summary_writer.add_scalar(f'Train/valid_ppl', ppl, step)
         summary_writer.add_scalar(f'Train/valid_loss', loss, step)
-
+        for key in avg_metrics:
+            summary_writer.add_scalar('Train/valid_'+key, avg_metrics[key], step)
+        
 
 '''
     Optional DeepSpeed Activation Checkpointing features
