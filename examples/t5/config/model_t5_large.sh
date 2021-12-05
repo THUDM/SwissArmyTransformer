@@ -10,6 +10,6 @@ MODEL_ARGS="--block-lm \
             --max-sequence-length 513 \
             --relative-attention-num-buckets 32 \
             --layernorm-epsilon 1e-6 \
-            --tokenizer-model-type roberta \
-            --tokenizer-type glm_GPT2BPETokenizer \
+            --tokenizer-type hf_T5Tokenizer \
+            --tokenizer-model-type t5-large \
             --load ${CHECKPOINT_PATH}/glm-large-en-blank"

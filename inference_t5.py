@@ -48,7 +48,7 @@ def get_masks_and_position_ids_glm(seq, mask_position, context_length):
 def main(args):
     args.do_train = False
     initialize_distributed(args)
-    # tokenizer = get_tokenizer(args)
+    tokenizer = get_tokenizer(args)
     # build model
     model = T5Model(args)
     if args.fp16:
@@ -60,9 +60,16 @@ def main(args):
         torch.load("/dataset/fd5061f6/yanan/huggingface_models/t5-large/model_states.pt")["module"])
     from SwissArmyTransformer.model.encoder_decoder_model import EncoderFinalMixin
     model.eval()
-    input_ids = torch.cuda.LongTensor([[37, 32099, 10681, 16, 32098, 2447, 1]])
-    decoder_input_ids = torch.cuda.LongTensor([[32099, 5295, 1782, 32098, 8, 32097, 1]])
-    output = model(input_ids=input_ids, decoder_input_ids=decoder_input_ids)
+    input_ids = tokenizer.EncodeAsIds("The <extra_id_0> walks in <extra_id_1> park").tokenization
+    input_ids = input_ids + [tokenizer.get_command("eos").Id]
+    input_ids = torch.cuda.LongTensor([input_ids])
+    # input_ids = torch.cuda.LongTensor([[37, 32099, 10681, 16, 32098, 2447, 1]])
+    decoder_input_ids = tokenizer.EncodeAsIds('<extra_id_0> cute dog <extra_id_1> the <extra_id_2>').tokenization
+    decoder_input_ids = decoder_input_ids + [tokenizer.get_command("eos").Id]
+    decoder_input_ids = torch.cuda.LongTensor([decoder_input_ids])
+    # decoder_input_ids = torch.cuda.LongTensor([[32099, 5295, 1782, 32098, 8, 32097, 1]])
+    breakpoint()
+    output = model(enc_input_ids=input_ids, dec_input_ids=decoder_input_ids)
     print(output)
     end_tokens = [tokenizer.get_command('eop').Id, tokenizer.get_command('eos').Id]
     # define function for each query

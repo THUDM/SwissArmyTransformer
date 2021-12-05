@@ -312,11 +312,11 @@ class Tokenizer(object):
         tokenization.tokenization = [self.IdToToken(idx) for idx in tokenization.tokenization]
         return tokenization
 
-    def IdToToken(self, Id):
+    def IdToToken(self, idx):
         """convert Id to token accounting for command tokens"""
-        if isinstance(Id, CommandToken):
-            return Id.token
-        return self.tokens[Id]
+        if isinstance(idx, CommandToken):
+            return idx.token
+        return self.tokens[idx]
 
     def TokenToId(self, token):
         """convert token to Id accounting for command tokens"""
@@ -324,16 +324,16 @@ class Tokenizer(object):
             return token.Id
         return self.vocab[token]
 
-    def DecodeIds(self, Ids):
+    def DecodeIds(self, ids):
         """
         convert Ids to tokens accounting for command tokens, tokens
         are joined and returned as a string.
         """
         rtn_strs = []
         current_str = []
-        if isinstance(Ids, Tokenization):
-            Ids = Ids.tokenization
-        for Id in Ids:
+        if isinstance(ids, Tokenization):
+            ids = ids.tokenization
+        for Id in ids:
             if isinstance(Id, CommandToken):
                 rtn_strs.append(self._decode(current_str))
                 current_str = []
@@ -353,11 +353,11 @@ class Tokenizer(object):
         output = self.clean_up_tokenization(output)
         return output
 
-    def DecodeTokens(self, Tokens):
+    def DecodeTokens(self, tokens):
         """
         convert tokens to a string accounting for command and type tokens.
         """
-        Ids = [self.TokenToId(token) for token in Tokens]
+        Ids = [self.TokenToId(token) for token in tokens]
         return self.DecodeIds(Ids)
 
 
