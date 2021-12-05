@@ -180,7 +180,7 @@ class T5DecoderFinalMixin(BaseMixin):
 
 class T5Model(EncoderDecoderModel):
     def __init__(self, args, **kwargs):
-        super().__init__(args, tie_word_embeddings=True, **kwargs, use_bias=False, 
+        super().__init__(args, tie_word_embeddings=True, **kwargs, use_bias=False,
         layernorm=T5LayerNorm, activation_func=torch.nn.functional.relu)
         self.encoder.add_mixin(
             "t5-attention", T5AttentionMixin(args.relative_attention_num_buckets, args.num_attention_heads)
@@ -205,3 +205,25 @@ class T5Model(EncoderDecoderModel):
     def add_model_specific_args(cls, parser):
         super().add_model_specific_args(parser)
         parser.add_argument("--relative-attention-num-buckets", type=int, default=None)
+
+    def encode(self, input_ids, attention_mask=None, **kw_args):
+        return super().encode(input_ids, None, attention_mask, **kw_args)
+
+    def decode(self, input_ids, attention_mask=None, encoder_outputs=None, cross_attention_mask=None, **kw_args):
+        return super().decode(input_ids, None, attention_mask, encoder_outputs=encoder_outputs,
+                              cross_attention_mask=cross_attention_mask, **kw_args)
+
+    def forward(self, enc_input_ids, dec_input_ids, *, enc_attention_mask=None,
+                dec_attention_mask=None, cross_attention_mask=None, **kw_args):
+        batch_size, seq_length = enc_input_ids.size()[:2]
+        if enc_attention_mask is None:
+            enc_attention_mask = torch.ones(1, 1, 1, seq_length,
+                                            dtype=self.encoder.transformer.word_embeddings.weight.dtype,
+                                            device=enc_input_ids.device)
+        if cross_attention_mask is None:
+            cross_attention_mask = enc_attention_mask
+        encoder_outputs = self.encode(enc_input_ids, enc_attention_mask, **kw_args)
+        decoder_outputs, *mems = self.decode(dec_input_ids, dec_attention_mask,
+                                             encoder_outputs=encoder_outputs, cross_attention_mask=cross_attention_mask,
+                                             **kw_args)
+        return encoder_outputs, decoder_outputs, *mems

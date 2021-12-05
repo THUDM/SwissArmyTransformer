@@ -64,11 +64,22 @@ class EncoderDecoderModel(torch.nn.Module):
         return encoder_outputs
     
     def decode(self, input_ids, position_ids, attention_mask, encoder_outputs,cross_attention_mask=None, **kw_args):
+        if attention_mask is None:
+            batch_size, seq_length = input_ids.size()[:2]
+            seq_ids = torch.arange(seq_length, device=input_ids.device)
+            attention_mask = seq_ids[None, None, :].repeat(batch_size, seq_length, 1) <= seq_ids[None, :, None]
+            attention_mask = attention_mask.to(self.decoder.transformer.word_embeddings.weight.dtype)
+            attention_mask = attention_mask[:, None, :, :]
         # If no context, please explicitly pass ``encoder_outputs=None''
         return self.decoder(input_ids, position_ids, attention_mask, encoder_outputs=encoder_outputs, cross_attention_mask=cross_attention_mask, **kw_args)
     
-    def forward(self, enc_input_ids, enc_position_ids, dec_input_ids, dec_position_ids,dec_attention_mask, *, enc_attention_mask=None, cross_attention_mask=None, **kw_args):
+    def forward(self, enc_input_ids, enc_position_ids, dec_input_ids, dec_position_ids, *, enc_attention_mask=None, dec_attention_mask=None, cross_attention_mask=None, **kw_args):
         # Please use self.decoder for auto-regressive generation.
+        batch_size, seq_length = enc_input_ids.size()[:2]
+        if enc_attention_mask is None:
+            enc_attention_mask = torch.ones(1, 1, 1, seq_length, dtype=self.encoder.transformer.word_embeddings.weight.dtype, device=enc_input_ids.device)
+        if cross_attention_mask is None:
+            cross_attention_mask = enc_attention_mask
         encoder_outputs = self.encode(enc_input_ids, enc_position_ids, enc_attention_mask, **kw_args)
         decoder_outputs, *mems = self.decode(dec_input_ids, dec_position_ids, dec_attention_mask, encoder_outputs=encoder_outputs, cross_attention_mask=cross_attention_mask, **kw_args)
         return encoder_outputs, decoder_outputs, *mems
