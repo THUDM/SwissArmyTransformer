@@ -4,3 +4,4 @@ model = T5ForConditionalGeneration.from_pretrained("/dataset/fd5061f6/yanan/hugg
 input_ids = tokenizer('The <extra_id_0> walks in <extra_id_1> park', return_tensors='pt').input_ids
 decoder_input_ids = tokenizer('<extra_id_0> cute dog <extra_id_1> the <extra_id_2>', return_tensors='pt').input_ids
 output = model(input_ids=input_ids, decoder_input_ids=decoder_input_ids)
+breakpoint()
