@@ -39,9 +39,9 @@ class BaseMixin(torch.nn.Module):
     # Eg., 
     # 
     # @non_conflict
-    # def attention_fn(q, k, v, mask, dropout_fn, old_impl=standard_attention, **kwargs):
+    # def attention_fn(q, k, v, mask, dropout_fn, old_impl=standard_attention, **kw_args):
     #     new_q, new_k, new_v = pre_hack(q, k, v)
-    #     attn_result = old_impl(q, k, v, mask, dropout_fn, **kwargs)
+    #     attn_result = old_impl(q, k, v, mask, dropout_fn, **kw_args)
     #     attn_result = post_hack(attn_result)
     #     return attn_result
 

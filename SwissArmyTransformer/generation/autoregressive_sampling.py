@@ -100,7 +100,7 @@ def filling_sequence(
         else:
             log_attention_weights_part = None
 
-        logits, *mem_kv = model(
+        logits, *output_per_layers = model(
             tokens[:, index:], 
             position_ids[..., index: counter+1],
             attention_mask[..., index: counter+1, :counter+1], # TODO memlen
@@ -108,6 +108,7 @@ def filling_sequence(
             log_attention_weights=log_attention_weights_part,
             **kw_args
         )
+        mem_kv = [o['mem_kv'] for o in output_per_layers]
         mems = update_mems(mem_kv, mems, max_memory_length=max_memory_length)
         counter += 1
         index = counter
