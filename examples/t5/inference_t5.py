@@ -26,6 +26,7 @@ from SwissArmyTransformer.model.mixins import CachedAutoregressiveMixin
 from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence, evaluate_perplexity
 from SwissArmyTransformer.generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
 from SwissArmyTransformer.generation.utils import timed_name, generate_continually
+from SwissArmyTransformer.training.deepspeed_training import setup_model_and_optimizer
 
 
 def get_masks_and_position_ids_glm(seq, mask_position, context_length):
@@ -49,28 +50,37 @@ def main(args):
     args.do_train = False
     initialize_distributed(args)
     tokenizer = get_tokenizer(args)
-    # build model
-    model = T5Model(args)
-    if args.fp16:
-        model = model.half()
-    model = model.to(args.device)
     # load_checkpoint(model, args)
     set_random_seed(args.seed)
-    missing_keys, unexpected_keys = model.load_state_dict(
+
+    # Model, optimizer, and learning rate.
+    model_cls = T5Model
+    model, optimizer = setup_model_and_optimizer(args, model_cls=model_cls)
+
+    missing_keys, unexpected_keys = model.module.load_state_dict(
         torch.load("/dataset/fd5061f6/yanan/huggingface_models/t5-large/model_states.pt")["module"])
-    from SwissArmyTransformer.model.encoder_decoder_model import EncoderFinalMixin
+    optimizer.refresh_fp32_params()
     model.eval()
     input_ids = tokenizer.EncodeAsIds("The <extra_id_0> walks in <extra_id_1> park").tokenization
     input_ids = input_ids + [tokenizer.get_command("eos").Id]
-    input_ids = torch.cuda.LongTensor([input_ids])
-    # input_ids = torch.cuda.LongTensor([[37, 32099, 10681, 16, 32098, 2447, 1]])
+    input_ids = torch.LongTensor([input_ids])
     decoder_input_ids = tokenizer.EncodeAsIds('<extra_id_0> cute dog <extra_id_1> the <extra_id_2>').tokenization
     decoder_input_ids = decoder_input_ids + [tokenizer.get_command("eos").Id]
-    decoder_input_ids = torch.cuda.LongTensor([decoder_input_ids])
-    # decoder_input_ids = torch.cuda.LongTensor([[32099, 5295, 1782, 32098, 8, 32097, 1]])
+    decoder_input_ids = torch.LongTensor([decoder_input_ids])
+    data = {'text': input_ids, 'loss_mask': input_ids.new_ones(input_ids.shape), 'target': decoder_input_ids,
+            'attention_mask': input_ids.new_ones(input_ids.shape)}
+    tokens, decoder_tokens, labels, loss_mask, attention_mask = get_batch(data, args)
+    encoder_outputs, logits, *_ = model(enc_input_ids=tokens, dec_input_ids=decoder_tokens,
+                                        enc_attention_mask=attention_mask)
+    losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
+    loss_mask = loss_mask.view(-1)
+    loss = torch.sum(losses.view(-1) * loss_mask)
+    if loss_mask.sum().item() > 0:
+        loss = loss / loss_mask.sum()
+    loss.backward()
+
     breakpoint()
-    output = model(enc_input_ids=input_ids, dec_input_ids=decoder_input_ids)
-    print(output)
+
     end_tokens = [tokenizer.get_command('eop').Id, tokenizer.get_command('eos').Id]
     # define function for each query
     if args.sampling_strategy == 'BaseStrategy':

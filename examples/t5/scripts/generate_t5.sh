@@ -15,10 +15,11 @@ TOPP=0
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 
-config_json="$script_dir/ds_config.json"
+config_json="$script_dir/config_t5_large.json"
 
 python -m torch.distributed.launch --nproc_per_node=$MPSIZE --master_port $MASTER_PORT inference_t5.py \
        --deepspeed \
+       --deepspeed-config ${config_json} \
        --mode inference \
        --model-parallel-size $MPSIZE \
        $MODEL_ARGS \
