@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from .mixins import BaseMixin
 from .encoder_decoder_model import EncoderDecoderModel
 from SwissArmyTransformer.mpu import get_model_parallel_world_size
-from SwissArmyTransformer.mpu.transformer import standard_attention
+from SwissArmyTransformer.mpu.transformer import standard_attention, SelfAttention, CrossAttention, MLP
 from SwissArmyTransformer.mpu.mappings import copy_to_model_parallel_region
 from SwissArmyTransformer.mpu.utils import divide, split_tensor_along_last_dim
 
@@ -28,9 +28,11 @@ class T5LayerNorm(torch.nn.Module):
         variance = hidden_states.to(torch.float32).pow(2).mean(-1, keepdim=True)
         hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
 
-        # convert into float16 if necessary
+        # convert into float16 or bfloat16 if necessary
         if self.weight.dtype == torch.float16:
             hidden_states = hidden_states.to(torch.float16)
+        elif self.weight.dtype == torch.bfloat16:
+            hidden_states = hidden_states.to(torch.bfloat16)
         return self.weight * hidden_states
 
 
@@ -111,7 +113,7 @@ class T5AttentionMixin(BaseMixin):
         values = values.permute([2, 0, 1]).unsqueeze(0)  # shape (1, num_heads, query_length, key_length)
         return values
 
-    def attention_forward(self, hidden_states, mask, *args, layer_id=None, mems=None, **kw_args):
+    def attention_forward(self, hidden_states, mask, position_bias=None, *args, layer_id=None, mems=None, **kw_args):
         attn_module = self.transformer.layers[layer_id].attention
         seq_length = hidden_states.size(1)
         memory_length = mems[layer_id].size(1) if mems else 0
@@ -126,7 +128,8 @@ class T5AttentionMixin(BaseMixin):
         key_layer = attn_module._transpose_for_scores(mixed_key_layer)
         value_layer = attn_module._transpose_for_scores(mixed_value_layer)
 
-        position_bias = self.compute_bias(seq_length, memory_length + seq_length)
+        if position_bias is None:
+            position_bias = self.compute_bias(seq_length, memory_length + seq_length)
         context_layer = standard_attention(query_layer, key_layer, value_layer, mask, dropout_fn,
                                            log_attention_weights=position_bias, scaling_attention_score=False)
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
@@ -137,9 +140,10 @@ class T5AttentionMixin(BaseMixin):
         if attn_module.training:
             output = attn_module.output_dropout(output)
 
-        return output, None
+        return output, position_bias
 
-    def cross_attention_forward(self, hidden_states, cross_mask, encoder_outputs, layer_id=None, *args, **kw_args):
+    def cross_attention_forward(self, hidden_states, cross_attention_mask, encoder_outputs, layer_id=None, *args,
+                                **kw_args):
         attn_module = self.transformer.layers[layer_id].cross_attention
         mixed_query_layer = attn_module.query(hidden_states)
         mixed_x_layer = attn_module.key_value(encoder_outputs)
@@ -151,7 +155,7 @@ class T5AttentionMixin(BaseMixin):
         key_layer = attn_module._transpose_for_scores(mixed_key_layer)
         value_layer = attn_module._transpose_for_scores(mixed_value_layer)
 
-        context_layer = standard_attention(query_layer, key_layer, value_layer, cross_mask, dropout_fn,
+        context_layer = standard_attention(query_layer, key_layer, value_layer, cross_attention_mask, dropout_fn,
                                            scaling_attention_score=False)
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (attn_module.hidden_size_per_partition,)
@@ -180,8 +184,10 @@ class T5DecoderFinalMixin(BaseMixin):
 
 class T5Model(EncoderDecoderModel):
     def __init__(self, args, **kwargs):
-        super().__init__(args, tie_word_embeddings=True, **kwargs, use_bias=False, 
-        layernorm=T5LayerNorm, activation_func=torch.nn.functional.relu)
+        self.init_method_std = args.init_method_std
+        super().__init__(args, tie_word_embeddings=True, **kwargs, use_bias=False,
+                         layernorm=T5LayerNorm, activation_func=torch.nn.functional.relu,
+                         init_method=self._init_weights)
         self.encoder.add_mixin(
             "t5-attention", T5AttentionMixin(args.relative_attention_num_buckets, args.num_attention_heads)
         )
@@ -201,7 +207,61 @@ class T5Model(EncoderDecoderModel):
         )
         del self.decoder.transformer.position_embeddings
 
+    def _init_weights(self, weight, module, name):
+        init_method_std = self.init_method_std
+        if isinstance(module, MLP):
+            if name == "dense_h_to_4h":
+                torch.nn.init.normal_(weight, mean=0, std=init_method_std * (module.hidden_size ** -0.5))
+            elif name == "dense_4h_to_h":
+                torch.nn.init.normal_(weight, mean=0, std=init_method_std * (module.inner_hidden_size ** -0.5))
+            else:
+                raise NotImplementedError(name)
+        elif isinstance(module, SelfAttention):
+            if name == "query_key_value":
+                torch.nn.init.normal_(weight, mean=0, std=init_method_std * (module.hidden_size ** -0.5))
+                torch.nn.init.normal_(weight[:module.inner_hidden_size], mean=0, std=init_method_std * (
+                        (module.hidden_size * module.hidden_size_per_attention_head) ** -0.5))
+            elif name == "dense":
+                torch.nn.init.normal_(weight, mean=0, std=init_method_std * (module.inner_hidden_size ** -0.5))
+            else:
+                raise NotImplementedError(name)
+        elif isinstance(module, CrossAttention):
+            if name == "query":
+                torch.nn.init.normal_(weight, mean=0, std=init_method_std * (
+                        (module.hidden_size * module.hidden_size_per_attention_head) ** -0.5))
+            elif name == "key_value":
+                torch.nn.init.normal_(weight, mean=0, std=init_method_std * (module.hidden_size ** -0.5))
+            elif name == "dense":
+                torch.nn.init.normal_(weight, mean=0, std=init_method_std * (module.inner_hidden_size ** -0.5))
+            else:
+                raise NotImplementedError(name)
+        else:
+            raise NotImplementedError(module)
+
     @classmethod
     def add_model_specific_args(cls, parser):
         super().add_model_specific_args(parser)
         parser.add_argument("--relative-attention-num-buckets", type=int, default=None)
+        parser.add_argument("--init-method-std", type=float, default=0.02)
+
+    def encode(self, input_ids, attention_mask=None, **kw_args):
+        return super().encode(input_ids, None, attention_mask, **kw_args)
+
+    def decode(self, input_ids, attention_mask=None, encoder_outputs=None, cross_attention_mask=None, **kw_args):
+        return super().decode(input_ids, None, attention_mask, encoder_outputs=encoder_outputs,
+                              cross_attention_mask=cross_attention_mask, **kw_args)
+
+    def forward(self, enc_input_ids, dec_input_ids, *, enc_attention_mask=None,
+                dec_attention_mask=None, cross_attention_mask=None, **kw_args):
+        batch_size, seq_length = enc_input_ids.size()[:2]
+        if enc_attention_mask is None:
+            enc_attention_mask = torch.ones(1, 1, 1, seq_length,
+                                            dtype=self.encoder.transformer.word_embeddings.weight.dtype,
+                                            device=enc_input_ids.device)
+        if cross_attention_mask is None:
+            cross_attention_mask = enc_attention_mask
+        encoder_outputs = self.encode(enc_input_ids, enc_attention_mask, **kw_args)
+        decoder_outputs, *mems = self.decode(dec_input_ids, dec_attention_mask,
+                                             encoder_outputs=encoder_outputs, cross_attention_mask=cross_attention_mask,
+                                             **kw_args)
+        return encoder_outputs, decoder_outputs, *mems

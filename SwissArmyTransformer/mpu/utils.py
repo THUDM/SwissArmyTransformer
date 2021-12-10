@@ -75,7 +75,7 @@ def sqrt(x):
 
 def unscaled_init_method(sigma):
     """Init method based on N(0, sigma)."""
-    def init_(tensor):
+    def init_(tensor, **kwargs):
         return torch.nn.init.normal_(tensor, mean=0.0, std=sigma)
 
     return init_
@@ -83,7 +83,7 @@ def unscaled_init_method(sigma):
 def scaled_init_method(sigma, num_layers):
     """Init method based on N(0, sigma/sqrt(2*num_layers)."""
     std = sigma / math.sqrt(2.0 * num_layers)
-    def init_(tensor):
+    def init_(tensor, **kwargs):
         return torch.nn.init.normal_(tensor, mean=0.0, std=std)
 
     return init_

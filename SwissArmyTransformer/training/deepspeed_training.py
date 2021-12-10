@@ -144,6 +144,8 @@ def get_model(args, model_cls):
 
     if args.fp16:
         model.half()
+    elif args.bf16:
+        model.bfloat16()
     model.cuda(torch.cuda.current_device())
 
     return model
@@ -546,7 +548,8 @@ def initialize_distributed(args):
     # Optional DeepSpeed Activation Checkpointing Features
     if hasattr(args, "deepspeed") and args.deepspeed and args.deepspeed_activation_checkpointing:
         set_deepspeed_activation_checkpointing(args)  # TODO manual model-parallel seed
-
+    else:
+        mpu.get_cuda_rng_tracker = None
 
 def set_random_seed(seed):
     """Set random seed for reproducability."""

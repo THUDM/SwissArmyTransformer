@@ -22,11 +22,12 @@ import torch
 import torch.nn.functional as F
 from apex.normalization.fused_layer_norm import FusedLayerNorm
 
+from SwissArmyTransformer import mpu
 from .initialize import get_model_parallel_world_size
 from .layers import ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding
 from .mappings import gather_from_model_parallel_region, copy_to_model_parallel_region
 
-from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint, get_cuda_rng_tracker
+from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint
 
 from .utils import divide, sqrt, scaled_init_method, unscaled_init_method, gelu
 from .utils import split_tensor_along_last_dim
@@ -62,7 +63,10 @@ def standard_attention(query_layer, key_layer, value_layer, attention_mask,
     attention_probs = F.softmax(attention_scores, dim=-1)
 
     if attention_dropout is not None:
-        with get_cuda_rng_tracker().fork():
+        if mpu.get_cuda_rng_tracker is not None:
+            with mpu.get_cuda_rng_tracker().fork():
+                attention_probs = attention_dropout(attention_probs)
+        else:
             attention_probs = attention_dropout(attention_probs)
 
     context_layer = torch.matmul(attention_probs, value_layer)
@@ -82,31 +86,36 @@ class SelfAttention(torch.nn.Module):
         self.layer_id = layer_id
         # Per attention head and per partition values.
         world_size = get_model_parallel_world_size()
+        self.hidden_size = hidden_size
         if hidden_size_per_attention_head is None:
             self.hidden_size_per_attention_head = divide(hidden_size, num_attention_heads)
         else:
             self.hidden_size_per_attention_head = hidden_size_per_attention_head
         self.num_attention_heads_per_partition = divide(num_attention_heads, world_size)
-        inner_hidden_size = num_attention_heads * self.hidden_size_per_attention_head
+        self.inner_hidden_size = num_attention_heads * self.hidden_size_per_attention_head
         self.hidden_size_per_partition = self.hidden_size_per_attention_head * self.num_attention_heads_per_partition
 
         # Strided linear layer.
         self.query_key_value = ColumnParallelLinear(
             hidden_size,
-            3 * inner_hidden_size,
+            3 * self.inner_hidden_size,
             stride=3,
             gather_output=False,
             init_method=init_method,
-            bias=bias
+            bias=bias,
+            module=self,
+            name="query_key_value"
         )
         self.attention_dropout = torch.nn.Dropout(attention_dropout_prob)
 
         self.dense = RowParallelLinear(
-            inner_hidden_size,
+            self.inner_hidden_size,
             hidden_size,
             input_is_parallel=True,
             init_method=output_layer_init_method,
-            bias=bias
+            bias=bias,
+            module=self,
+            name="dense"
         )
         self.output_dropout = torch.nn.Dropout(output_dropout_prob)
 
@@ -165,21 +174,22 @@ class CrossAttention(torch.nn.Module):
         self.layer_id = layer_id
         # Per attention head and per partition values.
         world_size = get_model_parallel_world_size()
+        self.hidden_size = hidden_size
         if hidden_size_per_attention_head is None:
             self.hidden_size_per_attention_head = divide(hidden_size, num_attention_heads)
         else:
             self.hidden_size_per_attention_head = hidden_size_per_attention_head
         self.num_attention_heads_per_partition = divide(num_attention_heads, world_size)
-        inner_hidden_size = num_attention_heads * self.hidden_size_per_attention_head
+        self.inner_hidden_size = num_attention_heads * self.hidden_size_per_attention_head
         self.hidden_size_per_partition = self.hidden_size_per_attention_head * self.num_attention_heads_per_partition
         # Strided linear layer.
-        self.query = ColumnParallelLinear(hidden_size, inner_hidden_size,
+        self.query = ColumnParallelLinear(hidden_size, self.inner_hidden_size,
                                           gather_output=False,
-                                          init_method=init_method, bias=bias)
-        self.key_value = ColumnParallelLinear(hidden_size, 2 * inner_hidden_size,
+                                          init_method=init_method, bias=bias, module=self, name="query")
+        self.key_value = ColumnParallelLinear(hidden_size, 2 * self.inner_hidden_size,
                                               stride=2,
                                               gather_output=False,
-                                              init_method=init_method, bias=bias)
+                                              init_method=init_method, bias=bias, module=self, name="key_value")
         # Dropout. Note that for a single iteration, this layer will generate
         # different outputs on different number of parallel partitions but
         # on average it should not be partition dependent.
@@ -187,10 +197,10 @@ class CrossAttention(torch.nn.Module):
 
         # Output.
         self.dense = RowParallelLinear(
-            inner_hidden_size,
+            self.inner_hidden_size,
             hidden_size,
             input_is_parallel=True,
-            init_method=output_layer_init_method, bias=bias)
+            init_method=output_layer_init_method, bias=bias, module=self, name="dense")
         self.output_dropout = torch.nn.Dropout(output_dropout_prob)
 
     def _transpose_for_scores(self, tensor):
@@ -245,22 +255,28 @@ class MLP(torch.nn.Module):
             output_layer_init_method = init_method
         self.hooks = hooks
         # Project to 4h.
+        self.hidden_size = hidden_size
         if inner_hidden_size is None:
             inner_hidden_size = 4 * hidden_size
+        self.inner_hidden_size = inner_hidden_size
         self.dense_h_to_4h = ColumnParallelLinear(
-            hidden_size,
-            inner_hidden_size,
+            self.hidden_size,
+            self.inner_hidden_size,
             gather_output=False,
             init_method=init_method,
-            bias=bias
+            bias=bias,
+            module=self,
+            name="dense_h_to_4h"
         )
         # Project back to h.
         self.dense_4h_to_h = RowParallelLinear(
-            inner_hidden_size,
-            hidden_size,
+            self.inner_hidden_size,
+            self.hidden_size,
             input_is_parallel=True,
             init_method=output_layer_init_method,
-            bias=bias
+            bias=bias,
+            module=self,
+            name="dense_4h_to_h"
         )
         self.dropout = torch.nn.Dropout(output_dropout_prob)
 
@@ -358,7 +374,7 @@ class BaseTransformerLayer(torch.nn.Module):
             hooks=hooks
         )
 
-    def forward(self, hidden_states, mask, **kw_args):
+    def forward(self, hidden_states, mask, encoder_outputs=None, *args, **kw_args):
         '''
             hidden_states: [batch, seq_len, hidden_size]
             mask: [(1, 1), seq_len, seq_len]
@@ -424,6 +440,7 @@ class BaseTransformer(torch.nn.Module):
                  use_bias=True,
                  activation_func=gelu,
                  layernorm=LayerNorm,
+                 init_method=None,
                  hooks={}
                  ):
         super(BaseTransformer, self).__init__()
@@ -446,8 +463,12 @@ class BaseTransformer(torch.nn.Module):
         torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)
 
         # create all layers
-        self.output_layer_init_method = scaled_init_method(init_method_std, num_layers)
-        self.init_method = unscaled_init_method(init_method_std)
+        if init_method is None:
+            self.output_layer_init_method = scaled_init_method(init_method_std, num_layers)
+            self.init_method = unscaled_init_method(init_method_std)
+        else:
+            self.output_layer_init_method = init_method
+            self.init_method = init_method
 
         def get_layer(layer_id):
             return BaseTransformerLayer(
@@ -483,7 +504,7 @@ class BaseTransformer(torch.nn.Module):
         if attention_mask is None:
             attention_mask = torch.ones(1, 1, device=input_ids.device).type_as(
                 next(self.parameters())
-            ) # None means full attention
+            )  # None means full attention
         assert len(attention_mask.shape) == 2 or \
                len(attention_mask.shape) == 4 and attention_mask.shape[1] == 1
     
@@ -575,6 +596,7 @@ class BaseTransformer(torch.nn.Module):
             
             l, num_layers = 0, len(self.layers)
             chunk_length = self.checkpoint_num_layers
+            output_this_layer = []
             while l < num_layers:
                 args = [hidden_states, attention_mask]
                 # flatten kw_args and output_cross_layer
@@ -601,6 +623,7 @@ class BaseTransformer(torch.nn.Module):
                 output_per_layers.extend(output_per_layers_part)
                 l += chunk_length
         else:
+            output_this_layer = []
             for i, layer in enumerate(self.layers):
                 args = [hidden_states, attention_mask]
 
