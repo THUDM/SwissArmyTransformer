@@ -67,7 +67,7 @@ def get_tokenizer(args=None, outer_tokenizer=None):
         elif args.tokenizer_type.startswith('hf'):
             from .hf_tokenizer import HFT5Tokenizer
             if args.tokenizer_type == "hf_T5Tokenizer":
-                get_tokenizer.tokenizer = HFT5Tokenizer(args.tokenizer_model_type)
+                get_tokenizer.tokenizer = HFT5Tokenizer(args.tokenizer_model_type, cache_dir=args.cache_dir)
         else:
             assert args.vocab_size > 0
             get_tokenizer.tokenizer = FakeTokenizer(args.vocab_size)
