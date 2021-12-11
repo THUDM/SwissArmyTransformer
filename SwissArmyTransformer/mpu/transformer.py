@@ -216,9 +216,7 @@ class CrossAttention(torch.nn.Module):
     def forward(self, hidden_states, cross_attention_mask, encoder_outputs, **kw_args):
         # hidden_states: [b, s, h]
         if 'cross_attention_forward' in self.hooks:
-            return self.hooks['cross_attention_forward'](hidden_states, cross_attention_mask, encoder_outputs,
-                                                         **kw_args,
-                                                         layer_id=self.layer_id)
+            return self.hooks['cross_attention_forward'](hidden_states, cross_attention_mask, encoder_outputs, **kw_args)
         else:
             mixed_query_layer = self.query(hidden_states)
             mixed_x_layer = self.key_value(encoder_outputs)
@@ -374,12 +372,11 @@ class BaseTransformerLayer(torch.nn.Module):
             hooks=hooks
         )
 
-    def forward(self, hidden_states, mask, encoder_outputs=None, *args, **kw_args):
+    def forward(self, hidden_states, mask, *args, **kw_args):
         '''
             hidden_states: [batch, seq_len, hidden_size]
             mask: [(1, 1), seq_len, seq_len]
         '''
-
         # Layer norm at the begining of the transformer layer.
         layernorm_output1 = self.input_layernorm(hidden_states)
         # Self attention.
@@ -399,7 +396,7 @@ class BaseTransformerLayer(torch.nn.Module):
             if encoder_outputs is not None:
                 cross_attention_mask = kw_args['cross_attention_mask']
                 # Cross attention
-                attention_output = self.cross_attention(layernorm_output, cross_attention_mask, encoder_outputs, **kw_args)
+                attention_output = self.cross_attention(layernorm_output, **kw_args)
                 # Residual connection.
                 layernorm_input = layernorm_input + attention_output
                 # Layer norm post the cross attention

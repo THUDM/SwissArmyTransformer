@@ -11,5 +11,4 @@ MODEL_ARGS="--block-lm \
             --relative-attention-num-buckets 32 \
             --layernorm-epsilon 1e-6 \
             --tokenizer-type hf_T5Tokenizer \
-            --tokenizer-model-type t5-large \
-            --load ${CHECKPOINT_PATH}/glm-large-en-blank"
+            --tokenizer-model-type t5-large"

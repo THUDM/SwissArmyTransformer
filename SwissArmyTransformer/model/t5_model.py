@@ -140,7 +140,9 @@ class T5AttentionMixin(BaseMixin):
         if attn_module.training:
             output = attn_module.output_dropout(output)
 
-        return output, position_bias
+        kw_args['output_cross_layer']['position_bias'] = position_bias
+
+        return output 
 
     def cross_attention_forward(self, hidden_states, cross_attention_mask, encoder_outputs, layer_id=None, *args,
                                 **kw_args):
@@ -206,6 +208,7 @@ class T5Model(EncoderDecoderModel):
             "t5-final", T5DecoderFinalMixin(args.hidden_size)
         )
         del self.decoder.transformer.position_embeddings
+    
 
     def _init_weights(self, weight, module, name):
         init_method_std = self.init_method_std
@@ -251,8 +254,8 @@ class T5Model(EncoderDecoderModel):
         return super().decode(input_ids, None, attention_mask, encoder_outputs=encoder_outputs,
                               cross_attention_mask=cross_attention_mask, **kw_args)
 
-    def forward(self, enc_input_ids, dec_input_ids, *, enc_attention_mask=None,
-                dec_attention_mask=None, cross_attention_mask=None, **kw_args):
+    def forward(self, enc_input_ids, dec_input_ids, dec_attention_mask, *, enc_attention_mask=None,
+                cross_attention_mask=None, **kw_args):
         batch_size, seq_length = enc_input_ids.size()[:2]
         if enc_attention_mask is None:
             enc_attention_mask = torch.ones(1, 1, 1, seq_length,

@@ -1,5 +1,5 @@
 {
-  "train_micro_batch_size_per_gpu": 16,
+  "train_micro_batch_size_per_gpu": 4,
   "gradient_accumulation_steps": 1,
   "steps_per_print": 100,
   "gradient_clipping": 1.0,
@@ -10,9 +10,6 @@
     "reduce_scatter": true,
     "reduce_bucket_size": 50000000,
     "allgather_bucket_size": 500000000
-  },
-  "bfloat16": {
-    "enabled": true
   },
   "optimizer": {
     "type": "Adam",

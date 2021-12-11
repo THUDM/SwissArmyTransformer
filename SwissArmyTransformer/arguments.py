@@ -131,6 +131,8 @@ def add_training_args(parser):
     
     group.add_argument('--fp16', action='store_true',
                        help='Run model in fp16 mode')
+    group.add_argument('--bf16', action='store_true',
+                       help='Run model in fp16 mode')
     
     return parser
 

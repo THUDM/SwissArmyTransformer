@@ -1,5 +1,5 @@
 #!/bin/bash
-CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/glm
+CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/t5/t5-large
 
 source $1
 MPSIZE=1
@@ -15,11 +15,9 @@ TOPP=0
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 
-config_json="$script_dir/config_t5_large.json"
+config_json="$script_dir/config_t5_tmp.json"
 
 python -m torch.distributed.launch --nproc_per_node=$MPSIZE --master_port $MASTER_PORT inference_t5.py \
-       --deepspeed \
-       --deepspeed-config ${config_json} \
        --mode inference \
        --model-parallel-size $MPSIZE \
        $MODEL_ARGS \
@@ -35,4 +33,5 @@ python -m torch.distributed.launch --nproc_per_node=$MPSIZE --master_port $MASTE
        --mode inference \
        --input-source ./input.txt \
        --checkpoint-activations \
-       --sampling-strategy BeamSearchStrategy
+       --sampling-strategy BeamSearchStrategy \
+       --load $CHECKPOINT_PATH
