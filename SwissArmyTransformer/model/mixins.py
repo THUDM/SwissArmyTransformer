@@ -17,7 +17,7 @@ from SwissArmyTransformer.mpu import ColumnParallelLinear, RowParallelLinear
 from SwissArmyTransformer.mpu.transformer import unscaled_init_method
 from .base_model import BaseMixin
 from .cached_autoregressive_model import CachedAutoregressiveMixin
-
+from .finetune import *
 
 class PositionEmbeddingMixin(BaseMixin):
     def __init__(self, additional_sequence_length, hidden_size,
