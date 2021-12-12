@@ -5,7 +5,7 @@ from .glm.tokenization import Tokenization, CommandToken
 PRETRAINED_VOCAB_FILES_MAP = {
     "t5-small": "/dataset/fd5061f6/yanan/huggingface_models/t5-small",
     "t5-base": "/dataset/fd5061f6/yanan/huggingface_models/t5-base",
-    "t5-large": "/mnt/t5",
+    "t5-large": "/dataset/fd5061f6/yanan/huggingface_models/t5-large",
     "t5-3b": "/dataset/fd5061f6/yanan/huggingface_models/t5-3b",
     "t5-11b": "/dataset/fd5061f6/yanan/huggingface_models/t5-11b"
 }

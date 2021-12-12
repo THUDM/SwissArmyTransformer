@@ -108,6 +108,7 @@ def filling_sequence(
             log_attention_weights=log_attention_weights_part,
             **kw_args
         )
+        mem_kv = [item[0] for item in mem_kv]
         mems = update_mems(mem_kv, mems, max_memory_length=max_memory_length)
         counter += 1
         index = counter

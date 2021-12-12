@@ -20,7 +20,7 @@ class CachedAutoregressiveMixin(BaseMixin):
     def __init__(self):
         super().__init__()
         
-    def attention_forward(self, hidden_states, mask, mems=None, layer_id=None, log_attention_weights=None, **kwargs):
+    def attention_forward(self, hidden_states, mask, *args, mems=None, layer_id=None, log_attention_weights=None, **kwargs):
         attn_module = self.transformer.layers[layer_id].attention
         mem = mems[layer_id] if mems is not None else None
         
