@@ -158,7 +158,7 @@ class SelfAttention(torch.nn.Module):
             if self.training:
                 output = self.output_dropout(output)
 
-            return output, None
+            return output
 
 
 class CrossAttention(torch.nn.Module):
