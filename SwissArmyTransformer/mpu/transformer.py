@@ -394,7 +394,7 @@ class BaseTransformerLayer(torch.nn.Module):
         if self.is_decoder:
             encoder_outputs = kw_args['encoder_outputs']
             if encoder_outputs is not None:
-                cross_attention_mask = kw_args['cross_attention_mask']
+                assert 'cross_attention_mask' in kw_args
                 # Cross attention
                 attention_output = self.cross_attention(layernorm_output, **kw_args)
                 # Residual connection.
