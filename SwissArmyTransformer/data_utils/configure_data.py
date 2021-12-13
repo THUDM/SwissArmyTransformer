@@ -24,14 +24,17 @@ from .samplers import DistributedBatchSampler
 from SwissArmyTransformer import mpu
 
 
-def make_data_loader(dataset, batch_size, num_iters, args):
+def make_data_loader(dataset, batch_size, args):
     world_size = torch.distributed.get_world_size(
         group=mpu.get_data_parallel_group())
     rank = torch.distributed.get_rank(group=mpu.get_data_parallel_group())
     distributed = world_size > 1
 
     sampler = torch.utils.data.SequentialSampler(dataset)
-    drop_last = distributed
+    # drop_last = distributed
+    drop_last = True # TODO will always drop last to keep the consistency. 
+    # or, how to avg in eval last batch?
+    
     # the GPUs in the same model parallel group receive the same data
     if distributed: # TODO reformat this, but it is not urgent
         gradient_accumulation_steps = getattr(args, 'gradient_accumulation_steps', 1)
@@ -52,7 +55,7 @@ def make_data_loader(dataset, batch_size, num_iters, args):
     return data_loader
 
 
-def make_dataset_full(path, split, args, create_dataset_function, **kwargs):
+def make_dataset_full(path, split, args, create_dataset_function, random_mapping=True, **kwargs):
     """function to create datasets+tokenizers for common options"""
     print('make dataset ...', path)
     if split is None:
@@ -67,12 +70,8 @@ def make_dataset_full(path, split, args, create_dataset_function, **kwargs):
     ds = ConcatDataset(ds)
     if should_split(split):
         ds = split_ds(ds, split, block_size=args.block_size)
-    else:
+    elif random_mapping:
         ds = RandomMappingDataset(ds)
-
-    # if should_split(split):
-    #     ds = split_ds(ds, split) # Large dataset, cannot shuffle, randomly mapping
-    # FIXME this will merge valid set and train set.
     return ds
 
 def make_loaders(args, create_dataset_function):
@@ -115,25 +114,25 @@ def make_loaders(args, create_dataset_function):
     # make training and val dataset if necessary
     if valid is None and args.valid_data is not None:
         eval_set_args['path'] = args.valid_data
-        valid = make_dataset(**eval_set_args, args=args)
+        valid = make_dataset(**eval_set_args, args=args, random_mapping=not args.strict_eval)
     if test is None and args.test_data is not None:
         eval_set_args['path'] = args.test_data
-        test = make_dataset(**eval_set_args, args=args)
+        test = make_dataset(**eval_set_args, args=args, random_mapping=not args.strict_eval)
 
     # wrap datasets with data loader
     if train is not None and args.batch_size > 0:
-        train = make_data_loader(train, batch_size, args.train_iters, args)
+        train = make_data_loader(train, batch_size, args)
         args.do_train = True
     else:
         args.do_train = False
     eval_batch_size = eval_batch_size if eval_batch_size != 0 else batch_size
     if valid is not None:
-        valid = make_data_loader(valid, eval_batch_size, args.train_iters, args)
+        valid = make_data_loader(valid, eval_batch_size, args)
         args.do_valid = True
     else:
         args.do_valid = False
     if test is not None:
-        test = make_data_loader(test, eval_batch_size, len(test) // eval_batch_size + 1, args)
+        test = make_data_loader(test, eval_batch_size, args)
         args.do_test = True
     else:
         args.do_test = False

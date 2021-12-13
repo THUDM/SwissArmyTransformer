@@ -29,7 +29,8 @@ def _export_vocab_size_to_args(args, original_num_tokens):
     print_rank_0('> padded vocab (size: {}) with {} dummy '
                  'tokens (new size: {})'.format(
         before, after - before, after))
-    args.vocab_size = after
+    if not args.vocab_size:
+        args.vocab_size = after
     print_rank_0("prepare tokenizer done")
     return tokenizer
 
@@ -51,7 +52,7 @@ def get_tokenizer(args=None, outer_tokenizer=None):
             from .cogview import UnifiedTokenizer
             get_tokenizer.tokenizer = UnifiedTokenizer(
                 args.img_tokenizer_path,
-                # txt_tokenizer_type=args.tokenizer_type,
+                txt_tokenizer_type='cogview',
                 device=torch.cuda.current_device()
             )
         elif args.tokenizer_type.startswith('glm'):
@@ -63,6 +64,10 @@ def get_tokenizer(args=None, outer_tokenizer=None):
             elif args.tokenizer_type == "glm_ChineseSPTokenizer":
                 from .glm import ChineseSPTokenizer
                 get_tokenizer.tokenizer = ChineseSPTokenizer(args.tokenizer_model_type, **kwargs)
+        elif args.tokenizer_type.startswith('hf'):
+            from .hf_tokenizer import HFT5Tokenizer
+            if args.tokenizer_type == "hf_T5Tokenizer":
+                get_tokenizer.tokenizer = HFT5Tokenizer(args.tokenizer_model_type, cache_dir=args.cache_dir)
         else:
             assert args.vocab_size > 0
             get_tokenizer.tokenizer = FakeTokenizer(args.vocab_size)

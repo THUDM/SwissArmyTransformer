@@ -88,7 +88,7 @@ class Cuda2dModel(BaseModel):
         output_1 = dense_plus(context_layer1)
         output = torch.cat((output_0, output_1), dim=1)
         
-        return output, None
+        return output
     
     def disable_untrainable_params(self):
         self.transformer.requires_grad_(False)

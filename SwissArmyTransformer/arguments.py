@@ -33,6 +33,8 @@ def add_model_config_args(parser):
                        help='num of transformer attention heads')
     group.add_argument('--hidden-size', type=int, default=1024,
                        help='tansformer hidden size')
+    group.add_argument('--inner-hidden-size', type=int, default=None)
+    group.add_argument('--hidden-size-per-attention-head', type=int, default=None)
     group.add_argument('--num-layers', type=int, default=24,
                        help='num decoder layers')
     group.add_argument('--layernorm-epsilon', type=float, default=1e-5,
@@ -129,6 +131,8 @@ def add_training_args(parser):
     
     group.add_argument('--fp16', action='store_true',
                        help='Run model in fp16 mode')
+    group.add_argument('--bf16', action='store_true',
+                       help='Run model in fp16 mode')
     
     return parser
 
@@ -146,7 +150,8 @@ def add_evaluation_args(parser):
                             'validation/test for')
     group.add_argument('--eval-interval', type=int, default=1000,
                        help='interval between running evaluation on validation set')
-
+    group.add_argument('--strict-eval', action='store_true',
+                       help='won\'t enlarge or randomly map eval-data, and eval full eval-data.')
     return parser
 
 
@@ -297,25 +302,28 @@ def get_args(args_list=None):
         print('using world size: {} and model-parallel size: {} '.format(
             args.world_size, args.model_parallel_size))
 
-    if hasattr(args, "deepspeed") and args.deepspeed and args.deepspeed_config is not None:
-        with open(args.deepspeed_config) as file:
-            deepspeed_config = json.load(file)
-        if "fp16" in deepspeed_config and deepspeed_config["fp16"]["enabled"]:
-            args.fp16 = True
-        else:
-            args.fp16 = False
+    if hasattr(args, "deepspeed") and args.deepspeed:
         if args.checkpoint_activations:
             args.deepspeed_activation_checkpointing = True
-        if "train_micro_batch_size_per_gpu" in deepspeed_config:
-            args.batch_size = deepspeed_config["train_micro_batch_size_per_gpu"]
-        if "gradient_accumulation_steps" in deepspeed_config:
-            args.gradient_accumulation_steps = deepspeed_config["gradient_accumulation_steps"]
         else:
-            args.gradient_accumulation_steps = None
-        if "optimizer" in deepspeed_config:
-            optimizer_params_config = deepspeed_config["optimizer"].get("params", {})
-            args.lr = optimizer_params_config.get("lr", args.lr)
-            args.weight_decay = optimizer_params_config.get("weight_decay", args.weight_decay)
+            args.deepspeed_activation_checkpointing = False
+        if args.deepspeed_config is not None:
+            with open(args.deepspeed_config) as file:
+                deepspeed_config = json.load(file)
+            if "fp16" in deepspeed_config and deepspeed_config["fp16"]["enabled"]:
+                args.fp16 = True
+            else:
+                args.fp16 = False
+            if "train_micro_batch_size_per_gpu" in deepspeed_config:
+                args.batch_size = deepspeed_config["train_micro_batch_size_per_gpu"]
+            if "gradient_accumulation_steps" in deepspeed_config:
+                args.gradient_accumulation_steps = deepspeed_config["gradient_accumulation_steps"]
+            else:
+                args.gradient_accumulation_steps = None
+            if "optimizer" in deepspeed_config:
+                optimizer_params_config = deepspeed_config["optimizer"].get("params", {})
+                args.lr = optimizer_params_config.get("lr", args.lr)
+                args.weight_decay = optimizer_params_config.get("weight_decay", args.weight_decay)
     return args
 
 
