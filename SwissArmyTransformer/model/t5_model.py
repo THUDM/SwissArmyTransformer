@@ -3,10 +3,12 @@ import torch
 import torch.nn.functional as F
 from .mixins import BaseMixin
 from .encoder_decoder_model import EncoderDecoderModel
+from .base_model import non_conflict
 from SwissArmyTransformer.mpu import get_model_parallel_world_size
 from SwissArmyTransformer.mpu.transformer import standard_attention, SelfAttention, CrossAttention, MLP
 from SwissArmyTransformer.mpu.mappings import copy_to_model_parallel_region
-from SwissArmyTransformer.mpu.utils import divide, split_tensor_along_last_dim
+from SwissArmyTransformer.mpu.utils import divide, split_tensor_along_last_dim, unscaled_init_method
+from SwissArmyTransformer.mpu.layers import ColumnParallelLinear, VocabParallelEmbedding
 
 
 class T5PositionEmbeddingMixin(BaseMixin):
@@ -94,7 +96,7 @@ class T5AttentionMixin(BaseMixin):
         relative_buckets += torch.where(is_small, relative_position, relative_postion_if_large)
         return relative_buckets
 
-    def compute_bias(self, query_length, key_length, cross_attention=False):
+    def compute_bias(self, query_length, key_length):
         """Compute binned relative position bias"""
         context_position = torch.arange(query_length, dtype=torch.long)[:, None]
         memory_position = torch.arange(key_length, dtype=torch.long)[None, :]
@@ -106,82 +108,86 @@ class T5AttentionMixin(BaseMixin):
         )
         relative_position_bucket = relative_position_bucket.to(self.relative_attention_bias.weight.device)
         # shape (query_length, key_length, num_heads)
-        if cross_attention:
-            values = self.cross_relative_attention_bias(relative_position_bucket)
-        else:
-            values = self.relative_attention_bias(relative_position_bucket)
+        values = self.relative_attention_bias(relative_position_bucket)
         values = values.permute([2, 0, 1]).unsqueeze(0)  # shape (1, num_heads, query_length, key_length)
         return values
 
-    def attention_forward(self, hidden_states, mask, position_bias=None, *args, layer_id=None, mems=None, **kw_args):
-        attn_module = self.transformer.layers[layer_id].attention
-        seq_length = hidden_states.size(1)
-        memory_length = mems[layer_id].size(1) if mems else 0
-        mixed_raw_layer = attn_module.query_key_value(hidden_states)
-        (mixed_query_layer,
-         mixed_key_layer,
-         mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, 3)
-
-        dropout_fn = attn_module.attention_dropout if attn_module.training else None
-
-        query_layer = attn_module._transpose_for_scores(mixed_query_layer)
-        key_layer = attn_module._transpose_for_scores(mixed_key_layer)
-        value_layer = attn_module._transpose_for_scores(mixed_value_layer)
-
-        if position_bias is None:
-            position_bias = self.compute_bias(seq_length, memory_length + seq_length)
-        context_layer = standard_attention(query_layer, key_layer, value_layer, mask, dropout_fn,
-                                           log_attention_weights=position_bias, scaling_attention_score=False)
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (attn_module.hidden_size_per_partition,)
-        context_layer = context_layer.view(*new_context_layer_shape)
-        output = attn_module.dense(context_layer)
-
-        if attn_module.training:
-            output = attn_module.output_dropout(output)
-
-        kw_args['output_cross_layer']['position_bias'] = position_bias
-
-        return output 
-
-    def cross_attention_forward(self, hidden_states, cross_attention_mask, encoder_outputs, layer_id=None, *args,
-                                **kw_args):
-        attn_module = self.transformer.layers[layer_id].cross_attention
-        mixed_query_layer = attn_module.query(hidden_states)
-        mixed_x_layer = attn_module.key_value(encoder_outputs)
-        (mixed_key_layer, mixed_value_layer) = split_tensor_along_last_dim(mixed_x_layer, 2)
-
-        dropout_fn = attn_module.attention_dropout if attn_module.training else None
-        # Reshape and transpose [b, np, s, hn]
-        query_layer = attn_module._transpose_for_scores(mixed_query_layer)
-        key_layer = attn_module._transpose_for_scores(mixed_key_layer)
-        value_layer = attn_module._transpose_for_scores(mixed_value_layer)
-
-        context_layer = standard_attention(query_layer, key_layer, value_layer, cross_attention_mask, dropout_fn,
-                                           scaling_attention_score=False)
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (attn_module.hidden_size_per_partition,)
-        # [b, s, hp]
-        context_layer = context_layer.view(*new_context_layer_shape)
-
-        # Output. [b, s, h]
-        output = attn_module.dense(context_layer)
-        if attn_module.training:
-            output = attn_module.output_dropout(output)
-
-        return output
+    @non_conflict
+    def attention_fn(self, q, k, v, mask, dropout_fn, position_bias=None, old_impl=standard_attention,
+                     cross_attention=False, **kw_args):
+        log_attention_weights = None
+        if not cross_attention:
+            if position_bias is None:
+                seq_length = q.size(2)
+                key_length = k.size(2)
+                position_bias = self.compute_bias(key_length, key_length)
+                position_bias = position_bias[:, :, -seq_length:, :]
+            kw_args['output_cross_layer']['position_bias'] = position_bias
+            log_attention_weights = position_bias
+        return old_impl(q, k, v, mask, dropout_fn, cross_attention=cross_attention, position_bias=position_bias,
+                        log_attention_weights=log_attention_weights, scaling_attention_score=False, **kw_args)
 
 
 class T5DecoderFinalMixin(BaseMixin):
-    def __init__(self, hidden_size):
+    def __init__(self, vocab_size, hidden_size, tie_word_embeddings=True):
         super().__init__()
         self.hidden_size = hidden_size
+        self.tie_word_embeddings = tie_word_embeddings
+        if not tie_word_embeddings:
+            self.lm_head = VocabParallelEmbedding(
+                vocab_size, hidden_size, init_method=unscaled_init_method(0.02))
 
     def final_forward(self, logits, **kwargs):
         logits_parallel = copy_to_model_parallel_region(logits)
-        logits_parallel = logits_parallel * (self.hidden_size ** -0.5)
-        logits_parallel = F.linear(logits_parallel, self.transformer.word_embeddings.weight)
+        if self.tie_word_embeddings:
+            logits_parallel = logits_parallel * (self.hidden_size ** -0.5)
+            logits_parallel = F.linear(logits_parallel, self.transformer.word_embeddings.weight)
+        else:
+            logits_parallel = F.linear(logits_parallel, self.lm_head.weight)
         return logits_parallel
+
+
+def t5_gelu(x):
+    """
+    Implementation of the GELU activation function currently in Google BERT repo (identical to OpenAI GPT). Also see
+    the Gaussian Error Linear Units paper: https://arxiv.org/abs/1606.08415
+    """
+    return 0.5 * x * (1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (x + 0.044715 * torch.pow(x, 3.0))))
+
+
+class T5GatedGeluMLPMixin(BaseMixin):
+    def __init__(self, num_layers, hidden_size, inner_hidden_size=None, bias=True, init_method_std=0.02):
+        super().__init__()
+        self.hidden_size = hidden_size
+        if inner_hidden_size is None:
+            inner_hidden_size = 4 * hidden_size
+        self.inner_hidden_size = inner_hidden_size
+        self.init_method_std = init_method_std
+        self.gated_h_to_4h_list = torch.nn.ModuleList([
+            ColumnParallelLinear(
+                self.hidden_size,
+                self.inner_hidden_size,
+                gather_output=False,
+                init_method=self._init_weights,
+                bias=bias,
+                module=self,
+                name="gated_h_to_4h"
+            )
+            for layer_id in range(num_layers)])
+
+    def _init_weights(self, weight, **kwargs):
+        torch.nn.init.normal_(weight, mean=0, std=self.init_method_std * (self.hidden_size ** -0.5))
+
+    def mlp_forward(self, hidden_states, layer_id=None, **kw_args):
+        mlp_module = self.transformer.layers[layer_id].mlp
+        hidden_gelu = t5_gelu(mlp_module.dense_h_to_4h(hidden_states))
+        hidden_linear = self.gated_h_to_4h_list[layer_id](hidden_states)
+        hidden_states = hidden_gelu * hidden_linear
+        output = mlp_module.dense_4h_to_h(hidden_states)
+
+        if self.training:
+            output = mlp_module.dropout(output)
+        return output
 
 
 class T5Model(EncoderDecoderModel):
@@ -205,10 +211,19 @@ class T5Model(EncoderDecoderModel):
             "t5-position", T5PositionEmbeddingMixin()
         )
         self.decoder.add_mixin(
-            "t5-final", T5DecoderFinalMixin(args.hidden_size)
+            "t5-final",
+            T5DecoderFinalMixin(args.vocab_size, args.hidden_size, tie_word_embeddings=not args.no_share_embeddings)
         )
         del self.decoder.transformer.position_embeddings
-    
+        if args.gated_gelu_mlp:
+            self.encoder.add_mixin(
+                "gated-mlp", T5GatedGeluMLPMixin(args.num_layers, args.hidden_size, init_method_std=self.init_method_std,
+                                                 inner_hidden_size=args.inner_hidden_size, bias=False)
+            )
+            self.decoder.add_mixin(
+                "gated-mlp", T5GatedGeluMLPMixin(args.num_layers, args.hidden_size, init_method_std=self.init_method_std,
+                                                 inner_hidden_size=args.inner_hidden_size, bias=False)
+            )
 
     def _init_weights(self, weight, module, name):
         init_method_std = self.init_method_std
@@ -246,6 +261,8 @@ class T5Model(EncoderDecoderModel):
         super().add_model_specific_args(parser)
         parser.add_argument("--relative-attention-num-buckets", type=int, default=None)
         parser.add_argument("--init-method-std", type=float, default=0.02)
+        parser.add_argument("--gated-gelu-mlp", action='store_true')
+        parser.add_argument("--no-share-embeddings", action='store_true')
 
     def encode(self, input_ids, attention_mask=None, **kw_args):
         return super().encode(input_ids, None, attention_mask, **kw_args)
@@ -254,7 +271,7 @@ class T5Model(EncoderDecoderModel):
         return super().decode(input_ids, None, attention_mask, encoder_outputs=encoder_outputs,
                               cross_attention_mask=cross_attention_mask, **kw_args)
 
-    def forward(self, enc_input_ids, dec_input_ids, dec_attention_mask, *, enc_attention_mask=None,
+    def forward(self, enc_input_ids, dec_input_ids, *, enc_attention_mask=None, dec_attention_mask=None,
                 cross_attention_mask=None, **kw_args):
         batch_size, seq_length = enc_input_ids.size()[:2]
         if enc_attention_mask is None:
