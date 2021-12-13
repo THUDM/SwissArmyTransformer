@@ -114,63 +114,18 @@ class T5AttentionMixin(BaseMixin):
         values = values.permute([2, 0, 1]).unsqueeze(0)  # shape (1, num_heads, query_length, key_length)
         return values
 
-    def attention_forward(self, hidden_states, mask, position_bias=None, *args, layer_id=None, mems=None, **kw_args):
-        attn_module = self.transformer.layers[layer_id].attention
-        seq_length = hidden_states.size(1)
-        memory_length = mems[layer_id].size(1) if mems else 0
-        mixed_raw_layer = attn_module.query_key_value(hidden_states)
-        (mixed_query_layer,
-         mixed_key_layer,
-         mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, 3)
-
-        dropout_fn = attn_module.attention_dropout if attn_module.training else None
-
-        query_layer = attn_module._transpose_for_scores(mixed_query_layer)
-        key_layer = attn_module._transpose_for_scores(mixed_key_layer)
-        value_layer = attn_module._transpose_for_scores(mixed_value_layer)
-
-        if position_bias is None:
-            position_bias = self.compute_bias(seq_length, memory_length + seq_length)
-        context_layer = standard_attention(query_layer, key_layer, value_layer, mask, dropout_fn,
-                                           log_attention_weights=position_bias, scaling_attention_score=False)
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (attn_module.hidden_size_per_partition,)
-        context_layer = context_layer.view(*new_context_layer_shape)
-        output = attn_module.dense(context_layer)
-
-        if attn_module.training:
-            output = attn_module.output_dropout(output)
-
-        kw_args['output_cross_layer']['position_bias'] = position_bias
-
-        return output
-
-    def cross_attention_forward(self, hidden_states, cross_attention_mask, encoder_outputs, layer_id=None, *args,
-                                **kw_args):
-        attn_module = self.transformer.layers[layer_id].cross_attention
-        mixed_query_layer = attn_module.query(hidden_states)
-        mixed_x_layer = attn_module.key_value(encoder_outputs)
-        (mixed_key_layer, mixed_value_layer) = split_tensor_along_last_dim(mixed_x_layer, 2)
-
-        dropout_fn = attn_module.attention_dropout if attn_module.training else None
-        # Reshape and transpose [b, np, s, hn]
-        query_layer = attn_module._transpose_for_scores(mixed_query_layer)
-        key_layer = attn_module._transpose_for_scores(mixed_key_layer)
-        value_layer = attn_module._transpose_for_scores(mixed_value_layer)
-
-        context_layer = standard_attention(query_layer, key_layer, value_layer, cross_attention_mask, dropout_fn,
-                                           scaling_attention_score=False)
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (attn_module.hidden_size_per_partition,)
-        # [b, s, hp]
-        context_layer = context_layer.view(*new_context_layer_shape)
-
-        # Output. [b, s, h]
-        output = attn_module.dense(context_layer)
-        if attn_module.training:
-            output = attn_module.output_dropout(output)
-
-        return output
+    def attention_fn(self, q, k, v, mask, dropout_fn, position_bias=None, old_impl=standard_attention,
+                     cross_attention=False, **kw_args):
+        log_attention_weights = None
+        if not cross_attention:
+            if position_bias is None:
+                seq_length = q.size(2)
+                key_length = k.size(2)
+                position_bias = self.compute_bias(seq_length, key_length)
+            kw_args['output_cross_layer']['position_bias'] = position_bias
+            log_attention_weights = position_bias
+        return old_impl(q, k, v, mask, dropout_fn, cross_attention=cross_attention, position_bias=position_bias,
+                        log_attention_weights=log_attention_weights, scaling_attention_score=False, **kw_args)
 
 
 class T5DecoderFinalMixin(BaseMixin):

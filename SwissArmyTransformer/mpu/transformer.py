@@ -218,6 +218,10 @@ class CrossAttention(torch.nn.Module):
         if 'cross_attention_forward' in self.hooks:
             return self.hooks['cross_attention_forward'](hidden_states, cross_attention_mask, encoder_outputs, **kw_args)
         else:
+            attention_fn = standard_attention
+            if 'attention_fn' in self.hooks:
+                attention_fn = self.hooks['attention_fn']
+
             mixed_query_layer = self.query(hidden_states)
             mixed_x_layer = self.key_value(encoder_outputs)
             (mixed_key_layer, mixed_value_layer) = split_tensor_along_last_dim(mixed_x_layer, 2)
@@ -228,7 +232,8 @@ class CrossAttention(torch.nn.Module):
             key_layer = self._transpose_for_scores(mixed_key_layer)
             value_layer = self._transpose_for_scores(mixed_value_layer)
 
-            context_layer = standard_attention(query_layer, key_layer, value_layer, cross_attention_mask, dropout_fn)
+            context_layer = attention_fn(query_layer, key_layer, value_layer, cross_attention_mask, dropout_fn,
+                                         cross_attention=True, **kw_args)
             context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
             new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
             # [b, s, hp]
@@ -504,7 +509,7 @@ class BaseTransformer(torch.nn.Module):
             )  # None means full attention
         assert len(attention_mask.shape) == 2 or \
                len(attention_mask.shape) == 4 and attention_mask.shape[1] == 1
-    
+
         # embedding part
         if 'word_embedding_forward' in self.hooks:
             hidden_states = self.hooks['word_embedding_forward'](input_ids, **kw_args)
@@ -526,7 +531,7 @@ class BaseTransformer(torch.nn.Module):
             output_cross_layer = self.hooks['cross_layer_embedding_forward'](hidden_states, **kw_args)
         else:
             output_cross_layer = {}
-            
+
         output_per_layers = []
         if self.checkpoint_activations:
             # define custom_forward for checkpointing
@@ -534,7 +539,7 @@ class BaseTransformer(torch.nn.Module):
                 def custom_forward(*inputs):
                     layers_ = self.layers[start:end]
                     x_, mask = inputs[0], inputs[1]
-                    
+
                     # recover kw_args and output_cross_layer
                     flat_inputs = inputs[2:]
                     kw_args, output_cross_layer = {}, {}
@@ -543,19 +548,19 @@ class BaseTransformer(torch.nn.Module):
                     for k, idx in cross_layer_index.items():
                         output_cross_layer[k] = flat_inputs[idx]
                     # -----------------
-                    
+
                     output_per_layers_part = []
                     for i, layer in enumerate(layers_):
                         if 'layer_forward' in self.hooks:
                             layer_ret = self.hooks['layer_forward'](
-                                x_, mask, layer_id=layer.layer_id, 
-                                **kw_args, **output_cross_layer, 
+                                x_, mask, layer_id=layer.layer_id,
+                                **kw_args, **output_cross_layer,
                                 output_this_layer={}, output_cross_layer={}
                             )
                         else:
                             layer_ret = layer(
-                                x_, mask, layer_id=layer.layer_id, 
-                                **kw_args, **output_cross_layer, 
+                                x_, mask, layer_id=layer.layer_id,
+                                **kw_args, **output_cross_layer,
                                 output_this_layer={}, output_cross_layer={}
                             )
                         if torch.is_tensor(layer_ret): # only hidden_states
@@ -563,7 +568,7 @@ class BaseTransformer(torch.nn.Module):
                         elif len(layer_ret) == 2: # hidden_states & output_this_layer
                             x_, output_this_layer = layer_ret
                             output_cross_layer = {}
-                        elif len(layer_ret) == 3: 
+                        elif len(layer_ret) == 3:
                             x_, output_this_layer, output_cross_layer = layer_ret
                         assert isinstance(output_this_layer, dict)
                         assert isinstance(output_cross_layer, dict)
@@ -590,7 +595,7 @@ class BaseTransformer(torch.nn.Module):
             # To save memory when only finetuning the final layers, don't use checkpointing.
             if self.training:
                 hidden_states.requires_grad_(True)
-            
+
             l, num_layers = 0, len(self.layers)
             chunk_length = self.checkpoint_num_layers
             output_this_layer = []
@@ -625,20 +630,20 @@ class BaseTransformer(torch.nn.Module):
                 args = [hidden_states, attention_mask]
 
                 if 'layer_forward' in self.hooks: # customized layer_forward
-                    layer_ret = self.hooks['layer_forward'](*args, layer_id=torch.tensor(i), 
-                        **kw_args, 
-                        **output_cross_layer, 
+                    layer_ret = self.hooks['layer_forward'](*args, layer_id=torch.tensor(i),
+                        **kw_args,
+                        **output_cross_layer,
                         output_this_layer={}, output_cross_layer={}
                     )
                 else:
-                    layer_ret = layer(*args, layer_id=torch.tensor(i), **kw_args, **output_cross_layer, 
+                    layer_ret = layer(*args, layer_id=torch.tensor(i), **kw_args, **output_cross_layer,
                         output_this_layer={}, output_cross_layer={})
                 if torch.is_tensor(layer_ret): # only hidden_states
                     hidden_states, output_this_layer, output_cross_layer = layer_ret, {}, {}
                 elif len(layer_ret) == 2: # hidden_states & output_this_layer
                     hidden_states, output_this_layer = layer_ret
                     output_cross_layer = {}
-                elif len(layer_ret) == 3: 
+                elif len(layer_ret) == 3:
                     hidden_states, output_this_layer, output_cross_layer = layer_ret
 
                 if output_hidden_states:
