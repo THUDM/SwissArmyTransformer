@@ -115,7 +115,7 @@ class BaseModel(torch.nn.Module):
             for mixin_name, m in self.mixins.items():
                 if hasattr(m, name):
                     if name in hooks: # if this hook name is already registered
-                        if hasattr(getattr(m, name), 'non_confict'):
+                        if hasattr(getattr(m, name), 'non_conflict'):
                             hooks[name] = partial(getattr(m, name), old_impl=hooks[name])
                             hook_origins[name] = mixin_name + ' -> ' + hook_origins[name]
                         else: # conflict
