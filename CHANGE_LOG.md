@@ -32,4 +32,25 @@ del old['module']['word_embeddings.weight']
 1. Add generation.autoregressive_sampling.evalute_perplexity
 2. fix Runtime Error in skipping Nan Loss
 
+# 2021.12.13 v0.1.4
+1. Add non_conflict attention_fn
+2. Add Prefix-Tuning
+3. Now, you can use `kw_args['output_this_layer']` (any hooks in the transformer layers) to return values to final outputs and `kw_args['output_cross_layer']` to pass values to `kw_args` in the next layer.
+
+Examples:
+```
+def attention_fn(...some_args):
+    ...
+    kw_args['output_this_layer']['mem_kv'] = cache_kv
+    ...
+```
+This will let the key `'mem_kv'` appear in the `outputs_per_layers[i]` of `logits, *outputs_per_layers = model(...)`. 
+
+```
+def attention_fn(...some_args, **kw_args):
+    ...
+    kw_args['output_cross_layer']['last_attention_map'] = attention_map
+    ...
+```
+This will let the key `'last_attention_map'` appear in the next layer's `kw_args` (all hooks). 
 
