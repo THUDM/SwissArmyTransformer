@@ -10,8 +10,8 @@ from datasets import load_dataset
 def parse_huggingface_path(path):
     names = path.split('/')
     first_name = names[0]
-    second_name = names[1] if len(names) >= 1 else None
-    split = names[2] if len(names) >= 2 else None
+    second_name = names[1] if len(names) >= 2 else None
+    split = names[2] if len(names) >= 3 else None
     return first_name, second_name, split
 
 def get_dataset(dataset_name, sub_name, process_fn, columns, split='train'):
