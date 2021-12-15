@@ -151,7 +151,7 @@ def get_model(args, model_cls):
     return model
 
 
-def setup_model_and_optimizer(args, model_cls, config_params=None):
+def setup_model_and_optimizer(args, model_cls, config_params=None, optimizer_cls=None):
     """Setup model and optimizer."""
 
     model = get_model(args, model_cls)
@@ -166,6 +166,7 @@ def setup_model_and_optimizer(args, model_cls, config_params=None):
             model, optimizer, _, _ = deepspeed.initialize(
                 model=model,
                 model_parameters=param_groups,
+                optimizer=optimizer_cls,
                 args=args,
                 mpu=mpu,
                 dist_init_required=False,
@@ -248,7 +249,7 @@ def get_learning_rate_scheduler(optimizer, iteration, args,
 
 
 def train(model, optimizer, lr_scheduler,
-        train_data, val_data, timers, args, 
+        train_data, val_data, timers, args,
         summary_writer=None, hooks={}):
     """Train the model."""
     if train_data is not None:
@@ -259,10 +260,10 @@ def train(model, optimizer, lr_scheduler,
         val_data_iterator = iter(val_data)
     else:
         val_data_iterator = None
-        
+
     # Turn on training mode which enables dropout.
     model.train()
-    
+
 
     # Tracking loss.
     total_lm_loss = 0.0
@@ -384,7 +385,7 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
             if model.is_gradient_accumulation_boundary():
                 model.step()
                 complete = True
-                if not (args.fp16 and optimizer.overflow):
+                if not ((args.fp16 or args.bf16) and optimizer.overflow):
                     lr_scheduler.step()
                 else:
                     skipped_iter = 1
@@ -502,7 +503,7 @@ def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step, avg_metrics
         summary_writer.add_scalar(f'Train/valid_loss', loss, step)
         for key in avg_metrics:
             summary_writer.add_scalar('Train/valid_'+key, avg_metrics[key], step)
-        
+
 
 '''
     Optional DeepSpeed Activation Checkpointing features
