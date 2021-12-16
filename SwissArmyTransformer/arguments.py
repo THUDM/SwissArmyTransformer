@@ -206,6 +206,12 @@ def add_data_args(parser):
     group.add_argument('--block-size', type=int, default=10000,
                        help="""Size of block to reduce memory in dataset""")
 
+    # group.add_argument('--original-split', action='store_true',
+    #                    help="""Use dataset original split""")
+
+    # group.add_argument('--use-huggingface-dataset', action='store_true',
+    #                    help="""Use dataset from huggingface/datasets package""")
+
     return parser
     
 def add_tokenization_args(parser):
