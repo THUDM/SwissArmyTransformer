@@ -101,6 +101,7 @@ if __name__ == '__main__':
     py_parser.add_argument('--new_hyperparam', type=str, default=None)
     py_parser.add_argument('--sample_length', type=int, default=80)
     py_parser.add_argument('--prefix_len', type=int, default=16)
+    GLMModel.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
