@@ -1,12 +1,3 @@
-# -*- encoding: utf-8 -*-
-'''
-@File    :   unified_tokenizer.py
-@Time    :   2021/01/11 16:36:33
-@Author  :   Ming Ding 
-@Contact :   dm18@mails.tsinghua.edu.cn
-'''
-
-# here put the import lib
 import os
 import sys
 import math
@@ -20,31 +11,36 @@ from .sp_tokenizer import from_pretrained
 from .vqvae_tokenizer import VQVAETokenizer, sqrt_int
 
 class UnifiedTokenizer(object):
-    def __init__(self, img_tokenizer_path, txt_tokenizer_type, device):
+    def __init__(self, img_tokenizer_path=None, device='cuda', img_tokenizer_num_tokens=None):
         self.device = device
-        self.img_tokenizer = VQVAETokenizer(model_path=img_tokenizer_path, device=self.device)
-        self.txt_tokenizer = from_pretrained(txt_tokenizer_type)
+        if img_tokenizer_path is None and img_tokenizer_num_tokens is not None:
+            # pretraining but only know the vocab size of VQVAE, which is developing fast
+            self.img_tokenizer = FakeTokenizer(img_tokenizer_num_tokens)
+        else:
+            self.img_tokenizer = VQVAETokenizer(
+                model_path=img_tokenizer_path, device=device)
+        self.txt_tokenizer = from_pretrained()
         self.num_tokens = self.img_tokenizer.num_tokens + self.txt_tokenizer.num_tokens
         self.raw_command_tokens = [
             ('[PAD]', 0),
-            ('[BOI1]', 1), # Begin
+            ('[BOI1]', 1),  # Begin
             ('[BOI2]', 2),
             ('[BOI3]', 3),
-            ('[EOI1]', 4), # End
+            ('[EOI1]', 4),  # End
             ('[EOI2]', 5),
             ('[EOI3]', 6),
-            ('[ROI1]', 7), # Reference
-            ('[ROI2]', 8), # 58200
+            ('[ROI1]', 7),  # Reference
+            ('[ROI2]', 8),
             ('[ROI3]', 9),
             ('[SEP]', 10),
             ('[MASK]', 11),
             ('[CLS]', 12),
             ('[ENC]', 13),
-            ('[TINY]', 14), # 8 * 8
-            ('[SMALL]', 15), # 16 * 16
-            ('[BASE]', 16), # 32 * 32
-            ('[BIG]', 17), # 64 * 64
-            ('[POS0]', 18), # 58210
+            ('[TINY]', 14),  # 8 * 8
+            ('[SMALL]', 15),  # 16 * 16
+            ('[BASE]', 16),  # 32 * 32
+            ('[BIG]', 17),  # 64 * 64
+            ('[POS0]', 18),  # 58210
             ('[POS1]', 19),
             ('[POS2]', 20),
             ('[POS3]', 21),
@@ -67,16 +63,16 @@ class UnifiedTokenizer(object):
     def __len__(self):
         """total number of tokens"""
         return self.num_tokens
-
+    
     def __call__(self, inputs, process_fn=None):
         """run preprocessing and encode inputs as Ids
             CANNOT contain command tokens"""
-        if isinstance(inputs, torch.Tensor): # image
+        if isinstance(inputs, torch.Tensor):
             if len(inputs.shape) == 3:
                 inputs = inputs.unsqueeze(0)
             return self.img_tokenizer.EncodeAsIds(inputs)
         return self.EncodeAsIds(inputs, process_fn=process_fn)
-    
+
     def EncodeAsIds(self, text, process_fn=None):
         processed_text = text
         if process_fn is not None:
@@ -90,10 +86,13 @@ class UnifiedTokenizer(object):
             for x in ids:
                 if self.num_tokens - len(self.raw_command_tokens) <= x:
                     # command tokens
-                    token = self.raw_command_tokens[x - (self.num_tokens - len(self.raw_command_tokens))][0]
+                    token = self.raw_command_tokens[x - (
+                        self.num_tokens - len(self.raw_command_tokens))][0]
                     if token.startswith('[EOI') and len(img_buffer) > 0:
                         # dump image
-                        ret_imgs.append(self.img_tokenizer.DecodeIds(img_buffer))
+                        l = 6 - int(np.log2(sqrt_int(len(img_buffer))) + 1e-4)
+                        ret_imgs.append(
+                            self.img_tokenizer.DecodeIds(img_buffer, l))
                         img_buffer = []
                     if len(txt_buffer) > 0:
                         # dump text
@@ -107,7 +106,8 @@ class UnifiedTokenizer(object):
             
             if len(img_buffer) > 0:
                 # dump image
-                ret_imgs.append(self.img_tokenizer.DecodeIds(img_buffer))
+                l = 6 - int(np.log2(sqrt_int(len(img_buffer))) + 1e-4)
+                ret_imgs.append(self.img_tokenizer.DecodeIds(img_buffer, l))
                 img_buffer = []
             if len(txt_buffer) > 0:
                 # dump text
@@ -119,17 +119,18 @@ class UnifiedTokenizer(object):
 
     def wrap_code(self, code, idx=1):
         s = sqrt_int(len(code))
-        prefix = {8:'[TINY]', 16:'[SMALL]', 32:'[BASE]', 64:'[BIG]'}[s]
-        boi = {1:'[BOI1]', 2: '[BOI2]', 3:'[BOI3]'}[idx]
-        eoi = {1:'[EOI1]', 2: '[EOI2]', 3:'[EOI3]'}[idx]
-    
+        prefix = {8: '[TINY]', 16: '[SMALL]', 32: '[BASE]', 64: '[BIG]'}[s]
+        boi = {1: '[BOI1]', 2: '[BOI2]', 3: '[BOI3]'}[idx]
+        eoi = {1: '[EOI1]', 2: '[EOI2]', 3: '[EOI3]'}[idx]
+
         if isinstance(code, list):
             return [self.command_tokens[prefix], self.command_tokens[boi]] + \
                 code + [self.command_tokens[eoi]]
         elif isinstance(code, np.ndarray):
             return np.concatenate(
                 (
-                    np.array([self.command_tokens[prefix], self.command_tokens[boi]]),
+                    np.array([self.command_tokens[prefix],
+                             self.command_tokens[boi]]),
                     code,
                     np.array([self.command_tokens[eoi]])
                 ),
@@ -138,14 +139,15 @@ class UnifiedTokenizer(object):
         elif isinstance(code, torch.Tensor):
             return torch.cat(
                 (
-                    torch.tensor([self.command_tokens[prefix], self.command_tokens[boi]]),
-                    code, 
+                    torch.tensor([self.command_tokens[prefix],
+                                 self.command_tokens[boi]]),
+                    code,
                     np.array([self.command_tokens[eoi]])
                 )
             )
         else:
             raise ValueError('')
-
+    
     def parse_query(self, query, img_size=256):
         text_buffer = []
         ret = []
@@ -159,7 +161,7 @@ class UnifiedTokenizer(object):
                     ret.append(-1)
                 else:
                     ret.append(self.command_tokens[part])
-            elif part.startswith('[MASK]*'): # special lang *N
+            elif part.startswith('[MASK]*'):  # special lang *N
                 c = int(part[7:])
                 assert c > 0
                 if len(text_buffer) > 0:
@@ -167,26 +169,51 @@ class UnifiedTokenizer(object):
                     ret.extend(self.EncodeAsIds(' '.join(text_buffer)))
                     text_buffer = []
                 ret.extend([-1] * c)
-            elif part.startswith('[Image'): # [Image*N]path
+            elif part.startswith('[Image'):  # [Image*N]path
                 c = part[6:]
                 assert len(c) > 0
                 num_codes, img_path = c.split(']')
+                raw_img = self.img_tokenizer.read_img(
+                    img_path, img_size=img_size)
                 if num_codes == '':
-                    num_codes = 1024
+                    img_codes = self.img_tokenizer.EncodeAsIds(
+                        raw_img)  # [1, 32*32] * l
+                    for i, img_code in enumerate(img_codes):
+                        img_code = img_code[0].tolist()
+                        ret.extend(self.wrap_code(img_code, 2-i))
                 else:
-                    num_codes = int(num_codes)
-                
-                raw_img = self.img_tokenizer.read_img(img_path, img_size=img_size)
-                img_codes = self.img_tokenizer.EncodeAsIds(raw_img) # [1, 32*32]
-                img_codes[0, num_codes:] = -1
-                img_codes = img_codes[0].tolist()
-                ret.extend(img_codes)
+                    l = 6 - np.log2(sqrt_int(num_codes))
+                    img_codes = self.img_tokenizer.EncodeAsIds(
+                        raw_img, l)  # [1, 32*32]
+                    img_codes[0, num_codes:] = -1
+                    img_codes = img_codes[0].tolist()
+                    ret.extend(img_codes)
             else:
                 text_buffer.append(part)
-
+        
         if len(text_buffer) > 0:
             # dump text ids
             ret.extend(self.EncodeAsIds(' '.join(text_buffer)))
             text_buffer = []
         return ret
+        
 
+def get_tokenizer(img_tokenizer_path=None):
+    """Singlton
+
+    Return an image tokenizer"""
+    if not hasattr(get_tokenizer, 'tokenizer'):
+        get_tokenizer.tokenizer = UnifiedTokenizer(
+            img_tokenizer_path,
+            device=torch.cuda.current_device(),
+            img_tokenizer_num_tokens=8192
+        )
+    return get_tokenizer.tokenizer
+
+
+class FakeTokenizer(object):
+    def __init__(self, num_tokens):
+        self.num_tokens = num_tokens
+
+    def __len__(self):
+        return self.num_tokens
