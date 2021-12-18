@@ -16,7 +16,7 @@ OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
-en_data="super_glue/boolq/train"
+en_data="hf://super_glue/boolq/train"
 eval_data="super_glue/boolq/validation"
 test_data="super_glue/boolq/test"
 

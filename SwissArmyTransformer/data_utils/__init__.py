@@ -10,4 +10,4 @@
 
 from .configure_data import make_loaders
 from .datasets import *
-from .get_dataset import *
+from .hf_dataset import load_hf_dataset
