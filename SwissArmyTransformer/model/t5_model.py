@@ -114,8 +114,7 @@ class T5AttentionMixin(BaseMixin):
 
     @non_conflict
     def attention_fn(self, q, k, v, mask, dropout_fn, position_bias=None, old_impl=standard_attention,
-                     cross_attention=False, **kw_args):
-        log_attention_weights = None
+                     cross_attention=False, log_attention_weights=None, **kw_args):
         if not cross_attention:
             if position_bias is None:
                 seq_length = q.size(2)
@@ -123,7 +122,10 @@ class T5AttentionMixin(BaseMixin):
                 position_bias = self.compute_bias(key_length, key_length)
                 position_bias = position_bias[:, :, -seq_length:, :]
             kw_args['output_cross_layer']['position_bias'] = position_bias
-            log_attention_weights = position_bias
+            if log_attention_weights is None:
+                log_attention_weights = position_bias
+            else:
+                log_attention_weights = log_attention_weights + position_bias
         return old_impl(q, k, v, mask, dropout_fn, cross_attention=cross_attention, position_bias=position_bias,
                         log_attention_weights=log_attention_weights, scaling_attention_score=False, **kw_args)
 
