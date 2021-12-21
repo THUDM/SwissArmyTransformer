@@ -82,8 +82,8 @@ def copy_transformer_layer_wo_ln(src, dst):
 def transform_weight(hugging_model, swiss_model):
     copy_layer_param(hugging_model.embeddings.word_embeddings, swiss_model.transformer.word_embeddings)
     copy_layer_param(hugging_model.embeddings.position_embeddings, swiss_model.transformer.position_embeddings)
-    swiss_model.transformer.word_embeddings.weight[1] = 0.
-    swiss_model.transformer.position_embeddings.weight[1] = 0.
+    swiss_model.transformer.word_embeddings.padding_idx = roberta.embeddings.padding_idx
+    swiss_model.transformer.position_embeddings.padding_idx = roberta.embeddings.padding_idx
     copy_layer_norm(hugging_model, swiss_model)
     for src_l, dst_l in zip(hugging_model.encoder.layer, swiss_model.transformer.layers):
         copy_transformer_layer_wo_ln(src_l, dst_l)
@@ -106,6 +106,6 @@ with torch.no_grad():
     model.to('cuda:0')
     swiss_output = model(input_ids=encoded_input['input_ids'].cuda(), position_ids=position_ids.cuda(), attention_mask=encoded_input['attention_mask'][:, None, None, :].cuda())[0].cpu()
     print("max error:", (hugging_output - swiss_output).abs().max())
-    print("max relative error:", ((hugging_output - swiss_output).abs() / hugging_output.abs()).max())
+    print("max relative error:", ((hugging_output - swiss_output).abs() / torch.max(swiss_output.abs(), hugging_output.abs())).max())
 
 breakpoint()
