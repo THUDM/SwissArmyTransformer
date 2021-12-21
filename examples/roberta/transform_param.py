@@ -34,9 +34,11 @@ mpu.initialize_model_parallel(args.model_parallel_size)
 from robert_model import RobertaModel
 model = RobertaModel(args)
 
-from transformers import RobertaTokenizer, RobertaModel
+from transformers import RobertaTokenizer, RobertaForMaskedLM
 tokenizer = RobertaTokenizer.from_pretrained('/data/qingsong/pretrain/roberta-base')
-roberta = RobertaModel.from_pretrained('/data/qingsong/pretrain/roberta-base')
+roberta = RobertaForMaskedLM.from_pretrained('/data/qingsong/pretrain/roberta-base', output_hidden_states=True)
+lm_head = roberta.lm_head
+roberta = roberta.roberta
 
 def copy_layer_param(src, dst):
     """
@@ -47,7 +49,9 @@ def copy_layer_param(src, dst):
     src_dic = dict(src.named_parameters())
     dst_dic = dict(dst.named_parameters())
     for k in dst_dic:
+        assert dst_dic[k].data.shape == src_dic[k].data.shape
         dst_dic[k].data = src_dic[k].data
+        assert (dst_dic[k].data == src_dic[k].data).all()
 
 def copy_layer_norm(src, dst):
     src_ln = []
@@ -60,11 +64,17 @@ def copy_layer_norm(src, dst):
             dst_ln.append((k, v))
     assert len(src_ln) == len(dst_ln)
     for kvs, kvd in zip(src_ln, dst_ln):
+        assert kvd[1].data.shape == kvs[1].data.shape
         kvd[1].data = kvs[1].data
+        assert (kvd[1].data == kvs[1].data).all()
 
 def copy_transformer_layer_wo_ln(src, dst):
-    dst.attention.query_key_value.weight.data = torch.cat([src.attention.self.query.weight.data, src.attention.self.key.weight.data, src.attention.self.value.weight.data], 0)
-    dst.attention.query_key_value.bias.data = torch.cat([src.attention.self.query.bias.data, src.attention.self.key.bias.data, src.attention.self.value.bias.data], 0)
+    new_weight = torch.cat([src.attention.self.query.weight.data, src.attention.self.key.weight.data, src.attention.self.value.weight.data], 0)
+    assert dst.attention.query_key_value.weight.data.shape == new_weight.shape
+    dst.attention.query_key_value.weight.data = new_weight
+    new_bias = torch.cat([src.attention.self.query.bias.data, src.attention.self.key.bias.data, src.attention.self.value.bias.data], 0)
+    assert dst.attention.query_key_value.bias.data.shape == new_bias.shape
+    dst.attention.query_key_value.bias.data = new_bias
     copy_layer_param(src.attention.output.dense, dst.attention.dense)
     copy_layer_param(src.intermediate.dense, dst.mlp.dense_h_to_4h)
     copy_layer_param(src.output.dense, dst.mlp.dense_4h_to_h)
@@ -72,14 +82,30 @@ def copy_transformer_layer_wo_ln(src, dst):
 def transform_weight(hugging_model, swiss_model):
     copy_layer_param(hugging_model.embeddings.word_embeddings, swiss_model.transformer.word_embeddings)
     copy_layer_param(hugging_model.embeddings.position_embeddings, swiss_model.transformer.position_embeddings)
+    swiss_model.transformer.word_embeddings.weight[1] = 0.
+    swiss_model.transformer.position_embeddings.weight[1] = 0.
     copy_layer_norm(hugging_model, swiss_model)
     for src_l, dst_l in zip(hugging_model.encoder.layer, swiss_model.transformer.layers):
         copy_transformer_layer_wo_ln(src_l, dst_l)
+    copy_layer_param(lm_head.dense, model.mixins['roberta-final'].lm_head.dense)
+    copy_layer_param(lm_head.layer_norm, model.mixins['roberta-final'].lm_head.layer_norm)
+    copy_layer_param(lm_head.decoder, model.mixins['roberta-final'].lm_head.decoder)
+    
 
+from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
+
+roberta.eval()
+model.eval()
 with torch.no_grad():
     transform_weight(roberta, model)
-
-# TODO:
-# Some parameters such as pooler and lm_head are not copyed for now.
+    text = ["This is a piece of text.", "Another piece of text."]
+    encoded_input = tokenizer(text, return_tensors='pt', padding=True)
+    position_ids = create_position_ids_from_input_ids(encoded_input['input_ids'], roberta.embeddings.padding_idx, 0)
+    output = roberta(**encoded_input)
+    hugging_output = lm_head(output[0])
+    model.to('cuda:0')
+    swiss_output = model(input_ids=encoded_input['input_ids'].cuda(), position_ids=position_ids.cuda(), attention_mask=encoded_input['attention_mask'][:, None, None, :].cuda())[0].cpu()
+    print("max error:", (hugging_output - swiss_output).abs().max())
+    print("max relative error:", ((hugging_output - swiss_output).abs() / hugging_output.abs()).max())
 
 breakpoint()

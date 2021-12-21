@@ -1,9 +1,18 @@
-import copy
 import torch
+import torch.nn as nn
 from SwissArmyTransformer.mpu.transformer import BaseTransformer, SelfAttention, CrossAttention, MLP, LayerNorm
-from SwissArmyTransformer.mpu.utils import scaled_init_method, unscaled_init_method, gelu
-from SwissArmyTransformer.mpu.layers import VocabParallelEmbedding
-from SwissArmyTransformer.model.base_model import BaseModel
+from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel
+import math
+
+def roberta_gelu(x):
+    """
+    from https://github.com/huggingface/transformers/blob/master/src/transformers/activations.py#L27
+    Original Implementation of the GELU activation function in Google BERT repo when initially created. For
+    information: OpenAI GPT's GELU is slightly different (and gives slightly different results): 0.5 * x * (1 +
+    torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3)))) This is now written in C in nn.functional
+    Also see the Gaussian Error Linear Units paper: https://arxiv.org/abs/1606.08415
+    """
+    return x * 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
 
 class RobertaTransformerLayer(torch.nn.Module):
     def __init__(
@@ -23,7 +32,7 @@ class RobertaTransformerLayer(torch.nn.Module):
             layernorm=LayerNorm,
             is_decoder=False,
             use_bias=True,
-            activation_func=gelu,
+            activation_func=roberta_gelu,
             hooks={}
     ):
         super(RobertaTransformerLayer, self).__init__()
@@ -157,7 +166,7 @@ class RobertaTransformer(BaseTransformer):
                  parallel_output=True,
                  is_decoder=False,
                  use_bias=True,
-                 activation_func=gelu,
+                 activation_func=roberta_gelu,
                  layernorm=LayerNorm,
                  init_method=None,
                  hooks={}
@@ -187,31 +196,6 @@ class RobertaTransformer(BaseTransformer):
                  hooks=hooks
                  )
 
-        # recording parameters
-        self.is_decoder = is_decoder
-        self.parallel_output = parallel_output
-        self.checkpoint_activations = checkpoint_activations
-        self.checkpoint_num_layers = checkpoint_num_layers
-        self.max_sequence_length = max_sequence_length
-        self.hooks = copy.copy(hooks)  # hooks will be updated each forward
-
-        # create embedding parameters
-        self.embedding_dropout = torch.nn.Dropout(embedding_dropout_prob)
-
-        self.word_embeddings = VocabParallelEmbedding(
-            vocab_size, hidden_size, init_method=unscaled_init_method(0.02))
-
-        self.position_embeddings = torch.nn.Embedding(max_sequence_length, hidden_size)
-        torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)
-
-        # create all layers
-        if init_method is None:
-            self.output_layer_init_method = scaled_init_method(init_method_std, num_layers)
-            self.init_method = unscaled_init_method(init_method_std)
-        else:
-            self.output_layer_init_method = init_method
-            self.init_method = init_method
-
         def get_layer(layer_id):
             return RobertaTransformerLayer(
                 hidden_size,
@@ -236,14 +220,32 @@ class RobertaTransformer(BaseTransformer):
         self.layers = torch.nn.ModuleList(
             [get_layer(layer_id) for layer_id in range(num_layers)])
 
-        # Final layer norm before output.
-        self.final_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
+class roberta_lm_head(torch.nn.Module):
+    def __init__(self, vocab_size, hidden_size, layernorm_epsilon=1.0e-5):
+        super().__init__()
+        self.dense = nn.Linear(hidden_size, hidden_size)
+        self.layer_norm = LayerNorm(hidden_size, eps=layernorm_epsilon)
+        self.decoder = nn.Linear(hidden_size, vocab_size)
+    
+    def forward(self, x):
+        x = self.dense(x)
+        x = roberta_gelu(x)
+        x = self.layer_norm(x)
+        x = self.decoder(x)
+        return x
+
+class RobertaFinalMixin(BaseMixin):
+    def __init__(self, vocab_size, hidden_size):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.lm_head = roberta_lm_head(vocab_size, hidden_size)
+
+    def final_forward(self, logits, **kwargs):
+        return self.lm_head(logits)
 
 class RobertaModel(BaseModel):
     def __init__(self, args, transformer=None, **kwargs):
         super(RobertaModel, self).__init__(args, transformer=transformer, **kwargs)
-        self.mixins = torch.nn.ModuleDict()
-        self.collect_hooks_()
         if transformer is not None:
             self.transformer = transformer
         else:
@@ -265,3 +267,4 @@ class RobertaModel(BaseModel):
                 hooks=self.hooks,
                 **kwargs
             )
+        self.add_mixin("roberta-final", RobertaFinalMixin(args.vocab_size, args.hidden_size))
