@@ -1,3 +1,9 @@
+from transformers import RobertaTokenizer, RobertaForMaskedLM
+tokenizer = RobertaTokenizer.from_pretrained('/data/qingsong/pretrain/roberta-base')
+roberta = RobertaForMaskedLM.from_pretrained('/data/qingsong/pretrain/roberta-base', output_hidden_states=True)
+lm_head = roberta.lm_head
+roberta = roberta.roberta
+
 import argparse
 import os
 args = argparse.Namespace(
@@ -31,14 +37,8 @@ torch.distributed.init_process_group(
 import SwissArmyTransformer.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
-from robert_model import RobertaModel
+from roberta_model import RobertaModel
 model = RobertaModel(args)
-
-from transformers import RobertaTokenizer, RobertaForMaskedLM
-tokenizer = RobertaTokenizer.from_pretrained('/data/qingsong/pretrain/roberta-base')
-roberta = RobertaForMaskedLM.from_pretrained('/data/qingsong/pretrain/roberta-base', output_hidden_states=True)
-lm_head = roberta.lm_head
-roberta = roberta.roberta
 
 def copy_layer_param(src, dst):
     """
@@ -82,8 +82,8 @@ def copy_transformer_layer_wo_ln(src, dst):
 def transform_weight(hugging_model, swiss_model):
     copy_layer_param(hugging_model.embeddings.word_embeddings, swiss_model.transformer.word_embeddings)
     copy_layer_param(hugging_model.embeddings.position_embeddings, swiss_model.transformer.position_embeddings)
-    swiss_model.transformer.word_embeddings.padding_idx = roberta.embeddings.padding_idx
-    swiss_model.transformer.position_embeddings.padding_idx = roberta.embeddings.padding_idx
+    # swiss_model.transformer.word_embeddings.padding_idx = roberta.embeddings.padding_idx
+    # swiss_model.transformer.position_embeddings.padding_idx = roberta.embeddings.padding_idx
     copy_layer_norm(hugging_model, swiss_model)
     for src_l, dst_l in zip(hugging_model.encoder.layer, swiss_model.transformer.layers):
         copy_transformer_layer_wo_ln(src_l, dst_l)
@@ -101,11 +101,17 @@ with torch.no_grad():
     text = ["This is a piece of text.", "Another piece of text."]
     encoded_input = tokenizer(text, return_tensors='pt', padding=True)
     position_ids = create_position_ids_from_input_ids(encoded_input['input_ids'], roberta.embeddings.padding_idx, 0)
+    print(position_ids)
     output = roberta(**encoded_input)
     hugging_output = lm_head(output[0])
     model.to('cuda:0')
     swiss_output = model(input_ids=encoded_input['input_ids'].cuda(), position_ids=position_ids.cuda(), attention_mask=encoded_input['attention_mask'][:, None, None, :].cuda())[0].cpu()
-    print("max error:", (hugging_output - swiss_output).abs().max())
-    print("max relative error:", ((hugging_output - swiss_output).abs() / torch.max(swiss_output.abs(), hugging_output.abs())).max())
+    # Since we don't use padding_idx for Embedding layers, pad output is largely different between hugging and swiss.
+    # You will find it if you calculate error for hugging_output[1] and swiss_output[1].
+    # However, pad output is usually not used, it doesn't matter too much.
+    print("max error:", (hugging_output[0] - swiss_output[0]).abs().max())
+    print("max relative error:", ((hugging_output[0] - swiss_output[0]).abs() / torch.max(swiss_output[0].abs(), hugging_output[0].abs())).max())
+    # from SwissArmyTransformer.training.model_io import save_ds_checkpoint_no_optim
+    # save_ds_checkpoint_no_optim(model, "roberta-base.pt")
 
 breakpoint()
