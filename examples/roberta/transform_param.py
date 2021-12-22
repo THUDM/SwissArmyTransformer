@@ -1,11 +1,13 @@
+import os
+pretrain_path = '/data/qingsong/pretrain'
+
 from transformers import RobertaTokenizer, RobertaForMaskedLM
-tokenizer = RobertaTokenizer.from_pretrained('/data/qingsong/pretrain/roberta-base')
-roberta = RobertaForMaskedLM.from_pretrained('/data/qingsong/pretrain/roberta-base', output_hidden_states=True)
+tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-base'))
+roberta = RobertaForMaskedLM.from_pretrained(os.path.join(pretrain_path, 'roberta-base'), output_hidden_states=True)
 lm_head = roberta.lm_head
 roberta = roberta.roberta
 
 import argparse
-import os
 args = argparse.Namespace(
     num_layers=12,
     vocab_size=50265,
@@ -19,7 +21,6 @@ args = argparse.Namespace(
     checkpoint_activations=True,
     checkpoint_num_layers=1,
     sandwich_ln=False,
-    post_ln=True,
     model_parallel_size=1,
     world_size=1,
     rank=0
@@ -106,12 +107,8 @@ with torch.no_grad():
     hugging_output = lm_head(output[0])
     model.to('cuda:0')
     swiss_output = model(input_ids=encoded_input['input_ids'].cuda(), position_ids=position_ids.cuda(), attention_mask=encoded_input['attention_mask'][:, None, None, :].cuda())[0].cpu()
-    # Since we don't use padding_idx for Embedding layers, pad output is largely different between hugging and swiss.
-    # You will find it if you calculate error for hugging_output[1] and swiss_output[1].
-    # However, pad output is usually not used, it doesn't matter too much.
     print("max error:", (hugging_output[0] - swiss_output[0]).abs().max())
     print("max relative error:", ((hugging_output[0] - swiss_output[0]).abs() / torch.max(swiss_output[0].abs(), hugging_output[0].abs())).max())
-    # from SwissArmyTransformer.training.model_io import save_ds_checkpoint_no_optim
-    # save_ds_checkpoint_no_optim(model, "roberta-base.pt")
+    torch.save(model.state_dict(), os.path.join(pretrain_path, "roberta-base.pt"))
 
-breakpoint()
+# breakpoint()
