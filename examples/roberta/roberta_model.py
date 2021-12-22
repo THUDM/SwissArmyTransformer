@@ -57,3 +57,23 @@ class RobertaModel(BaseModel):
         output = layernorm_output + mlp_output
 
         return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
+
+class MLPHeadMixin(BaseMixin):
+    def __init__(self, hidden_size, *output_sizes, bias=True, activation_func=torch.nn.functional.relu, init_mean=0, init_std=0.005):
+        super().__init__()
+        self.activation_func = activation_func
+        last_size = hidden_size
+        self.layers = torch.nn.ModuleList()
+        for sz in output_sizes:
+            this_layer = torch.nn.Linear(last_size, sz, bias=bias)
+            last_size = sz
+            torch.nn.init.normal_(this_layer.weight, mean=init_mean, std=init_std)
+            self.layers.append(this_layer)
+
+    def final_forward(self, logits, **kw_args):
+        logits = logits[:,:1,:]
+        for i, layer in enumerate(self.layers):
+            if i > 0:
+                logits = self.activation_func(logits)
+            logits = layer(logits)
+        return logits
