@@ -1,7 +1,7 @@
 #! /bin/bash
 
 # Change for multinode config
-CHECKPOINT_PATH=/data/qingsong/swiss-roberta-base
+CHECKPOINT_PATH=/data/qingsong/pretrain
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=8
@@ -34,9 +34,10 @@ gpt_options=" \
        --lr-decay-style cosine \
        --warmup .02 \
        --checkpoint-activations \
+       --fp16 \
        --save-interval 6000 \
        --eval-interval 100 \
-       --save /root/checkpoints \
+       --save /data/qingsong/checkpoints \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8
