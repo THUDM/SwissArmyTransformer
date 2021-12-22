@@ -6,8 +6,8 @@ import numpy as np
 
 from SwissArmyTransformer import mpu, get_args
 from SwissArmyTransformer.training.deepspeed_training import training_main
-from roberta_model import RobertaModel, MLPHeadMixin
-from SwissArmyTransformer.model.mixins import PrefixTuningMixin
+from roberta_model import RobertaModel
+from SwissArmyTransformer.model.mixins import PrefixTuningMixin, MLPHeadMixin
 
 class ClassificationModel(RobertaModel):
     def __init__(self, args, transformer=None, parallel_output=True):
