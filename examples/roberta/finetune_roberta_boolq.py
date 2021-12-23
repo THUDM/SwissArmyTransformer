@@ -92,29 +92,10 @@ if __name__ == '__main__':
     py_parser.add_argument('--new_hyperparam', type=str, default=None)
     py_parser.add_argument('--sample_length', type=int, default=512-16)
     py_parser.add_argument('--prefix_len', type=int, default=16)
+    py_parser.add_argument('--old_checkpoint', action="store_true")
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
-    roberta_args = argparse.Namespace(
-        num_layers=12,
-        vocab_size=50265,
-        hidden_size=768,
-        num_attention_heads=12,
-        max_sequence_length=514,
-        hidden_dropout=0.1,
-        attention_dropout=0.1,
-        inner_hidden_size=None,
-        hidden_size_per_attention_head=None,
-        checkpoint_activations=True,
-        checkpoint_num_layers=1,
-        sandwich_ln=False,
-        old_checkpoint=False
-        )
-    args_dic = vars(args)
-    roberta_dic = vars(roberta_args)
-    for k in roberta_dic:
-        args_dic[k] = roberta_dic[k]
-    args = argparse.Namespace(**args_dic)
     # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
     # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
     training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function)

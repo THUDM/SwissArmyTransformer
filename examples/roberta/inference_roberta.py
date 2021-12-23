@@ -1,24 +1,15 @@
 import os
-pretrain_path = '/data/qingsong/pretrain'
-
 import argparse
-args = argparse.Namespace(
-    num_layers=12,
-    vocab_size=50265,
-    hidden_size=768,
-    num_attention_heads=12,
-    max_sequence_length=514,
-    hidden_dropout=0.1,
-    attention_dropout=0.1,
-    inner_hidden_size=None,
-    hidden_size_per_attention_head=None,
-    checkpoint_activations=True,
-    checkpoint_num_layers=1,
-    sandwich_ln=False,
-    model_parallel_size=1,
-    world_size=1,
-    rank=0
-    )
+from SwissArmyTransformer import get_args
+py_parser = argparse.ArgumentParser(add_help=False)
+py_parser.add_argument('--pretrain_path', type=str, default=None)
+py_parser.add_argument('--old_checkpoint', action="store_true")
+known, args_list = py_parser.parse_known_args()
+args = get_args(args_list)
+args = argparse.Namespace(**vars(args), **vars(known))
+pretrain_path = args.pretrain_path
+model_type = '-'.join(args.load.split('/')[-1].split('-')[1:])
+print(model_type)
 
 import os
 import torch
@@ -34,13 +25,14 @@ import SwissArmyTransformer.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
 from roberta_model import RobertaModel
+from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
 model = RobertaModel(args)
-model.load_state_dict(torch.load(os.path.join(pretrain_path, 'roberta-base.pt')))
+load_checkpoint(model, args)
 
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
 from transformers import RobertaTokenizer, RobertaForMaskedLM
-tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-base'))
-roberta = RobertaForMaskedLM.from_pretrained(os.path.join(pretrain_path, 'roberta-base'), output_hidden_states=True)
+tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, model_type))
+roberta = RobertaForMaskedLM.from_pretrained(os.path.join(pretrain_path, model_type), output_hidden_states=True)
 
 model.eval()
 with torch.no_grad():

@@ -1,8 +1,8 @@
-MODEL_TYPE="swiss-roberta-base"
-MODEL_ARGS="--num-layers 12 \
+MODEL_TYPE="swiss-roberta-large"
+MODEL_ARGS="--num-layers 24 \
             --vocab-size 50265 \
-            --hidden-size 768 \
-            --num-attention-heads 12 \
+            --hidden-size 1024 \
+            --num-attention-heads 16 \
             --max-sequence-length 514 \
             --hidden-dropout 0.1 \
             --attention-dropout 0.1 \
