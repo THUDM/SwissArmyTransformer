@@ -52,6 +52,8 @@ def add_model_config_args(parser):
                             'This is added for computational efficieny reasons.')
     group.add_argument('--sandwich-ln', action='store_true',
                        help='add sandwich ln in cogview.')
+    group.add_argument('--post-ln', action='store_true',
+                       help='use post layer (standard bert)')
     return parser
 
 

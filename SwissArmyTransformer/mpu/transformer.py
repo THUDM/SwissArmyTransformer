@@ -310,6 +310,7 @@ class BaseTransformerLayer(torch.nn.Module):
             hidden_size_per_attention_head=None,
             output_layer_init_method=None,
             sandwich_ln=True,
+            post_ln=False,
             layernorm=LayerNorm,
             is_decoder=False,
             use_bias=True,
@@ -343,7 +344,9 @@ class BaseTransformerLayer(torch.nn.Module):
 
         # Layernorm on the input data.
         self.post_attention_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
+        assert not (sandwich_ln and post_ln)
         self.sandwich_ln = sandwich_ln
+        self.post_ln = post_ln
         if sandwich_ln:
             self.third_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
             self.fourth_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
@@ -392,7 +395,10 @@ class BaseTransformerLayer(torch.nn.Module):
             attention_output = self.third_layernorm(attention_output)
 
         # Residual connection.
-        layernorm_input = hidden_states + attention_output
+        if self.post_ln:
+            layernorm_input = layernorm_output1 + attention_output
+        else:
+            layernorm_input = hidden_states + attention_output
         # Layer norm post the self attention.
         layernorm_output = self.post_attention_layernorm(layernorm_input)
 
@@ -415,7 +421,10 @@ class BaseTransformerLayer(torch.nn.Module):
             mlp_output = self.fourth_layernorm(mlp_output)
 
         # Second residual connection.
-        output = layernorm_input + mlp_output
+        if self.post_ln:
+            output = layernorm_output + mlp_output
+        else:
+            output = layernorm_input + mlp_output
 
         return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
 
@@ -437,6 +446,7 @@ class BaseTransformer(torch.nn.Module):
                  inner_hidden_size=None,
                  hidden_size_per_attention_head=None,
                  sandwich_ln=True,
+                 post_ln=False,
                  parallel_output=True,
                  is_decoder=False,
                  use_bias=True,
@@ -486,6 +496,7 @@ class BaseTransformer(torch.nn.Module):
                 output_layer_init_method=self.output_layer_init_method,
                 is_decoder=self.is_decoder,
                 sandwich_ln=sandwich_ln,
+                post_ln=post_ln,
                 layernorm=layernorm,
                 use_bias=use_bias,
                 activation_func=activation_func,

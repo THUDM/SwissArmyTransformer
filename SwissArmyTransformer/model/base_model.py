@@ -68,6 +68,7 @@ class BaseModel(torch.nn.Module):
                 checkpoint_activations=args.checkpoint_activations,
                 checkpoint_num_layers=args.checkpoint_num_layers,
                 sandwich_ln=args.sandwich_ln,
+                post_ln=args.post_ln,
                 hooks=self.hooks,
                 **kwargs
             )
