@@ -132,7 +132,7 @@ def add_training_args(parser):
     group.add_argument('--fp16', action='store_true',
                        help='Run model in fp16 mode')
     group.add_argument('--bf16', action='store_true',
-                       help='Run model in fp16 mode')
+                       help='Run model in bf16 mode')
     
     return parser
 
@@ -207,19 +207,6 @@ def add_data_args(parser):
                        help="""Size of block to reduce memory in dataset""")
 
     return parser
-
-def add_generation_api_args(parser):
-    """generation api arguments"""
-
-    group = parser.add_argument_group('api', 'api configurations')
-
-    group.add_argument('--img_folder_path', default='image/')
-    group.add_argument('--input_folder_path', default='input/')
-    group.add_argument('--input_rec_path', default='input/')
-    group.add_argument('--check_mode', default='code')
-    group.add_argument('--time_interval', default=10)
-
-    return parser
     
 def add_tokenization_args(parser):
     """sparse attention arguments."""
@@ -237,35 +224,6 @@ def add_tokenization_args(parser):
     return parser
 
 
-def add_glm_args(parser):
-    """Arguments for GLM"""
-    group = parser.add_argument_group('GLM', 'GLM Configurations')
-    group.add_argument('--block-lm', action='store_true', help="whether use the BlockLM pre-training")
-    group.add_argument('--masked-lm', action='store_true', help='whether to use the mlm objective')
-    group.add_argument('--bert-prob', type=float, default=0.5)
-    group.add_argument('--gpt-infill-prob', type=float, default=0.5)
-    group.add_argument('--gpt-min-ratio', type=float, default=0.5)
-    group.add_argument('--gap-sentence-prob', type=float, default=0.0)
-    group.add_argument('--gap-sentence-ratio', type=float, default=0.15)
-    group.add_argument('--avg-block-length', type=int, default=3)
-    group.add_argument('--short-seq-prob', type=float, default=0.0)
-    group.add_argument('--single-span-prob', type=float, default=0.0)
-    group.add_argument('--task-mask', action='store_true', help="Use different mask for generation and blank filling")
-    group.add_argument('--no-shuffle-block', action='store_true', help="not shuffle the blocks when filling the blank")
-    group.add_argument('--no-block-position', action='store_true',
-                       help='Use (rough) absolute positions instead of block positions')
-    group.add_argument('--sentinel-token', action='store_true',
-                       help="Use sentinel (mask) tokens to replace 2d position encoding")
-    group.add_argument('--block-mask-prob', type=float, default=0.0)
-    group.add_argument('--context-mask-ratio', type=float, default=0.0)
-    group.add_argument('--random-position', action='store_true',
-                       help="Use random start position to cover all the position embeddings")
-    group.add_argument('--cloze-eval', action='store_true', help='Evaluation dataset with cloze task')
-    group.add_argument('--old-checkpoint', action='store_true', help="Loading the checkpoint from old libraray")
-    return parser
-
-
-    
 def get_args(args_list=None):
     """Parse all the args."""
 
@@ -276,8 +234,6 @@ def get_args(args_list=None):
     parser = add_data_args(parser)
     parser = add_tokenization_args(parser)
     parser = add_text_generate_args(parser)
-    parser = add_generation_api_args(parser)
-    parser = add_glm_args(parser)
 
     # Include DeepSpeed configuration arguments
     parser = deepspeed.add_config_arguments(parser)

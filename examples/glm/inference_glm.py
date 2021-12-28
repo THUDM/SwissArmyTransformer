@@ -144,7 +144,7 @@ def main(args):
             prefix = raw_text.replace('/', '')[:20]
             full_path = timed_name(prefix, '.txt', args.output_path)
             print(txts[0]) # print the first.
-        with open(full_path, 'w') as fout:
+        with open(full_path, 'w', encoding='utf-8') as fout:
             for txt in txts:
                 fout.write(txt + '\n')
         os.chmod(full_path, stat.S_IRWXO + stat.S_IRWXG + stat.S_IRWXU)
@@ -156,6 +156,7 @@ def main(args):
 if __name__ == "__main__":
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--sampling-strategy', type=str, default='BaseStrategy', help='type name of sampling strategy')
+    GLMModel.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
