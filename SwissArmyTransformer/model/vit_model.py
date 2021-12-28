@@ -7,12 +7,11 @@ import argparse
 
 import torch
 
-from .base_model import BaseModel
-from .mixins import BaseMixin
-from .finetune import MLPHeadMixin
+from SwissArmyTransformer.model.base_model import BaseModel
+from SwissArmyTransformer.model.mixins import BaseMixin
 import torch.nn as nn
 
-
+gelu = nn.functional.gelu
 
 class ImagePatchEmbeddingMixin(BaseMixin):
     def __init__(self, in_channels, image_size, patch_size, hidden_size, flatten=True):
@@ -31,14 +30,14 @@ class ImagePatchEmbeddingMixin(BaseMixin):
         embeddings = self.proj(images)
         if self.flatten:
             embeddings = embeddings.flatten(2).transpose(1, 2)
-        word_embeddings = self.transformer.word_embeddings(input_ids)
+        word_embeddings = self.transformer.word_embeddings(input_ids[:,:1])
         embeddings = torch.cat([word_embeddings, embeddings], dim=1)
         return embeddings
 
 
-class VitModel(BaseModel):
-    def __init__(self, args, transformer=None, parallel_output=True):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output)
+class ViTModel(BaseModel):
+    def __init__(self, args, transformer=None, parallel_output=True, **kwargs):
+        super().__init__(args, transformer=transformer, parallel_output=parallel_output, activation_func=gelu, **kwargs)
         self.add_mixin("patch_embedding", ImagePatchEmbeddingMixin(args.in_channels, args.image_size, args.patch_size, args.hidden_size))
         self.classifier = nn.Linear(args.hidden_size, args.num_classes)
 
