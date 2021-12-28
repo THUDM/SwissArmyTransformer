@@ -1,7 +1,7 @@
 #! /bin/bash
 
 # Change for multinode config
-CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/vit
+CHECKPOINT_PATH=/data/qingsong/pretrain/
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=8
@@ -16,7 +16,7 @@ OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
-en_data="/dataset/fd5061f6/SwissArmyTransformerDatasets/"
+en_data="/data/qingsong/dataset"
 
 
 config_json="$script_dir/ds_config_ft.json"
@@ -34,17 +34,12 @@ gpt_options=" \
        --checkpoint-activations \
        --save-interval 6000 \
        --eval-interval 100 \
-       --save /root/checkpoints \
+       --save /data/qingsong/checkpoints \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8 \
-
-        --load ${CHECKPOINT_PATH}/glm-large-en-blank
+       --tokenizer-type Fake \
 "
-       # --load  /root/checkpoints/pretrain-bert-mid-std-fulltrain12-02-06-10
-       #  \       --sandwich-ln
-       # --split 949,50,1 \
-       # --load /root/checkpoints/pretrain-bert-mid11-28-15-38 \
 
 
 
@@ -54,7 +49,7 @@ gpt_options="${gpt_options}
 "
               
 
-run_cmd="${OPTIONS_NCCL} deepspeed --num_nodes ${NUM_WORKERS} --num_gpus ${NUM_GPUS_PER_WORKER} --hostfile ${HOST_FILE_PATH} finetune_vit_cifar10.py $@ ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --master_port 16666 --num_nodes ${NUM_WORKERS} --num_gpus ${NUM_GPUS_PER_WORKER} --hostfile ${HOST_FILE_PATH} finetune_vit_cifar10.py $@ ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

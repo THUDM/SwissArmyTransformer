@@ -1,4 +1,4 @@
-MODEL_TYPE="vit-Base-224-16-21k"
+MODEL_TYPE="vit-base-224-16-21k"
 MODEL_ARGS="
             --image-size 224 \
             --patch-size 16 \
@@ -13,4 +13,4 @@ MODEL_ARGS="
             --tokenizer-model-type roberta \
             --tokenizer-type glm_GPT2BPETokenizer \
             --new-sequence-length 197 \
-            --load ${CHECKPOINT_PATH}/vit-Base-224-16-21k.ckpt"
+            --load ${CHECKPOINT_PATH}/swiss-vit-base-patch16-224-in21k"
