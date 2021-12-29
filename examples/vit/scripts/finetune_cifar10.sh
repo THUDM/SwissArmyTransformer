@@ -16,7 +16,8 @@ OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
-en_data="/data/qingsong/dataset"
+en_data="/data/qingsong/dataset/train"
+eval_data="/data/qingsong/dataset/test"
 
 
 config_json="$script_dir/ds_config_ft.json"
@@ -28,6 +29,7 @@ gpt_options=" \
        --resume-dataloader \
        $MODEL_ARGS \
        --train-data ${en_data} \
+       --valid-data ${eval_data} \
        --distributed-backend nccl \
        --lr-decay-style cosine \
        --warmup .02 \
