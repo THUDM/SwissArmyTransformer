@@ -38,7 +38,6 @@ gpt_options=" \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8 \
-       --tokenizer-type Fake \
 "
 
 

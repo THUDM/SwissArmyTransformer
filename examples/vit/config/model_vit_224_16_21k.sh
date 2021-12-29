@@ -11,6 +11,7 @@ MODEL_ARGS="
             --num-finetune-classes 10 \
             --max-sequence-length 197 \
             --tokenizer-model-type roberta \
-            --tokenizer-type glm_GPT2BPETokenizer \
+            --tokenizer-type Fake \
             --new-sequence-length 197 \
+            --pre-interpolate \
             --load ${CHECKPOINT_PATH}/swiss-vit-base-patch16-224-in21k"
