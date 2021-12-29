@@ -9,15 +9,15 @@
 # here put the import lib
 import os
 import sys
-sys.path.append("../..")
 import math
 import random
+sys.path.append("../..")
 
 from SwissArmyTransformer.data_utils.datasets import TSVDataset
 import torch
 import argparse
 import numpy as np
-
+import logging
 from SwissArmyTransformer import mpu, get_args, get_tokenizer
 from SwissArmyTransformer.model.base_model import BaseModel, BaseMixin, non_conflict
 from SwissArmyTransformer.training.deepspeed_training import training_main
@@ -29,12 +29,14 @@ from SwissArmyTransformer.model.mixins import MLPHeadMixin, PrefixTuningMixin
 class ClassificationModel(GLMModel):
     def __init__(self, args, transformer=None, parallel_output=True):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)
-        self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
+        self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, args.num_categories))
         self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
+        self.tuning_mode = args.tuning_mode
     def disable_untrainable_params(self):
         self.transformer.word_embeddings.requires_grad_(False)
-        # for layer_id in range(len(self.transformer.layers)):
-        #     self.transformer.layers[layer_id].requires_grad_(False)
+        if self.tuning_mode == "ptuning":
+            for layer_id in range(len(self.transformer.layers)):
+                self.transformer.layers[layer_id].requires_grad_(False)
     
 def get_batch(data_iterator, args, timers):
     # Items and their type.
@@ -42,12 +44,18 @@ def get_batch(data_iterator, args, timers):
     datatype = torch.int64
 
     # Broadcast data.
-    timers('data loader').start()
+    try:
+        timers('data loader').start()
+    except AssertionError:
+        pass
     if data_iterator is not None:
         data = next(data_iterator)
     else:
         data = None
-    timers('data loader').stop()
+    try:
+        timers('data loader').stop()
+    except AssertionError:
+        pass
     data_b = mpu.broadcast_data(keys, data, datatype)
     # Unpack.
     tokens = data_b['sentence'].long()
@@ -71,18 +79,26 @@ def forward_step(data_iterator, model, args, timers):
     """Forward step."""
 
     # Get the batch.
-    timers('batch generator').start()
+    try:
+        timers('batch generator').start()
+    except AssertionError:
+        pass
     tokens, labels, attention_mask, position_ids, loss_mask = get_batch(
         data_iterator, args, timers)
-    timers('batch generator').stop()
+    try:
+        timers('batch generator').stop()
+    except AssertionError:
+        pass
 
     logits, *mems = model(tokens, position_ids, attention_mask)
-    pred = ((logits.contiguous().float().squeeze(-1)) * loss_mask).sum(dim=-1) / loss_mask.sum(dim=-1)
-    loss = torch.nn.functional.binary_cross_entropy_with_logits(
-        pred, 
-        labels.float()
-        )
-    acc = ((pred > 0.).long() == labels).sum() / labels.numel()
+    loss_mask = loss_mask.unsqueeze(-1).repeat(1, 1, args.num_categories)
+
+    pred = ((logits.contiguous().float()) * loss_mask).sum(dim=-2) / torch.sum(loss_mask)
+    m = torch.nn.LogSoftmax(dim=1)
+    #loss_fn = torch.nn.NLLLoss()
+    loss_fn = torch.nn.CrossEntropyLoss()
+    loss = loss_fn(m(pred), labels)
+    acc = torch.sum((pred.argmax(dim=-1).eq(labels)).float()) / labels.numel()
     return loss, {'acc': acc}
 
 def create_dataset_function(path, args):
@@ -97,7 +113,10 @@ def create_dataset_function(path, args):
         return {'sentence': np.array(sentence, dtype=np.int64), 'label': label}
     return TSVDataset(path, process_fn, with_heads=True)
 
-if __name__ == '__main__':    
+if __name__ == '__main__':
+    import logging
+    logging.getLogger('DeepSpeed').setLevel(logging.WARN)
+    os.environ['CUDA_VISIBLE_DEVICES'] = '7'
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--new_hyperparam', type=str, default=None)
     py_parser.add_argument('--sample_length', type=int, default=80)
