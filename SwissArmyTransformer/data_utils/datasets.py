@@ -68,7 +68,7 @@ class BinaryDataset(Dataset):
 class TSVDataset(Dataset):
     def __init__(self, path, process_fn, with_heads=True, **kwargs):
         self.process_fn = process_fn
-        with open(path, 'r') as fin:
+        with open(path, 'r', encoding="GBK") as fin:
             if with_heads:
                 self.heads = fin.readline().split('\t')
             else:
