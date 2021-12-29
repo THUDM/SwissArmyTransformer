@@ -54,6 +54,7 @@ class ViTModel(BaseModel):
         group.add_argument('--in-channels', type=int, default=3)
         group.add_argument('--num-classes', type=int, default=21843)
         group.add_argument('--patch-size', type=int, default=16)
+        group.add_argument('--pre-interpolate', action='store_true')
         return parser
 
 

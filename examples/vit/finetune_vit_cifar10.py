@@ -29,10 +29,13 @@ class NewClassHeadMixin(BaseMixin):
         super().__init__()
         self.classifier = torch.nn.Linear(args.hidden_size, args.num_finetune_classes)
 
-class ViTFinetuneModel(ViTModel):
-    def __init__(self, args, transformer=None, parallel_output=True):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output)
-        self.add_mixin('finetune_head', NewClassHeadMixin(args))
+class InterpolatedPositionEmbeddingMixin(BaseMixin):
+    def __init__(self, new_sequence_length, hidden_size, init_method_std=0.02):
+        super(InterpolatedPositionEmbeddingMixin, self).__init__()
+        self.pre_interpolate = args.pre_interpolate
+        if self.pre_interpolate:
+            self.position_embeddings = torch.nn.Embedding(new_sequence_length, hidden_size)
+            torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)
 
     def interpolate_pos_encoding(self, embeddings, height, width):
         """
@@ -64,13 +67,34 @@ class ViTFinetuneModel(ViTModel):
         return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1)
 
     def position_embedding_forward(self, position_ids, **kw_args):
-        ini_pos_embed = self.transformer.position_embeddings.weight
-        if position_ids.shape[-1] == ini_pos_embed.shape[-2]:
-            return ini_pos_embed.unsqueeze(0).expand((position_ids.shape[0], -1, -1))
+        if self.pre_interpolate:
+            return self.position_embeddings(position_ids)
         else:
-            new_height = int(math.sqrt(position_ids.shape[-1]-1))
-            new_width = int(math.sqrt(position_ids.shape[-1]-1))
+            ini_pos_embed = self.transformer.position_embeddings.weight
+            if position_ids.shape[-1] == ini_pos_embed.shape[-2]:
+                return ini_pos_embed.unsqueeze(0).expand((position_ids.shape[0], -1, -1))
+            else:
+                new_height = int(math.sqrt(position_ids.shape[-1]-1))
+                new_width = int(math.sqrt(position_ids.shape[-1]-1))
             return self.interpolate_pos_encoding(ini_pos_embed, new_height, new_width)
+
+    def reinit(self, *pre_mixins):
+        if self.pre_interpolate:
+            old_weight = self.transformer.position_embeddings.weight.data
+            old_len, hidden_size = old_weight.shape
+            image_len_old = int(math.sqrt(old_len))
+            image_len_new = int(math.sqrt(self.new_sequence_length-1))
+            cls_weight = old_weight[0].unsqueeze(0)
+            image_weight = old_weight[1:].reshape(1, image_len_old, image_len_old, hidden_size).permute(0, 3, 1, 2)
+            image_weight = F.interpolate(image_weight, size=image_len_new, mode='bicubic', align_corners=False).permute(0, 2, 3, 1).reshape(1, image_len_new * image_len_new, hidden_size)
+            new_weight = torch.cat([cls_weight, image_weight], dim=1)
+            self.position_embeddings.weight.data.copy_(new_weight)
+
+class ViTFinetuneModel(ViTModel):
+    def __init__(self, args, transformer=None, parallel_output=True):
+        super().__init__(args, transformer=transformer, parallel_output=parallel_output)
+        self.add_mixin('finetune_head', NewClassHeadMixin(args))
+        self.add_mixin('interpolated_pos', InterpolatedPositionEmbeddingMixin(args.new_sequence_length, args.hidden_size))
     
     def final_forward(self, logits, **kw_args):
         logits = self.mixins["finetune_head"].classifier(logits[:, 0])
