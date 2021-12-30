@@ -92,9 +92,10 @@ def get_checkpoint_iteration(args):
     # Read the tracker file and set the iteration.
     tracker_filename = get_checkpoint_tracker_filename(args.load, old_checkpoint=args.old_checkpoint)
     if not os.path.isfile(tracker_filename):
-        print_rank_0('WARNING: could not find the metadata file {} '.format(
+        print_rank_0('could not find the metadata file {} '.format(
             tracker_filename))
-        print_rank_0('    will not load any checkpoints and will start from random')
+        raise ValueError('could not find the metadata file {}, please check --load'.format(
+            tracker_filename))
         return 0, False, False
     iteration = 0
     release = False

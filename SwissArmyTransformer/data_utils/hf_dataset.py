@@ -20,7 +20,7 @@ def load_hf_dataset(path, process_fn, columns=None, cache_dir='~/.cache/huggingf
     dataset_name, sub_name, split = parse_huggingface_path(path)
     datasets.config.HF_DATASETS_OFFLINE = int(offline)
     dataset = load_dataset(dataset_name, sub_name, cache_dir=cache_dir, split=split, 
-        download_config=datasets.utils.DownloadConfig(max_retries=10)) # TODO
+        download_config=datasets.utils.DownloadConfig(max_retries=20)) # TODO
     dataset = dataset.map(process_fn, batched=False)
     dataset.set_format(type='torch', columns=columns)
     return dataset
