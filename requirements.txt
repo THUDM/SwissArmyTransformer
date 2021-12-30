@@ -1,4 +1,4 @@
-torch
+torch==1.10.1
 deepspeed
 lmdb
 sentencepiece
