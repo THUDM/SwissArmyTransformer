@@ -1,4 +1,4 @@
-MODEL_TYPE="swiss-roberta-base"
+MODEL_TYPE="roberta-base"
 MODEL_ARGS="--num-layers 12 \
             --vocab-size 50265 \
             --hidden-size 768 \

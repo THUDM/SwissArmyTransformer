@@ -67,7 +67,7 @@ def forward_step(data_iterator, model, args, timers):
 
 pretrain_path = '/data/qingsong/pretrain'
 from transformers import RobertaTokenizer
-tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-base'))
+tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
 
 def _encode(text, text_pair):
@@ -85,7 +85,7 @@ def create_dataset_function(path, args):
             'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
             'label': label
         }
-    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/data/qingsong/dataset', offline=False)
+    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True)
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)

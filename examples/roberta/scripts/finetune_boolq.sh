@@ -1,7 +1,7 @@
 #! /bin/bash
 
 # Change for multinode config
-CHECKPOINT_PATH=/data/qingsong/pretrain
+CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/roberta
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=8
@@ -18,8 +18,8 @@ HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
 en_data="hf://super_glue/boolq/train"
-eval_data="super_glue/boolq/validation"
-test_data="super_glue/boolq/test"
+eval_data="hf://super_glue/boolq/validation"
+test_data="hf://super_glue/boolq/test"
 
 config_json="$script_dir/ds_config_ft.json"
 gpt_options=" \
@@ -38,7 +38,7 @@ gpt_options=" \
        --fp16 \
        --save-interval 1000 \
        --eval-interval 100 \
-       --save /data/qingsong/checkpoints \
+       --save checkpoints/ \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8
