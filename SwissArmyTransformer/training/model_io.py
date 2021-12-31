@@ -30,10 +30,7 @@ def get_checkpoint_name(checkpoints_path, iteration, release=False, zero=False):
 
 
 def get_checkpoint_tracker_filename(checkpoints_path, old_checkpoint=False):
-    if old_checkpoint:
-        return os.path.join(checkpoints_path, 'latest_checkpointed_iteration.txt')
-    else:
-        return os.path.join(checkpoints_path, 'latest')
+    return os.path.join(checkpoints_path, 'latest')
 
 
 def save_checkpoint(iteration, model, optimizer,
@@ -90,7 +87,7 @@ def save_ds_checkpoint_no_optim(model, save_dir, tag=None, client_state={}, save
 
 def get_checkpoint_iteration(args):
     # Read the tracker file and set the iteration.
-    tracker_filename = get_checkpoint_tracker_filename(args.load, old_checkpoint=args.old_checkpoint)
+    tracker_filename = get_checkpoint_tracker_filename(args.load)
     if not os.path.isfile(tracker_filename):
         print_rank_0('could not find the metadata file {} '.format(
             tracker_filename))
