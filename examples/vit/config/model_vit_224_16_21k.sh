@@ -1,6 +1,6 @@
 MODEL_TYPE="vit-base-224-16-21k"
 MODEL_ARGS="
-            --image-size 224 \
+            --image-size 384 \
             --patch-size 16 \
             --vocab-size 1 \
             --num-layers 12 \
@@ -12,6 +12,6 @@ MODEL_ARGS="
             --max-sequence-length 197 \
             --tokenizer-model-type roberta \
             --tokenizer-type Fake \
-            --new-sequence-length 197 \
+            --new-sequence-length 577 \
             --pre-interpolate \
             --load ${CHECKPOINT_PATH}/swiss-vit-base-patch16-224-in21k"

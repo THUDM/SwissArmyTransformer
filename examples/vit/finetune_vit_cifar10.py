@@ -68,7 +68,7 @@ def forward_step(data_iterator, model, args, timers):
 def create_dataset_function(path, args):
     transform = transforms.Compose(
         [transforms.ToTensor(),
-         transforms.Resize(224),
+         transforms.Resize(384),
          transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     trainset = torchvision.datasets.CIFAR10(root='/'.join(path.split('/')[:-1]), train=(path.split('/')[-1]=='train'),
                                             download=True, transform=transform)

@@ -25,7 +25,7 @@ gpt_options=" \
        --experiment-name finetune-vit-cifar10 \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
-       --train-iters 6000 \
+       --train-iters 2000 \
        --resume-dataloader \
        $MODEL_ARGS \
        --train-data ${en_data} \
@@ -40,6 +40,7 @@ gpt_options=" \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8 \
+       --lr 0.01 \
 "
 
 
