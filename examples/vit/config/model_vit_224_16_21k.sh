@@ -14,4 +14,6 @@ MODEL_ARGS="
             --tokenizer-type Fake \
             --new-sequence-length 577 \
             --pre-interpolate \
+	    --attention-dropout 0. \
+	    --hidden-dropout 0. \
             --load ${CHECKPOINT_PATH}/swiss-vit-base-patch16-224-in21k"

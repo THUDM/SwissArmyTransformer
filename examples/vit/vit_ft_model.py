@@ -77,7 +77,7 @@ class ViTFinetuneModel(ViTModel):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon)
         self.add_mixin('finetune_head', NewClassHeadMixin(args))
         self.add_mixin('interpolated_pos', InterpolatedPositionEmbeddingMixin(args.new_sequence_length, args.hidden_size, args.pre_interpolate))
-        self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
+        # self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
     
     def final_forward(self, logits, **kw_args):
         logits = self.mixins["finetune_head"].classifier(logits[:, 0])
