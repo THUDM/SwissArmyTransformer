@@ -55,7 +55,8 @@ def make_data_loader(dataset, batch_size, args):
     return data_loader
 
 
-def make_dataset_full(path, split, args, create_dataset_function, random_mapping=True, **kwargs):
+def make_dataset_full(path, split, args, create_dataset_function, 
+        dataset_weights=None, random_mapping=True, is_train_data=False, **kwargs):
     """function to create datasets+tokenizers for common options"""
     print('make dataset ...', path)
     if split is None:
@@ -63,16 +64,45 @@ def make_dataset_full(path, split, args, create_dataset_function, random_mapping
 
     assert isinstance(path, list)
     
-    ds = []
-    for p in path:
-        d = create_dataset_function(p, args)
-        ds.append(d)
-    ds = ConcatDataset(ds)
-    if should_split(split):
-        ds = split_ds(ds, split, block_size=args.block_size)
-    elif random_mapping:
-        ds = RandomMappingDataset(ds)
-    return ds
+    if not should_split(split):
+        ds = []
+        for p in path:
+            d = create_dataset_function(p, args)
+            ds.append(d)
+        ds = ConcatDataset(ds, weights=dataset_weights)
+        if random_mapping:
+            if is_train_data:
+                # only train-dataset will set this to True, 
+                # so we enlarge it to make sure that the data is sufficient.
+                world_size = torch.distributed.get_world_size(
+                    group=mpu.get_data_parallel_group())
+                scale = max(200, 1 + (args.train_iters * args.batch_size * world_size) // len(ds))
+            else:
+                scale = 200
+            ds = RandomMappingDataset(ds, scale=scale)
+        return ds 
+    else:
+        # must first split datasets, then reweight/concat, finally random-mapping.
+        # this order avoids overlapping.
+        train_ds, valid_ds, test_ds = [], [], []
+        for p in path:
+            d = create_dataset_function(p, args)
+            if should_split(split):
+                dtrain, dvalid, dtest = split_ds(d, split, block_size=args.block_size)
+                train_ds.append(dtrain)
+                valid_ds.append(dvalid)
+                test_ds.append(dtest)
+        train_ds = ConcatDataset(train_ds, weights=dataset_weights)
+        valid_ds = ConcatDataset(valid_ds, weights=dataset_weights)
+        test_ds = ConcatDataset(test_ds, weights=dataset_weights)
+        if random_mapping:
+            world_size = torch.distributed.get_world_size(
+                group=mpu.get_data_parallel_group())
+            scale = max(200, 1 + (args.train_iters * args.batch_size * world_size) // len(train_ds))
+            train_ds = RandomMappingDataset(train_ds, scale=scale)
+            valid_ds = RandomMappingDataset(valid_ds)
+            test_ds = RandomMappingDataset(test_ds)
+        return train_ds, valid_ds, test_ds
 
 def make_loaders(args, create_dataset_function):
     """makes training/val/test
@@ -107,7 +137,7 @@ def make_loaders(args, create_dataset_function):
     test = None
 
     if args.train_data is not None:
-        train = make_dataset(**data_set_args, args=args)
+        train = make_dataset(**data_set_args, args=args, dataset_weights=args.train_data_weights, is_train_data=True)
         if should_split(split):
             train, valid, test = train
 
@@ -204,7 +234,6 @@ def split_ds(ds, split=[.8,.2,.0], block_size = 10000):
             residual_idx += proportion % 1
             split_ = int(int(proportion) + residual_idx)
             rtn_ds[i] = BlockedRandomSplitDataset(ds, indices[range(start_idx, start_idx+max(split_, 1))], block_size)
-            rtn_ds[i] = RandomMappingDataset(rtn_ds[i])
             start_idx += split_
             residual_idx %= 1
     return rtn_ds
@@ -215,24 +244,28 @@ class ConcatDataset(data.Dataset):
     Purpose: useful to assemble different existing datasets, possibly
     large-scale datasets as the concatenation operation is done in an
     on-the-fly manner.
-    Arguments:
+    Arguments:  
         datasets (sequence): List of datasets to be concatenated.
     """
 
     @staticmethod
-    def cumsum(sequence):
+    def cumsum(sequence, weights):
         r, s = [], 0
-        for e in sequence:
-            l = len(e)
+        for i, e in enumerate(sequence):
+            l = int(len(e) * weights[i])
             r.append(l + s)
             s += l
         return r
 
-    def __init__(self, datasets, **kwargs):
+    def __init__(self, datasets, weights=None, **kwargs):
         super(ConcatDataset, self).__init__()
         assert len(datasets) > 0, 'datasets should not be an empty iterable'
         self.datasets = list(datasets)
-        self.cumulative_sizes = self.cumsum(self.datasets)
+        if weights is None:
+            self.weights = [1] * len(self.datasets)
+        else:
+            self.weights = weights
+        self.cumulative_sizes = self.cumsum(self.datasets, self.weights)
 
     def __len__(self):
         return self.cumulative_sizes[-1]
@@ -243,45 +276,20 @@ class ConcatDataset(data.Dataset):
             sample_idx = idx
         else:
             sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
+        sample_idx = sample_idx % len(self.datasets[dataset_idx])
         return self.datasets[dataset_idx][sample_idx]
-
-
-class SplitDataset(data.Dataset):
-    """
-    Dataset wrapper to access a subset of another dataset.
-    Purpose: useful to index into existing datasets, possibly
-    large-scale datasets as the subindexing operation is done in an
-    on-the-fly manner.
-    Arguments:
-        ds (Dataset or array-like): List of datasets to be subindexed
-        split_range (Tuple): (Left, Right)
-    """
-    def __init__(self, ds, split_range, **kwargs):
-        self.split_range = split_range
-        self.wrapped_data = ds
-
-    def __len__(self):
-        return self.split_range[1] - self.split_range[0]
-
-    def __getitem__(self, index):
-        index += self.split_range[0]
-        assert index < self.split_range[1]
-        return self.wrapped_data[index]
-
-    def __iter__(self):
-        for idx in range(*self.split_range):
-            yield self.wrapped_data[idx]
 
 class RandomMappingDataset(data.Dataset):
     '''
     Dataset wrapper to randomly mapping indices to original order.
     Will also enlarge the length
     '''
-    def __init__(self, ds, **kwargs):
+    def __init__(self, ds, scale=200, **kwargs):
         self.wrapped_data = ds
+        self.scale = scale
 
     def __len__(self):
-        return len(self.wrapped_data) * 200
+        return len(self.wrapped_data) * self.scale
 
     def __getitem__(self, index):
         rng = random.Random(index)
@@ -292,7 +300,8 @@ class RandomMappingDataset(data.Dataset):
 class BlockedRandomSplitDataset(data.Dataset):
     '''
     Dataset wrapper to access a subset of another dataset.
-    Use block algorithm to reduce memory
+    Use block algorithm to reduce memory.
+    In each block, using the `indices` items.
     '''
     def __init__(self, ds, indices, block_size,**kwargs):
         if type(indices) is not np.ndarray:
@@ -309,21 +318,3 @@ class BlockedRandomSplitDataset(data.Dataset):
 
     def __getitem__(self, index):
         return self.wrapped_data[(index // len(self.indices)) * self.block_size + self.indices[index % len(self.indices)]]
-
-
-class EnlargedDataset(data.Dataset):
-    '''
-    Dataset wrapper to enlarge the dataset
-    '''
-    def __init__(self, ds, scale=200, **kwargs):
-        self.wrapped_data = ds
-        self.wrapped_data_len = len(ds)
-        self.scale = scale
-
-    def __len__(self):
-        return self.wrapped_data_len * self.scale
-
-    def __getitem__(self, index):
-        return self.wrapped_data[index%self.wrapped_data_len]
-
-
