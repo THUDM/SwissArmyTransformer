@@ -131,12 +131,6 @@ def load_checkpoint(model, args):
     else: # inference without deepspeed
         module = model
 
-    # sd['module']['transformer.word_embeddings.weight'] = sd['module']['word_embeddings.weight']
-    # del sd['module']['word_embeddings.weight']
-    # sd['module']['mixins.block_position_embedding.block_position_embeddings.weight'] = sd['module'][
-    #     'transformer.block_position_embeddings.weight']
-    # del sd['module']['transformer.block_position_embeddings.weight']
-
     # only load module, other hyperparameters are just for recording.
     missing_keys, unexpected_keys = module.load_state_dict(sd['module'], strict=False)
     if len(unexpected_keys) > 0:
@@ -149,7 +143,7 @@ def load_checkpoint(model, args):
             assert all(name.find('mixins')>=0 for name in missing_keys)
             assert args.mode == 'finetune'
             module.reinit() # initialize mixins
-    if args.mode != 'inference':
+    if args.mode != 'inference' and args.deepspeed and model.zero_optimization():
         model.optimizer.refresh_fp32_params() # restore fp32 weights from module
 
     # Iterations.

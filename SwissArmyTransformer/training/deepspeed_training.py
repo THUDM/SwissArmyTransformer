@@ -426,7 +426,7 @@ def evaluate(data_iterator, model, eval_iters, args, timers, verbose=False, hook
     with torch.no_grad():
         iteration = 0
         while iteration < eval_iters:
-            iteration += 1
+            iteration += 1 
             if verbose and iteration % args.log_interval == 0:
                 print_rank_0('Evaluating iter {}/{}'.format(iteration, eval_iters))
             # Forward evaluation.
@@ -471,7 +471,7 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
     log_string = ' iteration {:8d}/{:8d} |'.format(step, total_step)
     log_string += ' elapsed time per iteration (ms): {:.1f} |'.format(elapsed_time)
     log_string += ' learning rate {:.3E} |'.format(lr)
-    log_string += ' lm loss {:.6E} |'.format(loss)
+    log_string += ' total loss {:.6E} |'.format(loss)
     for key in avg_metrics:
         log_string += ' {} {:.6E} |'.format(key, avg_metrics[key])
     if args.fp16:
@@ -488,8 +488,8 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
 
 def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step, avg_metrics):
     string = ' validation loss at {} | '.format(prefix)
-    string += 'LM loss: {:.6E} | '.format(loss)
-    string += 'LM PPL: {:.6E}'.format(ppl)
+    string += 'loss: {:.6E} | '.format(loss)
+    string += 'PPL: {:.6E}'.format(ppl)
     for key in avg_metrics:
         string += ' {} {:.6E} |'.format(key, avg_metrics[key])
     length = len(string) + 1

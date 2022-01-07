@@ -191,6 +191,9 @@ def add_data_args(parser):
     group.add_argument('--train-data', nargs='+', default=None,
                        help='Whitespace separated filenames or corpora names '
                             'for training.')
+    group.add_argument('--train-data-weights', nargs='+', default=None, type=int,
+                        help='scaling factors for different train-data, must the same number of'
+                        '--train-data or None(==1).')
 
     group.add_argument('--valid-data', nargs='*', default=None,
                        help="""Filename for validation data.""")
@@ -257,6 +260,9 @@ def get_args(args_list=None):
     if args.rank == 0:
         print('using world size: {} and model-parallel size: {} '.format(
             args.world_size, args.model_parallel_size))
+    
+    if args.train_data_weights is not None:
+        assert len(args.train_data_weights) == len(args.train_data)
 
     if hasattr(args, "deepspeed") and args.deepspeed:
         if args.checkpoint_activations:
