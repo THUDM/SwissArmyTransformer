@@ -143,7 +143,7 @@ def load_checkpoint(model, args):
             assert all(name.find('mixins')>=0 for name in missing_keys)
             assert args.mode == 'finetune'
             module.reinit() # initialize mixins
-    if args.mode != 'inference' and args.deepspeed and model.zero_optimization():
+    if args.mode != 'inference' and args.deepspeed and args.fp16:
         model.optimizer.refresh_fp32_params() # restore fp32 weights from module
 
     # Iterations.
