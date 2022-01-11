@@ -35,11 +35,11 @@ def get_batch(data_iterator, args, timers):
     label_data = label_data['label'].long()
     image_data = image_data['image']
     batch_size = label_data.size()[0]
-    seq_length = args.new_sequence_length
+    seq_length = args.pre_len + (args.image_size[0]//args.patch_size)*(args.image_size[1]//args.patch_size) + args.post_len
     position_ids = torch.zeros(seq_length, device=image_data.device, dtype=torch.long)
     torch.arange(0, seq_length, out=position_ids[:seq_length])
     position_ids = position_ids.unsqueeze(0).expand([batch_size, -1])
-    attention_mask = torch.ones((batch_size, 1, seq_length, seq_length), device=image_data.device)
+    attention_mask = torch.ones((1, 1), device=image_data.device)
 
     tokens = torch.zeros((batch_size, 1), device=image_data.device, dtype=torch.long)
     # Convert
@@ -77,7 +77,7 @@ def create_dataset_function(path, args):
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--old_checkpoint', action="store_true")
-    py_parser.add_argument('--prefix_len', type=int, default=16)
+    # py_parser.add_argument('--prefix_len', type=int, default=16)
     py_parser = ViTFinetuneModel.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
