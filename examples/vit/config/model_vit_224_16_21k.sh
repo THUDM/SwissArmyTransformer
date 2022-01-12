@@ -8,7 +8,6 @@ MODEL_ARGS="--image-size 384 384 \
             --in-channels 3 \
             --num-classes 21843 \
             --num-finetune-classes 10 \
-            --max-sequence-length 197 \
             --tokenizer-model-type roberta \
             --tokenizer-type Fake \
             --attention-dropout 0. \

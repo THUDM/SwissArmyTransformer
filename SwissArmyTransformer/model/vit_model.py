@@ -85,13 +85,14 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
 
 class ViTModel(BaseModel):
     def __init__(self, args, transformer=None, parallel_output=True, **kwargs):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output, activation_func=gelu, **kwargs)
         self.property = ViTProperty(args.image_size, args.patch_size, args.pre_len, args.post_len)
         if args.load:
             assert args.old_image_size is not None and args.old_pre_len is not None and args.old_post_len is not None
             self.old_property = ViTProperty(args.old_image_size, args.patch_size, args.old_pre_len, args.old_post_len)
         else:
             self.old_property = self.property
+        args.max_sequence_length = self.old_property.pre_len + self.old_property.num_patches + self.old_property.post_len
+        super().__init__(args, transformer=transformer, parallel_output=parallel_output, activation_func=gelu, **kwargs)
         self.add_mixin("patch_embedding", ImagePatchEmbeddingMixin(args.in_channels, args.hidden_size, self.property))
         self.add_mixin("pos_embedding", InterpolatedPositionEmbeddingMixin(args.hidden_size, self.old_property, self.property))
         self.classifier = nn.Linear(args.hidden_size, args.num_classes)
