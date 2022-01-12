@@ -27,7 +27,8 @@ args = argparse.Namespace(
     model_parallel_size=1,
     world_size=1,
     rank=0,
-    num_classes=21843
+    num_classes=21843,
+    load=None
     )
 
 import torch

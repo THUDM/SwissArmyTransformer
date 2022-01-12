@@ -47,7 +47,7 @@ class ImagePatchEmbeddingMixin(BaseMixin):
         if self.flatten:
             embeddings = embeddings.flatten(2).transpose(1, 2)
         pre_word_embeddings = self.transformer.word_embeddings(input_ids[:,:self.property.pre_len])
-        post_word_embeddings = self.transformer.word_embeddings(input_ids[:,self.property.pre_len:self.property.pre_len+self.property.num_patches])
+        post_word_embeddings = self.transformer.word_embeddings(input_ids[:,self.property.pre_len:self.property.pre_len+self.property.post_len])
         embeddings = torch.cat([pre_word_embeddings, embeddings, post_word_embeddings], dim=1)
         return embeddings
 
