@@ -448,6 +448,9 @@ def evaluate(data_iterator, model, eval_iters, args, timers, verbose=False, hook
 
     total_lm_loss /= eval_iters
     metrics_avg = {key: value / eval_iters for key, value in metrics_total.items()}
+    for name in metrics_avg:
+        torch.distributed.all_reduce(metrics_avg[name].data)
+        metrics_avg[name].data /= args.world_size # model parallel will also reduce
     return total_lm_loss, metrics_avg
 
 def evaluate_and_print_results(prefix, data_iterator, model, eval_iters,
