@@ -59,7 +59,7 @@ def forward_step(data_iterator, model, args, timers):
 
     timers('batch generator').stop()
 
-    logits, *mems = model(tokens, position_ids, attention_mask, image=images)
+    logits, *mems = model(tokens, position_ids, attention_mask, image=images, offline=True) #, offline=False, height=384//16, width=384//16)
     loss = F.cross_entropy(logits, labels)
     acc = (torch.argmax(logits, dim=-1) == labels).sum() / labels.numel()
     return loss, {'acc': acc}

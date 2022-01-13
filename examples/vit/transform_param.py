@@ -91,7 +91,7 @@ def copy_transformer_layer_wo_ln(src, dst):
 
 def transform_weight(src_model, swiss_model):
     copy_from_param(src_model.cls_token.data[0], swiss_model.transformer.word_embeddings.weight)
-    copy_from_param(src_model.pos_embed.data[0], swiss_model.transformer.position_embeddings.weight)
+    copy_from_param(src_model.pos_embed.data[0], swiss_model.mixins.pos_embedding.position_embeddings['14x14_pre1_post0'].weight)
     copy_layer_norm(src_model, swiss_model)
     for src_l, dst_l in zip(src_model.blocks, swiss_model.transformer.layers):
         copy_transformer_layer_wo_ln(src_l, dst_l)
@@ -112,6 +112,6 @@ with torch.no_grad():
     dst_output = model(**encoded_input)[0].cpu()
     print("max error:", (src_output - dst_output).abs().max())
     print("max relative error:", ((src_output - dst_output).abs() / torch.max(src_output.abs(), dst_output.abs())).max())
-    torch.save(model.state_dict(), os.path.join(pretrain_path, "vit_base_patch16_224_in21k.pt"))
+    torch.save({'module':model.state_dict()}, os.path.join(pretrain_path, "vit_base_patch16_224_in21k.pt"))
 
 # breakpoint()
