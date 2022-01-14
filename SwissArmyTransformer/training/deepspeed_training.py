@@ -107,18 +107,23 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
 
     # training 
     iteration = 0
-    if args.train_iters > 0:
-        if args.do_train:
-            with ExitStack() as stack:
-                def save_on_exit(args_, model_, optimizer_, lr_scheduler_):
-                    save_checkpoint(args_.iteration, model_, optimizer_, lr_scheduler_, args_)
-                iteration, skipped = train(model, optimizer,
-                    lr_scheduler,
-                    train_data,
-                    val_data,
-                    timers, args, summary_writer=summary_writer,
-                    hooks=hooks
-                    )
+    epochs = 10
+    for i in range(epochs):
+        if args.train_iters > 0:
+            if args.do_train:
+                with ExitStack() as stack:
+                    def save_on_exit(args_, model_, optimizer_, lr_scheduler_):
+                        save_checkpoint(args_.iteration, model_, optimizer_, lr_scheduler_, args_)
+                    try:
+                        iteration, skipped, model = train(model, optimizer,
+                            lr_scheduler,
+                            train_data,
+                            val_data,
+                            timers, args, summary_writer=summary_writer,
+                            hooks=hooks
+                            )
+                    except StopIteration:
+                        continue
 
     # final save
     if args.save and iteration != 0:  # TODO save
@@ -128,6 +133,8 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     if args.do_test and test_data is not None:
         prefix = 'the end of training for test data'
         evaluate_and_print_results(prefix, iter(test_data),
+            model, len(test_data) if args.strict_eval else args.eval_iters, args, timers, True, hooks=hooks)
+        evaluate_and_print_final_results(prefix, iter(test_data),
             model, len(test_data) if args.strict_eval else args.eval_iters, args, timers, True, hooks=hooks)
 
 
@@ -270,8 +277,10 @@ def train(model, optimizer, lr_scheduler,
 
     # Iterations.
     skipped_iters = 0
-
-    timers('interval time').start()
+    try:
+        timers('interval time').start()
+    except AssertionError:
+        pass
     report_memory_flag = True
     while args.iteration < args.train_iters:
 
@@ -333,7 +342,7 @@ def train(model, optimizer, lr_scheduler,
                   format(rank, time_str, args.iteration), flush=True)
             exit()
 
-    return args.iteration, skipped_iters
+    return args.iteration, skipped_iters, model
 
 
 def train_step(data_iterator, model, optimizer, lr_scheduler,
@@ -346,9 +355,15 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
 
     while True:
         # Forward model for one step.
-        timers('forward').start()
+        try:
+            timers('forward time').start()
+        except AssertionError:
+            pass
         lm_loss, metrics = forward_step(data_iterator, model, args, timers, **kwargs)
-        timers('forward').stop()
+        try:
+            timers('forward time').stop()
+        except AssertionError:
+            pass
 
         # Check nan or inf in forward, preventing it from interfering loss scaler,
         # and all reduce metrics by the way
@@ -374,12 +389,21 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
             metrics_total[name] += metrics[name]
         count += 1
         # Calculate gradients, reduce across processes, and clip.
-        timers('backward').start()
+        try:
+            timers('backward').start()
+        except AssertionError:
+            pass
         backward_step(optimizer, model, lm_loss, args, timers)
-        timers('backward').stop()
+        try:
+            timers('backward').stop()
+        except AssertionError:
+            pass
         # Update parameters.
         skipped_iter, complete = 0, False
-        timers('optimizer').start()
+        try:
+            timers('optimizer').start()
+        except AssertionError:
+            pass
         if args.deepspeed:
             if model.is_gradient_accumulation_boundary():
                 model.step()
@@ -392,7 +416,10 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
                 model.step()
         else:
             raise ValueError('Currently, we only support training with deepspeed.')
-        timers('optimizer').stop()
+        try:
+            timers('optimizer').stop()
+        except AssertionError:
+            pass
         if complete or single_step:
             break
     lm_loss_total /= count
@@ -412,7 +439,10 @@ def backward_step(optimizer, model, loss, args, timers):
     if args.deepspeed:
         # DeepSpeed backward propagation already addressed all reduce communication.
         # Reset the timer to avoid breaking timer logs below.
-        timers('allreduce').reset()
+        try:
+            timers('allreduce').reset()
+        except AssertionError:
+            pass
 
     return
 
@@ -466,6 +496,26 @@ def evaluate_and_print_results(prefix, data_iterator, model, eval_iters,
 
     return lm_loss
 
+def evaluate_and_print_final_results(prefix, data_iterator, model, eval_iters,
+                            args, timers, verbose=False, step=None, summary_writer=None, hooks={}):
+    """Helper function to evaluate and dump results on screen."""
+    # import line_profiler
+    # profile = line_profiler.LineProfiler(model.module.module.transformer.layers[0].forward)
+    # profile.enable()
+    # torch.cuda.empty_cache()
+    lm_loss, metrics = evaluate(data_iterator, model, eval_iters, args, timers, verbose, hooks=hooks)
+    # profile.disable()
+    # import sys
+    # profile.print_stats(sys.stdout)
+    lm_ppl = math.exp(min(20, lm_loss))
+    # report_evaluate_metrics(summary_writer, prefix, lm_loss, lm_ppl, step, metrics)
+    with open("output.txt","a") as f:
+        for key in metrics:
+            line = str(key)+":"+str(metrics[key])+"\n"
+            f.write(line)
+        f.write("----------\n")
+
+    return lm_loss
 
 def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, step, total_step, args, avg_metrics):
     log_string = ' iteration {:8d}/{:8d} |'.format(step, total_step)

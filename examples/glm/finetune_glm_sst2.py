@@ -82,7 +82,7 @@ def forward_step(data_iterator, model, args, timers):
         labels.float()
         )
     acc = ((pred > 0.).long() == labels).sum() / labels.numel()
-    return loss, {'acc': acc}
+    return loss, {'acc': acc}, pred
 
 def create_dataset_function(path, args):
     tokenizer = get_tokenizer()

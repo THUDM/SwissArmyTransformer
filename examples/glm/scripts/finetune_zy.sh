@@ -3,6 +3,10 @@
 # Change for multinode config
 CHECKPOINT_PATH=/mapping-data/GLM
 
+en_data="/mapping-data/SAT/dataset/dev.tsv"
+eval_data="/mapping-data/SAT/dataset/train.tsv"
+test_data="/mapping-data/SAT/dataset/test.tsv"
+
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=1
 MP_SIZE=1
@@ -19,13 +23,16 @@ HOST_FILE_PATH="hostfile_single"
 
 #en_data="/mapping-data/SST2/dev.tsv"
 #eval_data="/mapping-data/SST2/train.tsv"
-en_data="/mapping-data/SAT/dataset/dev.tsv"
-eval_data="/mapping-data/SAT/dataset/train.tsv"
-test_data="/mapping-data/SAT/dataset/test.tsv"
+
+
+visible_devices="0"
+num_categories=3
+tuning_mode="ptuning"
+
 
 config_json="$script_dir/ds_config_ft.json"
 gpt_options=" \
-       --experiment-name finetune-glm-sst2 \
+       --experiment-name finetune-glm-zy \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
        --train-iters 6000 \
@@ -44,7 +51,10 @@ gpt_options=" \
        --save /mapping-data/SAT/model \
        --split 1 \
        --strict-eval \
-       --eval-batch-size 8 
+       --eval-batch-size 8
+       --visible_devices ${visible_devices}
+       --num_categories ${num_categories}
+       --tuning_mode ${tuning_mode}
 "
        # --load  /root/checkpoints/pretrain-bert-mid-std-fulltrain12-02-06-10
        #  \       --sandwich-ln

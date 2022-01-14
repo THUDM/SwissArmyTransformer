@@ -99,12 +99,12 @@ def forward_step(data_iterator, model, args, timers):
     loss_fn = torch.nn.CrossEntropyLoss()
     loss = loss_fn(m(pred), labels)
     acc = torch.sum((pred.argmax(dim=-1).eq(labels)).float()) / labels.numel()
-    return loss, {'acc': acc}
+    return loss, {'acc': acc}, pred
 
 def create_dataset_function(path, args):
     tokenizer = get_tokenizer()
     def process_fn(row):
-        sentence, label = tokenizer._encode(row[0]), int(row[1])
+        sentence, label = tokenizer._encode(row[0]), int(row[1].strip())
         sentence = [tokenizer.get_command('ENC').Id] + sentence + [tokenizer.get_command('eos').Id]
         if len(sentence) >= args.sample_length:
             sentence = sentence[:args.sample_length]
@@ -121,6 +121,9 @@ if __name__ == '__main__':
     py_parser.add_argument('--new_hyperparam', type=str, default=None)
     py_parser.add_argument('--sample_length', type=int, default=80)
     py_parser.add_argument('--prefix_len', type=int, default=16)
+    py_parser.add_argument('--num_categories', type=int, default=3)
+    py_parser.add_argument('--tuning_mode', type=str, default="ptuning")
+    py_parser.add_argument('--visible_devices', type=str, default="7")
     GLMModel.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)

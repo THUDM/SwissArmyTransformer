@@ -32,7 +32,7 @@ def add_model_config_args(parser):
     group.add_argument('--num-attention-heads', type=int, default=16,
                        help='num of transformer attention heads')
     group.add_argument('--hidden-size', type=int, default=1024,
-                       help='tansformer hidden size')
+                       help='transformer hidden size')
     group.add_argument('--inner-hidden-size', type=int, default=None)
     group.add_argument('--hidden-size-per-attention-head', type=int, default=None)
     group.add_argument('--num-layers', type=int, default=24,
@@ -52,6 +52,12 @@ def add_model_config_args(parser):
                             'This is added for computational efficieny reasons.')
     group.add_argument('--sandwich-ln', action='store_true',
                        help='add sandwich ln in cogview.')
+    group.add_argument('--visible_devices', type=str, default="0",
+                       help='visible gpus')
+    group.add_argument('--num_categories', type=int, default=3,
+                       help='number of categories for classification task')
+    group.add_argument('--tuning_mode', type=str, default="finetuning",
+                       help='select either finetuning or ptuning')
     return parser
 
 
