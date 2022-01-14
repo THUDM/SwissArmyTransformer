@@ -8,4 +8,6 @@ We transform pretrained ViT parameters from [timm](https://github.com/rwightman/
 bash scripts/finetune_cifar10.sh
 ```
 
-* vit-base-224-16-21k: iteration 2000 validation acc 0.9872
+* vit-base-224-16-21k: iteration 1000 validation acc
+    * online mode: 0.9880
+    * offline mode: 0.9904
