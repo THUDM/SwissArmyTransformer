@@ -69,14 +69,6 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     # Model, optimizer, and learning rate.
     model, optimizer = setup_model_and_optimizer(args, model_cls)
 
-    # Config model IO
-    if args.load is not None:
-        args.iteration = load_checkpoint(model, args)
-        # if we don't load optim_states, filelock is no more needed.
-        # with FileLock("/root/checkpoint_lock", timeout=-1):
-        #     args.iteration = load_checkpoint(model, optimizer, args)
-    else:
-        args.iteration = 0
     if args.save:
         args.save = os.path.join(args.save, args.experiment_name)
     torch.distributed.barrier()
@@ -156,6 +148,15 @@ def setup_model_and_optimizer(args, model_cls, config_params=None):
 
     model = get_model(args, model_cls)
 
+    # Config model IO
+    if args.load is not None:
+        args.iteration = load_checkpoint(model, args)
+        # if we don't load optim_states, filelock is no more needed.
+        # with FileLock("/root/checkpoint_lock", timeout=-1):
+        #     args.iteration = load_checkpoint(model, optimizer, args)
+    else:
+        args.iteration = 0
+
     model.disable_untrainable_params()  # mark trainable params
 
     param_groups = get_optimizer_param_groups(model)
@@ -175,6 +176,9 @@ def setup_model_and_optimizer(args, model_cls, config_params=None):
             raise ValueError('Currently, we only support training with deepspeed.')
     else:
         optimizer = None
+    
+    if args.mode != 'inference' and args.deepspeed and args.fp16:
+        model.optimizer.refresh_fp32_params() # restore fp32 weights from module
 
     return model, optimizer
 

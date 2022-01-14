@@ -60,12 +60,12 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
         super(InterpolatedPositionEmbeddingMixin, self).__init__()
         self.old_property = old_property
         self.property = property
-        self.position_embeddings = torch.nn.ModuleDict({
-            self.old_property.pos_name: torch.nn.Embedding(self.old_property.seq_len, hidden_size),
-            self.property.pos_name: torch.nn.Embedding(self.property.seq_len, hidden_size)
-        })
-        for v in self.position_embeddings.values():
-            torch.nn.init.normal_(v.weight, mean=0.0, std=init_method_std)
+        # self.position_embeddings = torch.nn.ModuleDict({
+        #     self.old_property.pos_name: torch.nn.Embedding(self.old_property.seq_len, hidden_size),
+        #     self.property.pos_name: torch.nn.Embedding(self.property.seq_len, hidden_size)
+        # })
+        # for v in self.position_embeddings.values():
+        #     torch.nn.init.normal_(v.weight, mean=0.0, std=init_method_std)
 
     def interpolate_pos_encoding(self, height, width):
         """
@@ -96,7 +96,7 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
     
     def position_embedding_forward(self, position_ids, **kwargs):
         if kwargs["offline"]:
-            return self.position_embeddings[self.property.pos_name](position_ids)
+            return self.transformer.position_embeddings(position_ids)
         else:
             new_height, new_width = kwargs['height'], kwargs['width']
             new_pos = self.interpolate_pos_encoding(new_height, new_width)
@@ -108,6 +108,16 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
         """
         if self.old_property.pos_name == self.property.pos_name:
             return
+        old_weight = self.transformer.position_embeddings.weight.data
+        pre_weight = old_weight[:self.old_property.pre_len]
+        post_weight = old_weight[self.old_property.pre_len+self.old_property.num_patches:]
+        image_weight = old_weight[self.old_property.pre_len:self.old_property.pre_len+self.old_property.num_patches].reshape(1, self.old_property.grid_size[0], self.old_property.grid_size[1], -1).permute(0, 3, 1, 2)
+        image_weight = F.interpolate(image_weight, size=self.property.grid_size, mode='bicubic', align_corners=False).permute(0, 2, 3, 1).reshape(self.property.num_patches, -1)
+        self.transformer.position_embeddings = torch.nn.Embedding(self.property.seq_len, old_weight.shape[1]).type(old_weight.dtype).to(old_weight.device)
+        self.transformer.position_embeddings.weight.data[:self.old_property.pre_len] = pre_weight
+        self.transformer.position_embeddings.weight.data[self.property.pre_len:self.property.pre_len+self.property.num_patches] = image_weight
+        self.transformer.position_embeddings.weight.data[self.property.pre_len+self.property.num_patches:self.property.pre_len+self.property.num_patches+self.old_property.post_len] = post_weight
+        return
         old_weight = self.position_embeddings[self.old_property.pos_name].weight.data
         pre_weight = old_weight[:self.old_property.pre_len]
         post_weight = old_weight[self.old_property.pre_len+self.old_property.num_patches:]
