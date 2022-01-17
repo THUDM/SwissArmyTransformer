@@ -4,6 +4,7 @@
 # @Author  :   Zhuoyi Yang
 # @Contact :   yangzhuo18@mails.tsinghua.edu.cn
 
+import os
 import datasets
 from datasets import load_dataset
 
@@ -16,11 +17,22 @@ def parse_huggingface_path(path):
     split = names[2] if len(names) >= 3 else 'train'
     return first_name, second_name, split
 
-def load_hf_dataset(path, process_fn, columns=None, cache_dir='~/.cache/huggingface/datasets', offline=False):
+def load_hf_dataset(path, process_fn, columns=None, cache_dir='~/.cache/huggingface/datasets', offline=False, transformer_name = None):
     dataset_name, sub_name, split = parse_huggingface_path(path)
     datasets.config.HF_DATASETS_OFFLINE = int(offline)
-    dataset = load_dataset(dataset_name, sub_name, cache_dir=cache_dir, split=split, 
+    if transformer_name:
+        dataset_path = cache_dir + '/' + dataset_name + "_" + sub_name + "_" + split + "_" + transformer_name + ".data"
+    else:
+        dataset_path = None
+
+    if dataset_path and os.path.exists(dataset_path):
+        dataset = datasets.load_from_disk(dataset_path)
+    else:
+        dataset = load_dataset(dataset_name, sub_name, cache_dir=cache_dir, split=split,
         download_config=datasets.utils.DownloadConfig(max_retries=20)) # TODO
-    dataset = dataset.map(process_fn, batched=False)
+        # dataset = dataset.filter(lambda example, indice: indice % 100 == 0, with_indices=True)
+        dataset = dataset.map(process_fn, batched=False, load_from_cache_file=True)
+        if dataset_path:
+            dataset.save_to_disk(dataset_path)
     dataset.set_format(type='torch', columns=columns)
     return dataset

@@ -16,7 +16,7 @@ def _requirements():
 
 setup(
     name="SwissArmyTransformer",
-    version='0.1.8',
+    version='0.1.9',
     description="A transformer-based framework with finetuning as the first class citizen.",
     long_description=Path("README.md").read_text(),
     long_description_content_type="text/markdown",

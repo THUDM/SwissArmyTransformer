@@ -1,3 +1,8 @@
+# -*- encoding: utf-8 -*-
+# @File    :   finetune_roberta_wic.py
+# @Time    :   2022/1/10
+# @Author  :   Zhuoyi Yang
+# @Contact :   yangzhuo18@mails.tsinghua.edu.cn
 import os
 
 import torch
@@ -7,13 +12,37 @@ import numpy as np
 from SwissArmyTransformer import mpu, get_args
 from SwissArmyTransformer.training.deepspeed_training import training_main
 from roberta_model import RobertaModel
-from SwissArmyTransformer.model.mixins import PrefixTuningMixin, MLPHeadMixin
+from SwissArmyTransformer.model.mixins import PrefixTuningMixin, MLPHeadMixin, BaseMixin
+
+class WIC_MLPHeadMixin(BaseMixin):
+    def __init__(self, hidden_size, *output_sizes, bias=True, activation_func=torch.nn.functional.relu, init_mean=0, init_std=0.005):
+        super().__init__()
+        self.activation_func = activation_func
+        last_size = hidden_size
+        self.layers = torch.nn.ModuleList()
+        for sz in output_sizes:
+            this_layer = torch.nn.Linear(last_size, sz, bias=bias)
+            last_size = sz
+            torch.nn.init.normal_(this_layer.weight, mean=init_mean, std=init_std)
+            self.layers.append(this_layer)
+
+    def final_forward(self, logits, **kw_args):
+        cls_embedding = logits[:,0] #32 * hidden
+        logits = logits.reshape([-1, logits.shape[-1]])
+        pos1_embedding = logits[kw_args['pos1']] #32 * hidden
+        pos2_embedding = logits[kw_args['pos2']]
+        logits = torch.cat([cls_embedding, pos1_embedding, pos2_embedding], dim=-1)
+        for i, layer in enumerate(self.layers):
+            if i > 0:
+                logits = self.activation_func(logits)
+            logits = layer(logits)
+        return logits
 
 class ClassificationModel(RobertaModel):
     def __init__(self, args, transformer=None, parallel_output=True):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)
         self.del_mixin('roberta-final')
-        self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
+        self.add_mixin('classification_head', WIC_MLPHeadMixin(args.hidden_size * 3, 2048, 1))
         self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
     def disable_untrainable_params(self):
         self.transformer.word_embeddings.requires_grad_(False)
@@ -22,7 +51,7 @@ class ClassificationModel(RobertaModel):
 
 def get_batch(data_iterator, args, timers):
     # Items and their type.
-    keys = ['input_ids', 'position_ids', 'attention_mask', 'label']
+    keys = ['input_ids', 'position_ids', 'attention_mask', 'label', 'pos1', 'pos2']
     datatype = torch.int64
 
     # Broadcast data.
@@ -38,12 +67,18 @@ def get_batch(data_iterator, args, timers):
     labels = data_b['label'].long()
     position_ids = data_b['position_ids'].long()
     attention_mask = data_b['attention_mask'][:, None, None, :].float()
+    pos1 = data_b['pos1'].long()
+    pos2 = data_b['pos2'].long()
+    bz = tokens.shape[0]
+    for i in range(bz):
+        pos1[i] += i * tokens.shape[1]
+        pos2[i] += i * tokens.shape[1]
 
     # Convert
     if args.fp16:
         attention_mask = attention_mask.half()
-    
-    return tokens, labels, attention_mask, position_ids, (tokens!=1)
+
+    return tokens, labels, attention_mask, position_ids, (tokens!=1), pos1, pos2
 
 
 def forward_step(data_iterator, model, args, timers):
@@ -51,13 +86,13 @@ def forward_step(data_iterator, model, args, timers):
 
     # Get the batch.
     timers('batch generator').start()
-    tokens, labels, attention_mask, position_ids, loss_mask = get_batch(
+    tokens, labels, attention_mask, position_ids, loss_mask, pos1, pos2 = get_batch(
         data_iterator, args, timers)
     timers('batch generator').stop()
 
-    logits, *mems = model(tokens, position_ids, attention_mask)
+    logits, *mems = model(tokens, position_ids, attention_mask, pos1=pos1, pos2=pos2)
     # pred = ((logits.contiguous().float().squeeze(-1)) * loss_mask).sum(dim=-1) / loss_mask.sum(dim=-1)
-    pred = logits.contiguous().float().squeeze(-1)[..., 0]
+    pred = logits.contiguous().float().squeeze(-1)
     loss = torch.nn.functional.binary_cross_entropy_with_logits(
         pred,
         labels.float()
@@ -78,14 +113,21 @@ def _encode(text, text_pair):
 from SwissArmyTransformer.data_utils import load_hf_dataset
 def create_dataset_function(path, args):
     def process_fn(row):
-        pack, label = _encode(row['passage'], row['question']), int(row['label'])
+        pack = _encode(row['sentence1'], row['sentence2'])
+        label = int(row['label'])
+        start1, end1 = int(row['start1']), int(row['end1'])
+        start2, end2 = int(row['start2']), int(row['end2'])
+        pos1 = tokenizer(row['sentence1'][:start1])['input_ids'].__len__() - 2
+        pos2 = tokenizer(row['sentence2'][:start2])['input_ids'].__len__() - 2 + tokenizer(row['sentence1'])['input_ids'].__len__()
         return {
             'input_ids': np.array(pack['input_ids'], dtype=np.int64),
             'position_ids': np.array(pack['position_ids'], dtype=np.int64),
             'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
-            'label': label
+            'label': label,
+            'pos1': pos1,
+            'pos2': pos2
         }
-    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="boolq_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label", "pos1", "pos2"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=False, transformer_name="wic_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)

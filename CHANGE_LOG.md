@@ -59,3 +59,6 @@ This will let the key `'last_attention_map'` appear in the next layer's `kw_args
 2. You can use `kw_args['cross_layer_output']['new_key']=xxx` to pass other results to each layer in `position/word_embedding_forward`.
 3. Add `--train-data-weights`.
 
+# 2022.1.13 v0.1.9
+1. Add Vit
+2. Fix evaluation all_reduce bug
