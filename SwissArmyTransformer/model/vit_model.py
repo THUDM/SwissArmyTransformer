@@ -102,7 +102,7 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
             new_pos = self.interpolate_pos_encoding(new_height, new_width)
             return new_pos[position_ids]
 
-    def reinit(self, *pre_mixins):
+    def reinit(self, parent_model=None):
         """
         new pre_len, new num_patches and new post_len should all be larger or equal than the old ones.
         """

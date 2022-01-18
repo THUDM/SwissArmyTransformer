@@ -66,8 +66,8 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     # Data stuff.
     train_data, val_data, test_data = make_loaders(args, hooks['create_dataset_function'])
 
-    # Model, optimizer, and learning rate.
-    model, optimizer = setup_model_and_optimizer(args, model_cls)
+    # Build model
+    model = get_model(args, model_cls)
 
     # Config model IO
     if args.load is not None:
@@ -80,6 +80,9 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     if args.save:
         args.save = os.path.join(args.save, args.experiment_name)
     torch.distributed.barrier()
+
+    # Optimization related things
+    model, optimizer = setup_model_untrainable_params_and_optimizer(args, model)
 
     # initialize lr scheduler
     lr_scheduler = get_learning_rate_scheduler(optimizer, args.iteration, args)
@@ -151,12 +154,10 @@ def get_model(args, model_cls):
     return model
 
 
-def setup_model_and_optimizer(args, model_cls, config_params=None):
+def setup_model_untrainable_params_and_optimizer(args, model, config_params=None):
     """Setup model and optimizer."""
 
-    model = get_model(args, model_cls)
-
-    model.disable_untrainable_params()  # mark trainable params
+    model.disable_untrainable_params() # mark trainable params
 
     param_groups = get_optimizer_param_groups(model)
 
@@ -263,7 +264,6 @@ def train(model, optimizer, lr_scheduler,
     # Turn on training mode which enables dropout.
     model.train()
     
-
     # Tracking loss.
     total_lm_loss = 0.0
     total_metrics = defaultdict(float)
@@ -456,14 +456,7 @@ def evaluate(data_iterator, model, eval_iters, args, timers, verbose=False, hook
 def evaluate_and_print_results(prefix, data_iterator, model, eval_iters,
                             args, timers, verbose=False, step=None, summary_writer=None, hooks={}):
     """Helper function to evaluate and dump results on screen."""
-    # import line_profiler
-    # profile = line_profiler.LineProfiler(model.module.module.transformer.layers[0].forward)
-    # profile.enable()
-    # torch.cuda.empty_cache()
     lm_loss, metrics = evaluate(data_iterator, model, eval_iters, args, timers, verbose, hooks=hooks)
-    # profile.disable()
-    # import sys
-    # profile.print_stats(sys.stdout)
     lm_ppl = math.exp(min(20, lm_loss))
     report_evaluate_metrics(summary_writer, prefix, lm_loss, lm_ppl, step, metrics)
 
@@ -551,8 +544,6 @@ def initialize_distributed(args):
     # Optional DeepSpeed Activation Checkpointing Features
     if hasattr(args, "deepspeed") and args.deepspeed and args.deepspeed_activation_checkpointing:
         set_deepspeed_activation_checkpointing(args)  # TODO manual model-parallel seed
-    else:
-        mpu.get_cuda_rng_tracker = None
 
 def set_random_seed(seed):
     """Set random seed for reproducability."""

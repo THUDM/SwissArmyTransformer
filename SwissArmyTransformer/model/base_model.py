@@ -26,8 +26,9 @@ class BaseMixin(torch.nn.Module):
         super(BaseMixin, self).__init__()
         # define new params
 
-    def reinit(self, *pre_mixins):
+    def reinit(self, parent_model=None):
         # reload the initial params from previous trained modules
+        # you can also get access to other mixins through parent_model.get_mixin().
         pass
 
     # can define hook-functions here
@@ -72,10 +73,11 @@ class BaseModel(torch.nn.Module):
                 **kwargs
             )
 
-    def reinit(self):  # will be called when loading model
+    def reinit(self, mixin_names=None):  # will be called when loading model, None means all
         # if some mixins are loaded, overrides this function
-        for m in self.mixins.values():
-            m.reinit(self.transformer)
+        for k, m in self.mixins.items():
+            if k in mixin_names or mixin_names is None:
+                m.reinit(self)
 
     def add_mixin(self, name, new_mixin, reinit=False):
         assert name not in self.mixins
@@ -84,9 +86,9 @@ class BaseModel(torch.nn.Module):
         self.mixins[name] = new_mixin  # will auto-register parameters
         object.__setattr__(new_mixin, 'transformer', self.transformer)  # cannot use pytorch set_attr
 
-        if reinit:
-            new_mixin.reinit(self.transformer, **self.mixins)  # also pass current mixins
         self.collect_hooks_()
+        if reinit:
+            new_mixin.reinit(self)  # also pass current mixins
 
     def del_mixin(self, name):
         assert name in self.mixins
