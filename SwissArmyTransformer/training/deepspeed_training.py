@@ -81,6 +81,10 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         args.save = os.path.join(args.save, args.experiment_name)
     torch.distributed.barrier()
 
+    # init hook before building deepspeed model and optimizer
+    if hooks['init_function'] is not None:
+        hooks['init_function'](args, model)
+
     # Optimization related things
     model, optimizer = setup_model_untrainable_params_and_optimizer(args, model)
 
@@ -103,10 +107,6 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         if val_data is not None:
             start_iter_val = (args.train_iters // args.save_interval) * args.eval_interval
             val_data.batch_sampler.start_iter = start_iter_val % len(val_data)
-
-    # init hook before training
-    if hooks['init_function'] is not None:
-        hooks['init_function'](args, model, optimizer)
 
     # training 
     iteration = 0

@@ -21,7 +21,6 @@ gelu = nn.functional.gelu
 class ViTProperty:
     """
     Store some hyper-parameters such as image size and patch size.
-    We only support static image size for now.
     seq_len = pre_len + image_len + post_len
     """
     def __init__(self, image_size, patch_size, pre_len, post_len, **kwargs):
@@ -33,7 +32,6 @@ class ViTProperty:
         self.pre_len = pre_len
         self.post_len = post_len
         self.seq_len = self.pre_len + self.num_patches + self.post_len
-        self.pos_name = "{}x{}_pre{}_post{}".format(self.grid_size[0], self.grid_size[1], pre_len, post_len)
 
 
 class ImagePatchEmbeddingMixin(BaseMixin):
@@ -60,12 +58,7 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
         super(InterpolatedPositionEmbeddingMixin, self).__init__()
         self.old_property = old_property
         self.property = property
-        self.position_embeddings = torch.nn.ModuleDict({
-            self.old_property.pos_name: torch.nn.Embedding(self.old_property.seq_len, hidden_size),
-            self.property.pos_name: torch.nn.Embedding(self.property.seq_len, hidden_size)
-        })
-        for v in self.position_embeddings.values():
-            torch.nn.init.normal_(v.weight, mean=0.0, std=init_method_std)
+        self.init_method_std = init_method_std
 
     def interpolate_pos_encoding(self, height, width):
         """
@@ -75,10 +68,10 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
         Source:
         https://github.com/facebookresearch/dino/blob/de9ee3df6cf39fac952ab558447af1fa1365362a/vision_transformer.py#L174
         """
-        pre_pos_embed = self.position_embeddings[self.property.pos_name].weight[:self.property.pre_len]
-        patch_pos_embed = self.position_embeddings[self.property.pos_name].weight[self.property.pre_len:self.property.pre_len+self.property.num_patches]
-        post_pos_embed = self.position_embeddings[self.property.pos_name].weight[self.property.pre_len+self.property.num_patches:]
-        dim = self.position_embeddings[self.property.pos_name].weight.shape[-1]
+        pre_pos_embed = self.transformer.position_embeddings.weight[:self.property.pre_len]
+        patch_pos_embed = self.transformer.position_embeddings.weight[self.property.pre_len:self.property.pre_len+self.property.num_patches]
+        post_pos_embed = self.transformer.position_embeddings.weight[self.property.pre_len+self.property.num_patches:]
+        dim = self.transformer.position_embeddings.weight.shape[-1]
         h0 = height
         w0 = width
         # we add a small number to avoid floating point error in the interpolation
@@ -96,26 +89,26 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
     
     def position_embedding_forward(self, position_ids, **kwargs):
         if kwargs["offline"]:
-            return self.position_embeddings[self.property.pos_name](position_ids)
+            return self.transformer.position_embeddings(position_ids)
         else:
             new_height, new_width = kwargs['height'], kwargs['width']
             new_pos = self.interpolate_pos_encoding(new_height, new_width)
             return new_pos[position_ids]
 
-    def reinit(self, parent_model=None):
+    def reinit(self, *pre_mixins):
         """
         new pre_len, new num_patches and new post_len should all be larger or equal than the old ones.
         """
-        if self.old_property.pos_name == self.property.pos_name:
-            return
-        old_weight = self.position_embeddings[self.old_property.pos_name].weight.data
+        old_weight = self.transformer.position_embeddings.weight.data
         pre_weight = old_weight[:self.old_property.pre_len]
         post_weight = old_weight[self.old_property.pre_len+self.old_property.num_patches:]
         image_weight = old_weight[self.old_property.pre_len:self.old_property.pre_len+self.old_property.num_patches].reshape(1, self.old_property.grid_size[0], self.old_property.grid_size[1], -1).permute(0, 3, 1, 2)
         image_weight = F.interpolate(image_weight, size=self.property.grid_size, mode='bicubic', align_corners=False).permute(0, 2, 3, 1).reshape(self.property.num_patches, -1)
-        self.position_embeddings[self.property.pos_name].weight.data[:self.old_property.pre_len] = pre_weight
-        self.position_embeddings[self.property.pos_name].weight.data[self.property.pre_len:self.property.pre_len+self.property.num_patches] = image_weight
-        self.position_embeddings[self.property.pos_name].weight.data[self.property.pre_len+self.property.num_patches:self.property.pre_len+self.property.num_patches+self.old_property.post_len] = post_weight
+        self.transformer.position_embeddings = torch.nn.Embedding(self.property.seq_len, old_weight.shape[1]).type(old_weight.dtype).to(old_weight.device)
+        torch.nn.init.normal_(self.transformer.position_embeddings.weight, mean=0.0, std=self.init_method_std)
+        self.transformer.position_embeddings.weight.data[:self.old_property.pre_len] = pre_weight
+        self.transformer.position_embeddings.weight.data[self.property.pre_len:self.property.pre_len+self.property.num_patches] = image_weight
+        self.transformer.position_embeddings.weight.data[self.property.pre_len+self.property.num_patches:self.property.pre_len+self.property.num_patches+self.old_property.post_len] = post_weight
 
 
 class ViTModel(BaseModel):
@@ -139,8 +132,6 @@ class ViTModel(BaseModel):
     @classmethod
     def add_model_specific_args(cls, parser):
         group = parser.add_argument_group('ViT', 'ViT Configurations')
-        group.add_argument('--num-finetune-classes', type=int, default=None)
-        group.add_argument('--new-sequence-length', type=int, default=None)
         group.add_argument('--image-size', nargs='+', type=int, default=[224, 224])
         group.add_argument('--pre-len', type=int, default=1) # [cls] by default
         group.add_argument('--post-len', type=int, default=0) # empty by default, but sometimes with special tokens, such as [det] in yolos.

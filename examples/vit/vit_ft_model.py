@@ -17,3 +17,9 @@ class ViTFinetuneModel(ViTModel):
     def final_forward(self, logits, **kw_args):
         logits = self.mixins["finetune_head"].classifier(logits[:, 0])
         return logits
+
+    @classmethod
+    def add_model_specific_args(cls, parser):
+        group = parser.add_argument_group('ViT-finetune', 'ViT finetuning Configurations')
+        group.add_argument('--num-finetune-classes', type=int, default=None)
+        return super().add_model_specific_args(parser)
