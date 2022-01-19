@@ -51,9 +51,9 @@ class EncoderDecoderModel(torch.nn.Module):
         if tie_word_embeddings:
             self.decoder.transformer.word_embeddings = self.encoder.transformer.word_embeddings
 
-    def reinit(self):
-        self.encoder.reinit()
-        self.decoder.reinit()
+    def reinit(self, mixin_names): # please use different mixin names for encoder and decoder
+        self.encoder.reinit(mixin_names)
+        self.decoder.reinit(mixin_names)
 
     def disable_untrainable_params(self):
         self.encoder.disable_untrainable_params()

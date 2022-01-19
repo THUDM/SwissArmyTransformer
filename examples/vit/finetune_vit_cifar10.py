@@ -74,6 +74,9 @@ def create_dataset_function(path, args):
                                             download=True, transform=transform)
     return trainset
 
+def init_function(args, model):
+    model.get_mixin("pos_embedding").reinit()
+
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--old_checkpoint', action="store_true")
@@ -82,4 +85,4 @@ if __name__ == '__main__':
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
-    training_main(args, model_cls=ViTFinetuneModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
+    training_main(args, model_cls=ViTFinetuneModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, init_function=init_function)

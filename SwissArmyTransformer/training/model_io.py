@@ -126,7 +126,7 @@ def load_checkpoint(model, args):
     sd = torch.load(checkpoint_name, map_location='cpu')
     
     assert not hasattr(args, 'do_train') or not args.do_train or args.deepspeed
-    if args.deepspeed:
+    if hasattr(model, 'module'):
         module = model.module
     else: # inference without deepspeed
         module = model
@@ -142,9 +142,18 @@ def load_checkpoint(model, args):
         else: # new params
             assert all(name.find('mixins')>=0 for name in missing_keys)
             assert args.mode == 'finetune'
-            module.reinit() # initialize mixins
-    if args.mode != 'inference' and args.deepspeed and args.fp16:
-        model.optimizer.refresh_fp32_params() # restore fp32 weights from module
+            # list all mixin names
+            mixin_names = []
+            for key_name in missing_keys:
+                parts = key_name.split('.')
+                mixin_name = parts[parts.index('mixins')+1]
+                if mixin_name not in mixin_names:
+                    mixin_names.append(mixin_name)
+            module.reinit(mixin_names) # initialize mixins
+
+    # Do not need this any more, because we create optimizer after load now.
+    # if args.mode != 'inference' and args.deepspeed and args.fp16:
+    #     model.optimizer.refresh_fp32_params() # restore fp32 weights from module
 
     # Iterations.
     if args.mode == 'finetune':

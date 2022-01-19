@@ -32,7 +32,7 @@ def add_model_config_args(parser):
     group.add_argument('--num-attention-heads', type=int, default=16,
                        help='num of transformer attention heads')
     group.add_argument('--hidden-size', type=int, default=1024,
-                       help='tansformer hidden size')
+                       help='transformer hidden size')
     group.add_argument('--inner-hidden-size', type=int, default=None)
     group.add_argument('--hidden-size-per-attention-head', type=int, default=None)
     group.add_argument('--num-layers', type=int, default=24,
