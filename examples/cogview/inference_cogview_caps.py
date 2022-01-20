@@ -9,6 +9,7 @@
 # here put the import lib
 import os
 import sys
+sys.path.append("../..")
 import math
 import random
 import torch
@@ -26,6 +27,7 @@ def main(args):
     tokenizer = get_tokenizer(args)
     # build model 
     model = BaseModel(args)
+
     if args.fp16:
         model = model.half()
     model = model.to(args.device)
@@ -42,14 +44,17 @@ def main(args):
     def process(raw_text0):
         raw_text, *imgs = raw_text0.strip().split('\t')
         print('raw text: ', raw_text)
+        print('images: ', imgs)
         
         # generation
+        args.max_inference_batch_size = 8
         mbz = args.max_inference_batch_size
         assert args.batch_size < mbz or args.batch_size % mbz == 0
         output_list = []
         for tim in range(max(args.batch_size // mbz, 1)):
             input_list = []
             for i in range(tim * mbz, (tim+1)*mbz):
+                print(i)
                 text = query_template.format(imgs[i], raw_text)
                 seq = tokenizer.parse_query(text, img_size=args.img_size)
                 if len(seq) > 1088:
@@ -85,7 +90,7 @@ def main(args):
 if __name__ == "__main__":
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--img-size', type=int, default=256)
-
+    py_parser.add_argument('--old_checkpoint', type=bool, default=False)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))

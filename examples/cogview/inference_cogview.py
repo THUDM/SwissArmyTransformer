@@ -9,6 +9,7 @@
 # here put the import lib
 import os
 import sys
+sys.path.append("../..")
 import math
 import random
 import torch
@@ -87,7 +88,7 @@ if __name__ == "__main__":
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--full-query', action='store_true')
     py_parser.add_argument('--img-size', type=int, default=256)
-
+    py_parser.add_argument('--old_checkpoint', type=bool, default=False)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))

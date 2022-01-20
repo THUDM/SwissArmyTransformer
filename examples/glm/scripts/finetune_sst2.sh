@@ -1,7 +1,7 @@
 #! /bin/bash
 
 # Change for multinode config
-CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/glm
+CHECKPOINT_PATH=/mapping-data/GLM
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=1
@@ -16,8 +16,8 @@ OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
-en_data="/dataset/fd5061f6/english_data/glue_data/SST-2/train.tsv"
-eval_data="/dataset/fd5061f6/english_data/glue_data/SST-2/dev.tsv"
+en_data="/mapping-data/SST-2/train.tsv"
+eval_data="/mapping-data/SST-2/dev.tsv"
 
 
 config_json="$script_dir/ds_config_ft.json"

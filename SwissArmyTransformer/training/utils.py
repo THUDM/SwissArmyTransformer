@@ -24,6 +24,7 @@ import torch
 from tensorboardX import SummaryWriter
 
 SUMMARY_WRITER_DIR_NAME = 'runs'
+SUMMARY_WRITER_DIR_NAME = 'runs'
 
 
 def get_sample_writer(name, base="..", iteration=0):

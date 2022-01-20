@@ -14,7 +14,6 @@ MP_SIZE=1
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
-#source $main_dir/config/model_glm_roberta_large.sh
 source $main_dir/config/model_glm_large_chinese.sh
 
 OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"

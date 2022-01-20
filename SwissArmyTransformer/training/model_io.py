@@ -91,6 +91,7 @@ def save_ds_checkpoint_no_optim(model, save_dir, tag=None, client_state={}, save
 def get_checkpoint_iteration(args):
     # Read the tracker file and set the iteration.
     tracker_filename = get_checkpoint_tracker_filename(args.load, old_checkpoint=args.old_checkpoint)
+    # tracker_filename = get_checkpoint_tracker_filename(args.load)
     if not os.path.isfile(tracker_filename):
         print_rank_0('WARNING: could not find the metadata file {} '.format(
             tracker_filename))

@@ -116,18 +116,19 @@ def create_dataset_function(path, args):
 if __name__ == '__main__':
     import logging
     logging.getLogger('DeepSpeed').setLevel(logging.WARN)
-    os.environ['CUDA_VISIBLE_DEVICES'] = '7'
+
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--new_hyperparam', type=str, default=None)
     py_parser.add_argument('--sample_length', type=int, default=80)
     py_parser.add_argument('--prefix_len', type=int, default=16)
     py_parser.add_argument('--num_categories', type=int, default=3)
     py_parser.add_argument('--tuning_mode', type=str, default="ptuning")
-    py_parser.add_argument('--visible_devices', type=str, default="7")
+    py_parser.add_argument('--visible_devices', type=str, default="0")
     GLMModel.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
     # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
     # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.visible_devices
     training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
