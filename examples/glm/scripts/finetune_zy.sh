@@ -3,8 +3,8 @@
 # Change for multinode config
 CHECKPOINT_PATH=/mapping-data/GLM
 
-en_data="/mapping-data/SAT/dataset/dev.tsv"
-eval_data="/mapping-data/SAT/dataset/train.tsv"
+en_data="/mapping-data/SAT/dataset/train.tsv"
+eval_data="/mapping-data/SAT/dataset/val.tsv"
 test_data="/mapping-data/SAT/dataset/test.tsv"
 
 NUM_WORKERS=1

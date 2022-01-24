@@ -99,7 +99,7 @@ def forward_step(data_iterator, model, args, timers):
     loss_fn = torch.nn.CrossEntropyLoss()
     loss = loss_fn(m(pred), labels)
     acc = torch.sum((pred.argmax(dim=-1).eq(labels)).float()) / labels.numel()
-    return loss, {'acc': acc}, pred
+    return loss, {'acc': acc}
 
 def create_dataset_function(path, args):
     tokenizer = get_tokenizer()
