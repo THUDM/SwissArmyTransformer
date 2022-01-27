@@ -45,7 +45,7 @@ gpt_options=" \
        --warmup .02 \
        --checkpoint-activations \
        --fp16 \
-       --save-interval 6000 \
+       --save-interval 100 \
        --eval-interval 100 \
        --save /mapping-data/SAT/model \
        --split 1 \

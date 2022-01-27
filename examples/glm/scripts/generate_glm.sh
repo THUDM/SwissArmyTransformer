@@ -1,5 +1,5 @@
 #!/bin/bash
-CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/glm
+CHECKPOINT_PATH=/mapping-data/SAT/GLM
 
 source $1
 MPSIZE=1

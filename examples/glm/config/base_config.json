@@ -1,0 +1,21 @@
+{
+  "block_lm": true,
+  "cloze_eval": true,
+  "task_mask": true,
+  "num-layers": "24",
+  "hidden-size": 1024,
+  "num_attention_heads": 16,
+  "max_sequence_length": 1025,
+  "tokenizer_type": "glm_ChineseSPTokenizer",
+  "tokenizer_model_type": "glm-large",
+  "load": "/mapping-data/GLM/glm-large-zh",
+
+  "experiment-name": "finetune-glm-zy",
+  "model_parallel_size": 1,
+  "mode": "inference",
+  "train_iters": 6000,
+  "resume_dataloader": true,
+  "distributed-backend": "nccl",
+  "checkpoint_path": "/mapping-data/SAT/model/finetune-glm-prediction/2000/model.pt",
+  "input_source": "./input.txt"
+}

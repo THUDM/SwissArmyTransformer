@@ -94,10 +94,14 @@ class VocabParallelEmbedding(torch.nn.Module):
         self.sparse = False
         self._weight = None
         # Divide the weight matrix along the vocaburaly dimension.
+        # self.vocab_start_index, self.vocab_end_index = \
+        #     VocabUtility.vocab_range_from_global_vocab_size(
+        #         self.num_embeddings, get_model_parallel_rank(),
+        #         get_model_parallel_world_size())
         self.vocab_start_index, self.vocab_end_index = \
             VocabUtility.vocab_range_from_global_vocab_size(
-                self.num_embeddings, get_model_parallel_rank(),
-                get_model_parallel_world_size())
+                self.num_embeddings, 0,
+                1)
         self.num_embeddings_per_partition = self.vocab_end_index - \
                                             self.vocab_start_index
 
@@ -155,6 +159,7 @@ class ParallelEmbedding(torch.nn.Module):
         self._weight = None
         # Divide the weight matrix along the embedding dimension.
         world_size = get_model_parallel_world_size()
+        # world_size = 1
         self.embedding_dim_per_partition = divide(self.embedding_dim,
                                                   world_size)
 
@@ -209,6 +214,7 @@ class ColumnParallelLinear(torch.nn.Module):
         self.gather_output = gather_output
         # Divide the weight matrix along the last dimension.
         world_size = get_model_parallel_world_size()
+        # world_size = 1
         self.output_size_per_partition = divide(output_size, world_size)
 
         # Parameters.
@@ -283,6 +289,7 @@ class RowParallelLinear(torch.nn.Module):
         self.input_is_parallel = input_is_parallel
         # Divide the weight matrix along the last dimension.
         world_size = get_model_parallel_world_size()
+        # world_size = 1
         self.input_size_per_partition = divide(input_size, world_size)
 
         # Parameters.

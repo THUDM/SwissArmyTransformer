@@ -87,6 +87,7 @@ def model_parallel_is_initialized():
 
 def get_model_parallel_group():
     """Get the model parallel group the caller rank belongs to."""
+    return 1
     assert _MODEL_PARALLEL_GROUP is not None, \
         'model parallel group is not initialized'
     return _MODEL_PARALLEL_GROUP
@@ -101,6 +102,7 @@ def get_data_parallel_group():
 
 def get_model_parallel_world_size():
     """Return world size for the model parallel group."""
+    return 1
     return torch.distributed.get_world_size(group=get_model_parallel_group())
 
 

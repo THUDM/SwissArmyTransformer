@@ -20,6 +20,7 @@ from .utils import split_tensor_along_last_dim
 
 
 def _reduce(input_):
+    return input_
     """All-reduce the the input tensor across model parallel group."""
     group = get_model_parallel_group()
 
@@ -34,6 +35,7 @@ def _reduce(input_):
 
 
 def _split(input_):
+    return input_
     """Split the tensor along its last dimension and keep the
     corresponding slice."""
     group = get_model_parallel_group()
@@ -54,6 +56,7 @@ def _split(input_):
 
 
 def _gather(input_):
+    return input_
     """Gather tensors and concatinate along the last dimension."""
     group = get_model_parallel_group()
 

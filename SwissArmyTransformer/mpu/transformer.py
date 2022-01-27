@@ -27,8 +27,8 @@ from .initialize import get_model_parallel_world_size
 from .layers import ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding
 from .mappings import gather_from_model_parallel_region, copy_to_model_parallel_region
 
-from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint
-
+#from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint
+from torch.utils.checkpoint import checkpoint
 from .utils import divide, sqrt, scaled_init_method, unscaled_init_method, gelu
 from .utils import split_tensor_along_last_dim
 
@@ -63,11 +63,12 @@ def standard_attention(query_layer, key_layer, value_layer, attention_mask,
     attention_probs = F.softmax(attention_scores, dim=-1)
 
     if attention_dropout is not None:
-        if mpu.get_cuda_rng_tracker is not None:
-            with mpu.get_cuda_rng_tracker().fork():
-                attention_probs = attention_dropout(attention_probs)
-        else:
-            attention_probs = attention_dropout(attention_probs)
+        attention_probs = attention_dropout(attention_probs)
+        # if mpu.get_cuda_rng_tracker is not None:
+        #     with mpu.get_cuda_rng_tracker().fork():
+        #         attention_probs = attention_dropout(attention_probs)
+        # else:
+        #     attention_probs = attention_dropout(attention_probs)
 
     context_layer = torch.matmul(attention_probs, value_layer)
     return context_layer
@@ -86,6 +87,7 @@ class SelfAttention(torch.nn.Module):
         self.layer_id = layer_id
         # Per attention head and per partition values.
         world_size = get_model_parallel_world_size()
+        # world_size=1
         self.hidden_size = hidden_size
         if hidden_size_per_attention_head is None:
             self.hidden_size_per_attention_head = divide(hidden_size, num_attention_heads)
@@ -174,6 +176,7 @@ class CrossAttention(torch.nn.Module):
         self.layer_id = layer_id
         # Per attention head and per partition values.
         world_size = get_model_parallel_world_size()
+        # world_size = 1
         self.hidden_size = hidden_size
         if hidden_size_per_attention_head is None:
             self.hidden_size_per_attention_head = divide(hidden_size, num_attention_heads)
