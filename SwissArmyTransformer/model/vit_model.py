@@ -95,7 +95,7 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
             new_pos = self.interpolate_pos_encoding(new_height, new_width)
             return new_pos[position_ids]
 
-    def reinit(self, *pre_mixins):
+    def reinit(self, parent_model=None):
         """
         new pre_len, new num_patches and new post_len should all be larger or equal than the old ones.
         """
@@ -111,6 +111,16 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
         self.transformer.position_embeddings.weight.data[self.property.pre_len+self.property.num_patches:self.property.pre_len+self.property.num_patches+self.old_property.post_len] = post_weight
 
 
+class ClsMixin(BaseMixin):
+    def __init__(self, hidden_size, num_classes):
+        super().__init__()
+        self.classifier = nn.Linear(hidden_size, num_classes)
+
+    def final_forward(self, logits, **kw_args):
+        logits = self.classifier(logits[:, 0])
+        return logits
+
+
 class ViTModel(BaseModel):
     def __init__(self, args, transformer=None, parallel_output=True, **kwargs):
         self.property = ViTProperty(args.image_size, args.patch_size, args.pre_len, args.post_len)
@@ -123,11 +133,7 @@ class ViTModel(BaseModel):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output, activation_func=gelu, **kwargs)
         self.add_mixin("patch_embedding", ImagePatchEmbeddingMixin(args.in_channels, args.hidden_size, self.property))
         self.add_mixin("pos_embedding", InterpolatedPositionEmbeddingMixin(args.hidden_size, self.old_property, self.property))
-        self.classifier = nn.Linear(args.hidden_size, args.num_classes)
-
-    def final_forward(self, logits, **kw_args):
-        logits = self.classifier(logits[:, 0])
-        return logits
+        self.add_mixin("cls", ClsMixin(args.hidden_size, args.num_classes))
 
     @classmethod
     def add_model_specific_args(cls, parser):

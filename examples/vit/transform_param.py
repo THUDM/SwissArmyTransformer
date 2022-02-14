@@ -1,35 +1,8 @@
+"""
+Given a config file, transform a pretrained ViTModel.
+"""
 import os
-pretrain_path = '/data/qingsong/pretrain'
-
-import timm
-vit = timm.create_model('vit_base_patch16_224_in21k', pretrained=False)
-vit.load_pretrained(os.path.join(pretrain_path, 'B_16-i21k-300ep-lr_0.001-aug_medium1-wd_0.1-do_0.0-sd_0.0.npz'))
-
-import argparse
-args = argparse.Namespace(
-    num_layers=12,
-    vocab_size=1,
-    hidden_size=768,
-    num_attention_heads=12,
-    hidden_dropout=0.,
-    attention_dropout=0.,
-    in_channels=3,
-    image_size=[224, 224],
-    patch_size=16,
-    pre_len=1,
-    post_len=0,
-    inner_hidden_size=None,
-    hidden_size_per_attention_head=None,
-    checkpoint_activations=True,
-    checkpoint_num_layers=1,
-    sandwich_ln=False,
-    post_ln=False,
-    model_parallel_size=1,
-    world_size=1,
-    rank=0,
-    num_classes=21843,
-    load=None
-    )
+from config.vit_base_config import vit, args
 
 import torch
 init_method = 'tcp://'
@@ -95,7 +68,7 @@ def transform_weight(src_model, swiss_model):
     copy_layer_norm(src_model, swiss_model)
     for src_l, dst_l in zip(src_model.blocks, swiss_model.transformer.layers):
         copy_transformer_layer_wo_ln(src_l, dst_l)
-    copy_layer_param(src_model.head, swiss_model.classifier)
+    copy_layer_param(src_model.head, swiss_model.mixins.cls.classifier)
     copy_layer_param(src_model.patch_embed.proj, swiss_model.mixins.patch_embedding.proj)
     
 
@@ -112,6 +85,6 @@ with torch.no_grad():
     dst_output = model(offline=True, **encoded_input)[0].cpu()
     print("max error:", (src_output - dst_output).abs().max())
     print("max relative error:", ((src_output - dst_output).abs() / torch.max(src_output.abs(), dst_output.abs())).max())
-    torch.save({'module':model.state_dict()}, os.path.join(pretrain_path, "vit_base_patch16_224_in21k.pt"))
+    torch.save({'module':model.state_dict()}, "output.pt")
 
 breakpoint()
