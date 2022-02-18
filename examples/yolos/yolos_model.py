@@ -57,5 +57,6 @@ class YOLOS(ViTModel):
     @classmethod
     def add_model_specific_args(cls, parser):
         group = parser.add_argument_group('YOLOS', 'YOLOS Configurations')
-        group.add_argument('--num-det-tokens', type=int, default=None)
+        group.add_argument('--num-det-tokens', type=int)
+        group.add_argument('--num-det-classes', type=int)
         return super().add_model_specific_args(parser)

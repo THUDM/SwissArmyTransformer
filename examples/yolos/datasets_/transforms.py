@@ -217,6 +217,28 @@ class RandomResize(object):
         size = random.choice(self.sizes)
         return resize(img, target, size, self.max_size)
 
+class PadTarget(object):
+    def __init__(self, max_num_obj):
+        self.max_num_obj = max_num_obj
+        self.pad_list = ['boxes', 'labels', 'area', 'iscrowd']
+    
+    def __call__(self, img, target):
+        num_obj = target['boxes'].shape[0]
+        if num_obj >= self.max_num_obj:
+            for k in self.pad_list:
+                target[k] = target[k][:self.max_num_obj]
+                if k == 'labels':
+                    target['mask'] = torch.ones(self.max_num_obj, dtype=torch.bool, device=target[k].device)
+        else:
+            for k in self.pad_list:
+                pad = torch.zeros(self.max_num_obj-num_obj, *target[k].shape[1:], dtype=target[k].dtype, device=target[k].device)
+                target[k] = torch.cat((target[k], pad))
+                if k == 'labels':
+                    target['mask'] = torch.zeros(self.max_num_obj, dtype=torch.bool, device=target[k].device)
+                    target['mask'][:num_obj] = True
+        return img, target
+
+
 
 class RandomPad(object):
     def __init__(self, max_pad):
