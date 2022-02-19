@@ -1,3 +1,9 @@
+# -*- encoding: utf-8 -*-
+# @File    :   finetune_roberta_cb.py
+# @Time    :   2022/1/8
+# @Author  :   Zhuoyi Yang
+# @Contact :   yangzhuo18@mails.tsinghua.edu.cn
+
 import os
 
 import torch
@@ -13,7 +19,7 @@ class ClassificationModel(RobertaModel):
     def __init__(self, args, transformer=None, parallel_output=True):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)
         self.del_mixin('roberta-final')
-        self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
+        self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 3))
         self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
     def disable_untrainable_params(self):
         self.transformer.word_embeddings.requires_grad_(False)
@@ -42,7 +48,7 @@ def get_batch(data_iterator, args, timers):
     # Convert
     if args.fp16:
         attention_mask = attention_mask.half()
-    
+
     return tokens, labels, attention_mask, position_ids, (tokens!=1)
 
 
@@ -58,11 +64,8 @@ def forward_step(data_iterator, model, args, timers):
     logits, *mems = model(tokens, position_ids, attention_mask)
     # pred = ((logits.contiguous().float().squeeze(-1)) * loss_mask).sum(dim=-1) / loss_mask.sum(dim=-1)
     pred = logits.contiguous().float().squeeze(-1)[..., 0]
-    loss = torch.nn.functional.binary_cross_entropy_with_logits(
-        pred,
-        labels.float()
-    )
-    acc = ((pred > 0.).long() == labels).sum() / labels.numel()
+    loss = torch.nn.functional.cross_entropy(pred, labels)
+    acc = (torch.argmax(pred, dim=1).long() == labels).sum() / labels.numel()
     return loss, {'acc': acc}
 
 pretrain_path = ''
@@ -78,14 +81,14 @@ def _encode(text, text_pair):
 from SwissArmyTransformer.data_utils import load_hf_dataset
 def create_dataset_function(path, args):
     def process_fn(row):
-        pack, label = _encode(row['passage'], row['question']), int(row['label'])
+        pack, label = _encode(row['premise'], row['hypothesis']), int(row['label'])
         return {
             'input_ids': np.array(pack['input_ids'], dtype=np.int64),
             'position_ids': np.array(pack['position_ids'], dtype=np.int64),
             'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
             'label': label
         }
-    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="boolq_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=False, transformer_name="cb_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)

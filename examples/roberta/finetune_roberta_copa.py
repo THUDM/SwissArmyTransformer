@@ -1,3 +1,13 @@
+# -*- encoding: utf-8 -*-
+# @File    :   finetune_roberta_copa.py
+# @Time    :   2022/1/8
+# @Author  :   Zhuoyi Yang
+# @Contact :   yangzhuo18@mails.tsinghua.edu.cn
+# -*- encoding: utf-8 -*-
+# @File    :   finetune_roberta_wic.py
+# @Time    :   2022/1/10
+# @Author  :   Zhuoyi Yang
+# @Contact :   yangzhuo18@mails.tsinghua.edu.cn
 import os
 
 import torch
@@ -7,7 +17,8 @@ import numpy as np
 from SwissArmyTransformer import mpu, get_args
 from SwissArmyTransformer.training.deepspeed_training import training_main
 from roberta_model import RobertaModel
-from SwissArmyTransformer.model.mixins import PrefixTuningMixin, MLPHeadMixin
+from SwissArmyTransformer.model.mixins import PrefixTuningMixin, MLPHeadMixin, BaseMixin
+
 
 class ClassificationModel(RobertaModel):
     def __init__(self, args, transformer=None, parallel_output=True):
@@ -22,7 +33,7 @@ class ClassificationModel(RobertaModel):
 
 def get_batch(data_iterator, args, timers):
     # Items and their type.
-    keys = ['input_ids', 'position_ids', 'attention_mask', 'label']
+    keys = ["input_ids_1", "position_ids_1", "attention_mask_1", "input_ids_2", "position_ids_2", "attention_mask_2", "label"]
     datatype = torch.int64
 
     # Broadcast data.
@@ -34,15 +45,22 @@ def get_batch(data_iterator, args, timers):
     timers('data loader').stop()
     data_b = mpu.broadcast_data(keys, data, datatype)
     # Unpack.
-    tokens = data_b['input_ids'].long()
+    tokens_1 = data_b['input_ids_1'].long()
+    tokens_2 = data_b['input_ids_2'].long()
+    tokens = torch.cat([tokens_1, tokens_2], dim=0)
     labels = data_b['label'].long()
-    position_ids = data_b['position_ids'].long()
-    attention_mask = data_b['attention_mask'][:, None, None, :].float()
+    position_ids_1 = data_b['position_ids_1'].long()
+    position_ids_2 = data_b['position_ids_2'].long()
+    position_ids = torch.cat([position_ids_1, position_ids_2], dim=0)
+
+    attention_mask_1 = data_b['attention_mask_1'][:, None, None, :].float()
+    attention_mask_2 = data_b['attention_mask_2'][:, None, None, :].float()
+    attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=0)
 
     # Convert
     if args.fp16:
         attention_mask = attention_mask.half()
-    
+
     return tokens, labels, attention_mask, position_ids, (tokens!=1)
 
 
@@ -56,13 +74,16 @@ def forward_step(data_iterator, model, args, timers):
     timers('batch generator').stop()
 
     logits, *mems = model(tokens, position_ids, attention_mask)
+    bz = logits.shape[0] // 2
+    logits = logits.squeeze(-1)[:,0].reshape(2, bz).permute(1, 0)
+
     # pred = ((logits.contiguous().float().squeeze(-1)) * loss_mask).sum(dim=-1) / loss_mask.sum(dim=-1)
-    pred = logits.contiguous().float().squeeze(-1)[..., 0]
-    loss = torch.nn.functional.binary_cross_entropy_with_logits(
+    pred = logits.contiguous().float()
+    loss = torch.nn.functional.cross_entropy(
         pred,
-        labels.float()
+        labels
     )
-    acc = ((pred > 0.).long() == labels).sum() / labels.numel()
+    acc = (torch.argmax(pred, dim=1).long() == labels).sum() / labels.numel()
     return loss, {'acc': acc}
 
 pretrain_path = ''
@@ -70,22 +91,39 @@ from transformers import RobertaTokenizer
 tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-large'))
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
 
-def _encode(text, text_pair):
-    encoded_input = tokenizer(text, text_pair, max_length=args.sample_length, padding='max_length', truncation='only_first')
+def _encode(text):
+    encoded_input = tokenizer(text, max_length=args.sample_length, padding='max_length')
     position_ids = create_position_ids_from_input_ids(torch.tensor([encoded_input['input_ids']]), 1, 0)
     return dict(input_ids=encoded_input['input_ids'], position_ids=position_ids[0].numpy(), attention_mask=encoded_input['attention_mask'])
 
 from SwissArmyTransformer.data_utils import load_hf_dataset
 def create_dataset_function(path, args):
     def process_fn(row):
-        pack, label = _encode(row['passage'], row['question']), int(row['label'])
+        type = row['question']
+        premise, choice1, choice2 = row['premise'], row['choice1'], row['choice2']
+        premise = premise[:-1]
+        choice1 = choice1[0].lower() + choice1[1:]
+        choice2 = choice2[0].lower() + choice2[1:]
+        if type=='cause':
+            sentence1 = premise + ' because ' + choice1
+            sentence2 = premise + ' because ' + choice2
+        else:
+            sentence1 = premise + ' so ' + choice1
+            sentence2 = premise + ' so ' + choice2
+            pass
+        pack_1 = _encode(sentence1)
+        pack_2 = _encode(sentence2)
+        label = int(row['label'])
         return {
-            'input_ids': np.array(pack['input_ids'], dtype=np.int64),
-            'position_ids': np.array(pack['position_ids'], dtype=np.int64),
-            'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
+            'input_ids_1': np.array(pack_1['input_ids'], dtype=np.int64),
+            'input_ids_2': np.array(pack_2['input_ids'], dtype=np.int64),
+            'position_ids_1': np.array(pack_1['position_ids'], dtype=np.int64),
+            'position_ids_2': np.array(pack_2['position_ids'], dtype=np.int64),
+            'attention_mask_1': np.array(pack_1['attention_mask'], dtype=np.int64),
+            'attention_mask_2': np.array(pack_2['attention_mask'], dtype=np.int64),
             'label': label
         }
-    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="boolq_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["input_ids_1", "position_ids_1", "attention_mask_1", "input_ids_2", "position_ids_2", "attention_mask_2", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="copa_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)

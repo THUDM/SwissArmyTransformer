@@ -78,14 +78,14 @@ def _encode(text, text_pair):
 from SwissArmyTransformer.data_utils import load_hf_dataset
 def create_dataset_function(path, args):
     def process_fn(row):
-        pack, label = _encode(row['passage'], row['question']), int(row['label'])
+        pack, label = _encode(row['premise'], row['hypothesis']), int(row['label'])
         return {
             'input_ids': np.array(pack['input_ids'], dtype=np.int64),
             'position_ids': np.array(pack['position_ids'], dtype=np.int64),
             'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
             'label': label
         }
-    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="boolq_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=False, transformer_name="rte_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
