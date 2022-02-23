@@ -2,7 +2,7 @@
 Given a config file, transform a pretrained ViTModel.
 """
 import os
-from config.vit_base_config import vit, args
+from config.yolos_tiny_config import yolos, args
 
 import torch
 init_method = 'tcp://'
@@ -16,8 +16,8 @@ torch.distributed.init_process_group(
 import SwissArmyTransformer.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
-from SwissArmyTransformer.model.vit_model import ViTModel
-model = ViTModel(args, layernorm_epsilon=1e-6)
+from yolos_model import YOLOS
+model = YOLOS(args, layernorm_epsilon=1e-6)
 
 def copy_layer_param(src, dst):
     """
@@ -63,28 +63,33 @@ def copy_transformer_layer_wo_ln(src, dst):
     copy_layer_param(src.mlp.fc2, dst.mlp.dense_4h_to_h)
 
 def transform_weight(src_model, swiss_model):
-    copy_from_param(src_model.cls_token.data[0], swiss_model.transformer.word_embeddings.weight)
-    copy_from_param(src_model.pos_embed.data[0], swiss_model.transformer.position_embeddings.weight)
-    copy_layer_norm(src_model, swiss_model)
-    for src_l, dst_l in zip(src_model.blocks, swiss_model.transformer.layers):
+    words = torch.cat((src_model.backbone.cls_token.data[0], src_model.backbone.det_token.data[0]))
+    copy_from_param(words, swiss_model.transformer.word_embeddings.weight)
+    copy_from_param(src_model.backbone.pos_embed.data[0], swiss_model.transformer.position_embeddings.weight)
+    copy_layer_norm(src_model.backbone, swiss_model)
+    for src_l, dst_l in zip(src_model.backbone.blocks, swiss_model.transformer.layers):
         copy_transformer_layer_wo_ln(src_l, dst_l)
-    copy_layer_param(src_model.head, swiss_model.mixins.cls.classifier)
-    copy_layer_param(src_model.patch_embed.proj, swiss_model.mixins.patch_embedding.proj)
+    copy_layer_param(src_model.backbone.patch_embed.proj, swiss_model.mixins.patch_embedding.proj)
+    copy_layer_param(src_model.class_embed, swiss_model.mixins.det_head.class_embed)
+    copy_layer_param(src_model.bbox_embed, swiss_model.mixins.det_head.bbox_embed)
     
 
-vit.eval()
+yolos.eval()
 model.eval()
 with torch.no_grad():
-    transform_weight(vit, model)
-    position_ids = torch.cat([torch.arange(197)[None,], torch.arange(197)[None,]])
-    encoded_input = {'input_ids':torch.zeros(2, 197).long(), 'image':torch.randn(2, 3, 224, 224)*10, 'position_ids':position_ids}
-    src_output = vit(encoded_input['image'])
-    model = model.cuda()
-    encoded_input = {k:v.cuda() for k,v in encoded_input.items()}
+    transform_weight(yolos, model)
+    images = torch.randn(2, 3, 800, 1333)*10
+    src_output = yolos(images)
+
+    batch_size, _, height, width = images.shape
+    num_patches = (height//16) * (width//16)
+    seq_len = 1 + num_patches + model.get_mixin('det_head').num_det_tokens
+    position_ids = torch.cat([torch.arange(seq_len)[None,]]*batch_size)
+    encoded_input = {'input_ids':torch.cat([torch.arange(1+model.get_mixin('det_head').num_det_tokens)[None,]]*batch_size).long(), 'image':images, 'position_ids':position_ids}
     encoded_input['attention_mask'] = None
-    dst_output = model(offline=True, **encoded_input)[0].cpu()
-    print("max error:", (src_output - dst_output).abs().max())
-    print("max relative error:", ((src_output - dst_output).abs() / torch.max(src_output.abs(), dst_output.abs())).max())
+
+    dst_output = model(**encoded_input, offline=True) # offline=False, height=height//16, width=width//16)[0]
+
     torch.save({'module':model.state_dict()}, "output.pt")
 
 breakpoint()
