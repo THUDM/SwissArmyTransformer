@@ -443,6 +443,7 @@ class BaseTransformer(torch.nn.Module):
                  activation_func=gelu,
                  layernorm=LayerNorm,
                  init_method=None,
+                 use_final_layernorm=True,
                  hooks={}
                  ):
         super(BaseTransformer, self).__init__()
@@ -496,7 +497,9 @@ class BaseTransformer(torch.nn.Module):
             [get_layer(layer_id) for layer_id in range(num_layers)])
 
         # Final layer norm before output.
-        self.final_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
+        self.use_final_layernorm = use_final_layernorm
+        if use_final_layernorm:
+            self.final_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
 
     def forward(self, input_ids, position_ids, attention_mask, *,
                 output_hidden_states=False, **kw_args):
@@ -648,7 +651,10 @@ class BaseTransformer(torch.nn.Module):
                 output_per_layers.append(output_this_layer)
 
         # Final layer norm.
-        logits = self.final_layernorm(hidden_states)
+        if self.use_final_layernorm:
+            logits = self.final_layernorm(hidden_states)
+        else:
+            logits = hidden_states
 
         if 'final_forward' in self.hooks:
             logits_parallel = self.hooks['final_forward'](logits, **kw_args)
