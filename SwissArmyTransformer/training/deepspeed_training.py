@@ -40,7 +40,7 @@ from SwissArmyTransformer.data_utils import make_loaders
 from SwissArmyTransformer.tokenization import get_tokenizer
 
 
-def training_main(args, model_cls, forward_step_function, create_dataset_function, init_function=None):
+def training_main(args, model_cls, forward_step_function, create_dataset_function, init_function=None, get_optimizer_from_model=False, has_mask=False):
     """Main training program."""
     hooks = {
         'forward_step': forward_step_function,
@@ -81,12 +81,17 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         args.save = os.path.join(args.save, args.experiment_name)
     torch.distributed.barrier()
 
+    if get_optimizer_from_model:
+        optimizer = model.get_optimizer(args, train_data)
+    else:
+        optimizer = None
+
     # init hook before building deepspeed model and optimizer
     if hooks['init_function'] is not None:
         hooks['init_function'](args, model)
 
     # Optimization related things
-    model, optimizer = setup_model_untrainable_params_and_optimizer(args, model)
+    model, optimizer = setup_model_untrainable_params_and_optimizer(args, model, optimizer=optimizer)
 
     # initialize lr scheduler
     lr_scheduler = get_learning_rate_scheduler(optimizer, args.iteration, args)
@@ -154,7 +159,7 @@ def get_model(args, model_cls):
     return model
 
 
-def setup_model_untrainable_params_and_optimizer(args, model, config_params=None):
+def setup_model_untrainable_params_and_optimizer(args, model, config_params=None, optimizer=None):
     """Setup model and optimizer."""
 
     model.disable_untrainable_params() # mark trainable params
@@ -170,7 +175,8 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
                 args=args,
                 mpu=mpu,
                 dist_init_required=False,
-                config_params=config_params
+                config_params=config_params,
+                optimizer=optimizer,
             )
         else:
             raise ValueError('Currently, we only support training with deepspeed.')
