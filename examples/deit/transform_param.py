@@ -2,7 +2,22 @@
 Given a config file, transform a pretrained ViTModel.
 """
 import os
-from config.vit_base_config import vit, args
+
+import argparse
+
+parser = argparse.ArgumentParser(description='Set vit model type.')
+parser.add_argument('--model', type=str)
+model_args = parser.parse_args()
+model_type = model_args.model
+
+if model_type == 'tiny':
+    from config.deit_tiny_config import vit, args
+elif model_type == 'small':
+    from config.deit_small_config import vit, args
+elif model_type == 'base':
+    from config.deit_base_config import vit, args
+else:
+    raise Exception("Unknown model type. You may see https://github.com/facebookresearch/deit/blob/main/models.py for more model configs")
 
 import torch
 init_method = 'tcp://'
