@@ -81,6 +81,8 @@ def add_training_args(parser):
     group.add_argument('--summary-dir', type=str, default="", help="The directory to store the summary")
     group.add_argument('--seed', type=int, default=1234,
                        help='random seed')
+    group.add_argument('--save-args', action='store_true',
+                       help='save args corresponding to the experiment-name')
 
     # Learning rate.
     group.add_argument('--lr-decay-iters', type=int, default=None,
