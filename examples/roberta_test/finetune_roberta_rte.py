@@ -5,25 +5,51 @@ import argparse
 import numpy as np
 
 from SwissArmyTransformer import mpu, get_args
-from SwissArmyTransformer.training.deepspeed_training import training_main
-from roberta_model import RobertaModel
-from SwissArmyTransformer.model.mixins import PrefixTuningMixin, MLPHeadMixin
+from SwissArmyTransformer.training.deepspeed_training import training_main, initialize_distributed, load_checkpoint
+from roberta_model import RobertaModel, LoRAMixin, BaseMixin
+from SwissArmyTransformer.model.mixins import PrefixTuningMixin
+
+class MLPHeadMixin(BaseMixin):
+    def __init__(self, hidden_size, *output_sizes, bias=True, activation_func=torch.nn.functional.relu, init_mean=0, init_std=0.005, old_model=None):
+        super().__init__()
+        self.activation_func = activation_func
+        last_size = hidden_size
+        self.layers = torch.nn.ModuleList()
+        for i, sz in enumerate(output_sizes):
+            this_layer = torch.nn.Linear(last_size, sz, bias=bias)
+            last_size = sz
+            if old_model is None:
+                torch.nn.init.normal_(this_layer.weight, mean=init_mean, std=init_std)
+            else:
+                old_weights = old_model.mixins["classification_head"].layers[i].weight.data
+                this_layer.weight.data.copy_(old_weights)
+            self.layers.append(this_layer)
+
+
+    def final_forward(self, logits, **kw_args):
+        for i, layer in enumerate(self.layers):
+            if i > 0:
+                logits = self.activation_func(logits)
+            logits = layer(logits)
+        return logits
 
 class ClassificationModel(RobertaModel):
     def __init__(self, args, transformer=None, parallel_output=True):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)
         self.del_mixin('roberta-final')
-        self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
+        self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1, old_model=args.old_model))
+        # self.add_mixin('lora', LoRAMixin(args.hidden_size, args.num_layers, args.lora_r, args.lora_alpha, args.lora_dropout))
+
         # self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
-    def disable_untrainable_params(self):
-        self.transformer.requires_grad_(False)
+    # def disable_untrainable_params(self):
+    #     self.transformer.requires_grad_(False)
         # self.transformer.word_embeddings.requires_grad_(False)
-        for layer_id in range(len(self.transformer.layers)):
+        # for layero_id in range(len(self.transformer.layers)):
             # self.transformer.layers[layer_id].mlp.dense_h_to_4h.requires_grad_(True) #Wm2
             # self.transformer.layers[layer_id].attention.dense.requires_grad_(True) #Wm1
             # self.transformer.layers[layer_id].attention.query_key_value.requires_grad_(True) #QKV
-            self.transformer.layers[layer_id].mlp.dense_h_to_4h.bias.requires_grad_(True) #m2
-            self.transformer.layers[layer_id].attention.query_key_value.bias.requires_grad_(True) #bqk
+            # self.transformer.layers[layer_id].mlp.dense_h_to_4h.bias.requires_grad_(True) #m2
+            # self.transformer.layers[layer_id].attention.query_key_value.bias.requires_grad_(True) #bqk
 
 def get_batch(data_iterator, args, timers):
     # Items and their type.
@@ -75,7 +101,6 @@ tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'robert
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
 
 def _encode(text, text_pair):
-    breakpoint()
     encoded_input = tokenizer(text, text_pair, max_length=args.sample_length, padding='max_length', truncation='only_first')
     position_ids = create_position_ids_from_input_ids(torch.tensor([encoded_input['input_ids']]), 1, 0)
     return dict(input_ids=encoded_input['input_ids'], position_ids=position_ids[0].numpy(), attention_mask=encoded_input['attention_mask'])
@@ -94,6 +119,9 @@ def create_dataset_function(path, args):
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
+    py_parser.add_argument('--lora-r', type=int, default=8)
+    py_parser.add_argument('--lora-alpha', type=float, default=16)
+    py_parser.add_argument('--lora-dropout', type=str, default=None)
     py_parser.add_argument('--new_hyperparam', type=str, default=None)
     py_parser.add_argument('--sample_length', type=int, default=512-64)
     py_parser.add_argument('--prefix_len', type=int, default=64)
@@ -101,6 +129,24 @@ if __name__ == '__main__':
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
+
+    args.old_model = None
+    load = args.load
+    # args.load = "/workspace/yzy/ST_develop/SwissArmyTransformer/examples/roberta_test/checkpoints/finetune-roberta-large-boolq-lora-1e-4-03-18-12-27"
+    # args.load = "/workspace/yzy/ST_develop/SwissArmyTransformer/examples/roberta_test/checkpoints/finetune-roberta-large-boolq-bitfit-1e-3-03-08-13-15"
+    # args.load = "/workspace/yzy/ST_develop/SwissArmyTransformer/examples/roberta_test/checkpoints/finetune-roberta-large-boolq-pt-7e-3-nowarmup-03-08-10-58"
+    # initialize_distributed(args)
+    # old_model = ClassificationModel(args)
+    # args.do_train=True
+    # _ = load_checkpoint(old_model, args)
+    # old_model.requires_grad_(False)
+    # if args.fp16:
+    #     old_model.half()
+    # elif args.bf16:
+    #     old_model.bfloat16()
+    # old_model.cuda(torch.cuda.current_device())
+    # args.old_model = old_model
+
     # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
     # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
-    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
+    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function,already_init=False)

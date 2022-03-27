@@ -10,9 +10,9 @@ import argparse
 import numpy as np
 from functools import partial
 from SwissArmyTransformer import mpu, get_args
-from SwissArmyTransformer.training.deepspeed_training import training_main
+from SwissArmyTransformer.training.deepspeed_training import training_main, initialize_distributed, load_checkpoint
 from roberta_model import RobertaModel, LoRAMixin
-from SwissArmyTransformer.model.mixins import PrefixTuningMixin, MLPHeadMixin
+from SwissArmyTransformer.model.mixins import PrefixTuningMixin, BaseMixin
 from typing import Callable, Iterable, Tuple
 from torch.optim import Optimizer
 import math
@@ -72,7 +72,7 @@ class ChildTuningAdamW(Optimizer):
                 # =================== HACK BEGIN =======================
                 if self.mode is not None:
                     if self.mode == 'ChildTuning-D':
-                        if p in self.gradient_mask:
+                        if self.gradient_mask and p in self.gradient_mask:
                             grad *= self.gradient_mask[p]
                     else:
                         # ChildTuning-F
@@ -114,24 +114,48 @@ class ChildTuningAdamW(Optimizer):
         return loss
 
 #140551568434816
+class MLPHeadMixin(BaseMixin):
+    def __init__(self, hidden_size, *output_sizes, bias=True, activation_func=torch.nn.functional.relu, init_mean=0, init_std=0.005, old_model=None):
+        super().__init__()
+        self.activation_func = activation_func
+        last_size = hidden_size
+        self.layers = torch.nn.ModuleList()
+        for i, sz in enumerate(output_sizes):
+            this_layer = torch.nn.Linear(last_size, sz, bias=bias)
+            last_size = sz
+            if old_model is None:
+                torch.nn.init.normal_(this_layer.weight, mean=init_mean, std=init_std)
+            else:
+                old_weights = old_model.mixins["classification_head"].layers[i].weight.data
+                this_layer.weight.data.copy_(old_weights)
+            self.layers.append(this_layer)
+
+
+    def final_forward(self, logits, **kw_args):
+        for i, layer in enumerate(self.layers):
+            if i > 0:
+                logits = self.activation_func(logits)
+            logits = layer(logits)
+        return logits
+
 class ClassificationModel(RobertaModel):
     def __init__(self, args, transformer=None, parallel_output=True):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)
         self.del_mixin('roberta-final')
-        self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1, init_std=0.02))
+        self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1, init_std=0.02, old_model=args.old_model))
         # self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
 
-        self.add_mixin('lora', LoRAMixin(args.hidden_size, args.num_layers, args.lora_r, args.lora_alpha, args.lora_dropout))
+        # self.add_mixin('lora', LoRAMixin(args.hidden_size, args.num_layers, args.lora_r, args.lora_alpha, args.lora_dropout))
     def disable_untrainable_params(self):
         pass
         # self.transformer.requires_grad_(False)
         # self.transformer.word_embeddings.requires_grad_(False)
         # for layer_id in range(len(self.transformer.layers)):
-            # self.transformer.layers[layer_id].mlp.dense_h_to_4h.requires_grad_(True) #Wm2
-            # self.transformer.layers[layer_id].attention.dense.requires_grad_(True) #Wm1
-            # self.transformer.layers[layer_id].attention.query_key_value.requires_grad_(True) #QKV
-            # self.transformer.layers[layer_id].mlp.dense_h_to_4h.bias.requires_grad_(True) #m2
-            # self.transformer.layers[layer_id].attention.query_key_value.bias.requires_grad_(True) #bqk
+        # self.transformer.layers[layer_id].mlp.dense_h_to_4h.requires_grad_(True) #Wm2
+        # self.transformer.layers[layer_id].attention.dense.requires_grad_(True) #Wm1
+        # self.transformer.layers[layer_id].attention.query_key_value.requires_grad_(True) #QKV
+        # self.transformer.layers[layer_id].mlp.dense_h_to_4h.bias.requires_grad_(True) #m2
+        # self.transformer.layers[layer_id].attention.query_key_value.bias.requires_grad_(True) #bqk
 
 
 
@@ -263,7 +287,7 @@ def create_dataset_function(path, args):
             'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
             'label': label
         }
-    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="boolq_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="rte_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
@@ -285,6 +309,25 @@ if __name__ == '__main__':
     args = argparse.Namespace(**vars(args), **vars(known))
     if args.child_load is not None:
         args.load = args.child_load
+
+
+    args.old_model = None
+    load = args.load
+    args.load = "/workspace/yzy/ST_develop/SwissArmyTransformer/examples/roberta_test/checkpoints/finetune-roberta-large-boolq-lora-1e-4-03-18-12-27"
+    initialize_distributed(args)
+    old_model = ClassificationModel(args)
+    args.do_train=True
+    _ = load_checkpoint(old_model, args)
+    old_model.requires_grad_(False)
+    if args.fp16:
+        old_model.half()
+    elif args.bf16:
+        old_model.bfloat16()
+    old_model.cuda(torch.cuda.current_device())
+    args.old_model = old_model
+
+
+
     # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
     # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
-    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, get_optimizer_from_model=True, set_optimizer_mask=set_optimizer_mask)
+    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, get_optimizer_from_model=True, set_optimizer_mask=set_optimizer_mask, already_init=True)

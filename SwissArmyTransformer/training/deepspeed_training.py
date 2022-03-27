@@ -40,7 +40,7 @@ from SwissArmyTransformer.data_utils import make_loaders
 from SwissArmyTransformer.tokenization import get_tokenizer
 
 
-def training_main(args, model_cls, forward_step_function, create_dataset_function, init_function=None, get_optimizer_from_model=False, has_mask=False):
+def training_main(args, model_cls, forward_step_function, create_dataset_function, init_function=None, get_optimizer_from_model=False, has_mask=False, already_init=False, set_optimizer_mask=None):
     """Main training program."""
     hooks = {
         'forward_step': forward_step_function,
@@ -59,7 +59,8 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         args.experiment_name = args.experiment_name + datetime.now().strftime("%m-%d-%H-%M")
 
     # Pytorch distributed. must before seed
-    initialize_distributed(args)
+    if not already_init:
+        initialize_distributed(args)
     set_random_seed(args.seed)  # Random seeds for reproducability.
     # init tokenizer
     get_tokenizer(args)  # set args.vocab_size.
@@ -92,6 +93,9 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
 
     # Optimization related things
     model, optimizer = setup_model_untrainable_params_and_optimizer(args, model, optimizer=optimizer)
+
+    if set_optimizer_mask:
+        set_optimizer_mask(model, args, train_data, optimizer, forward_step_function)
 
     # initialize lr scheduler
     lr_scheduler = get_learning_rate_scheduler(optimizer, args.iteration, args)

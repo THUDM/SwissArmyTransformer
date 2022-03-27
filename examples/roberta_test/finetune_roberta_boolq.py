@@ -6,7 +6,7 @@ import numpy as np
 
 from SwissArmyTransformer import mpu, get_args
 from SwissArmyTransformer.training.deepspeed_training import training_main
-from roberta_model import RobertaModel
+from roberta_model import RobertaModel, LoRAMixin
 from SwissArmyTransformer.model.mixins import PrefixTuningMixin, MLPHeadMixin, BaseMixin
 
 class CLSMixin(BaseMixin):
@@ -31,11 +31,12 @@ class ClassificationModel(RobertaModel):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)
         self.del_mixin('roberta-final')
         self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
+        # self.add_mixin('lora', LoRAMixin(args.hidden_size, args.num_layers, args.lora_r, args.lora_alpha, args.lora_dropout))
         # self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
         # self.add_mixin('CLS', CLSMixin())
 
-    # def disable_untrainable_params(self):
-    #     self.transformer.requires_grad_(False)
+    def disable_untrainable_params(self):
+        self.transformer.requires_grad_(False)
     #     for layer_id in range(len(self.transformer.layers)):
     #         self.transformer.layers[layer_id].mlp.dense_h_to_4h.requires_grad_(True) #Wm2
     #         self.transformer.layers[layer_id].attention.dense.requires_grad_(True) #Wm1
@@ -110,10 +111,13 @@ def create_dataset_function(path, args):
             'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
             'label': label
         }
-    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="boolq_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=False, transformer_name="boolq_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
+    py_parser.add_argument('--lora-r', type=int, default=8)
+    py_parser.add_argument('--lora-alpha', type=float, default=16)
+    py_parser.add_argument('--lora-dropout', type=str, default=None)
     py_parser.add_argument('--new_hyperparam', type=str, default=None)
     py_parser.add_argument('--sample_length', type=int, default=512-16)
     py_parser.add_argument('--prefix_len', type=int, default=16)

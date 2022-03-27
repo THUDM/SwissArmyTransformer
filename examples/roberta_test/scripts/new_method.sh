@@ -3,7 +3,6 @@
 # Change for multinode config
 CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/roberta
 
-
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=1
 MP_SIZE=1
@@ -28,14 +27,9 @@ fi
 en_data="hf://super_glue/${dataset_name}/train"
 eval_data="hf://super_glue/${dataset_name}/validation"
 
-if [[ "$task_name" == "sst2" ]]; then
-  en_data="hf://glue/${dataset_name}/train"
-  eval_data="hf://glue/${dataset_name}/validation"
-fi
-
 config_json="$script_dir/ds_config_ft.json"
 gpt_options=" \
-       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-D-0.3-1e-5-ptahead-\
+       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-new_method-\
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
        --train-iters 16000 \
@@ -49,18 +43,13 @@ gpt_options=" \
        --save checkpoints/ \
        --split 1 \
        --eval-batch-size 2 \
-       --warmup 0.1 \
        --valid-data ${eval_data} \
        --strict-eval \
-       --save-interval 15000 \
-       --child-type ChildTuning-D \
-       --reserve-p 0.3 \
-       --max-grad-norm 1.0 \
+       --save-interval 2000 \
+       --warmup 0.1 \
 "
-# finetune-roberta-large-boolq-lora-1e-4-03-18-12-27
-#       --child-load /workspace/yzy/ST_develop/SwissArmyTransformer/examples/roberta_test/checkpoints/finetune-roberta-large-boolq-pt-7e-3-nowarmup-03-08-10-58
-#       --child-load /workspace/yzy/ST_develop/SwissArmyTransformer/examples/roberta_test/checkpoints/finetune-roberta-large-boolq-bitfit-1e-3-03-08-13-15
-#       --child-load /workspace/yzy/ST_develop/SwissArmyTransformer/examples/roberta_test/checkpoints/finetune-roberta-large-sst2-onehead-1e-3-03-09-10-58 \
+# warmup 0.1  style linear
+
 
 gpt_options="${gpt_options}
        --deepspeed \
@@ -76,7 +65,7 @@ else
   echo "use gpu $FINETUNE_GPU"
 fi
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include=localhost:$FINETUNE_GPU --master_port ${port} --hostfile ${HOST_FILE_PATH} child_ex/finetune_roberta_${task_name}.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include=localhost:$FINETUNE_GPU --master_port ${port} --hostfile ${HOST_FILE_PATH} ex_dir/new_method_${task_name}.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

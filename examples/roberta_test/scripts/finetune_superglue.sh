@@ -29,7 +29,7 @@ eval_data="hf://super_glue/${dataset_name}/validation"
 
 config_json="$script_dir/ds_config_ft.json"
 gpt_options=" \
-       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-bifit-1e-3-\
+       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-baseline-1e-5-newseed-\
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
        --train-iters 16000 \
@@ -47,6 +47,7 @@ gpt_options=" \
        --strict-eval \
        --save-interval 2000 \
        --warmup 0.1 \
+       --seed 11212 \
 "
 # warmup 0.1  style linear
 

@@ -11,7 +11,7 @@ import os
 import torch
 import argparse
 import numpy as np
-
+from functools import partial
 from SwissArmyTransformer import mpu, get_args
 from SwissArmyTransformer.training.deepspeed_training import training_main
 from roberta_model import RobertaModel
@@ -114,85 +114,85 @@ class ChildTuningAdamW(Optimizer):
 
         return loss
 
+#140551568434816
 class ClassificationModel(RobertaModel):
     def __init__(self, args, transformer=None, parallel_output=True):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)
         self.del_mixin('roberta-final')
-        self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
-        # self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
+        self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1, init_std=0.02))
+        self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
     def disable_untrainable_params(self):
         pass
         # self.transformer.requires_grad_(False)
         # self.transformer.word_embeddings.requires_grad_(False)
         # for layer_id in range(len(self.transformer.layers)):
-        # self.transformer.layers[layer_id].mlp.dense_h_to_4h.requires_grad_(True) #Wm2
-        # self.transformer.layers[layer_id].attention.dense.requires_grad_(True) #Wm1
-        # self.transformer.layers[layer_id].attention.query_key_value.requires_grad_(True) #QKV
-        # self.transformer.layers[layer_id].mlp.dense_h_to_4h.bias.requires_grad_(True) #m2
-        # self.transformer.layers[layer_id].attention.query_key_value.bias.requires_grad_(True) #bqk
+            # self.transformer.layers[layer_id].mlp.dense_h_to_4h.requires_grad_(True) #Wm2
+            # self.transformer.layers[layer_id].attention.dense.requires_grad_(True) #Wm1
+            # self.transformer.layers[layer_id].attention.query_key_value.requires_grad_(True) #QKV
+            # self.transformer.layers[layer_id].mlp.dense_h_to_4h.bias.requires_grad_(True) #m2
+            # self.transformer.layers[layer_id].attention.query_key_value.bias.requires_grad_(True) #bqk
 
-    def calc_mask(self, args, train_data):
-        timers = Timers()
-        N = len(train_data)//100
-        print(f"{N} samples to calc mask")
-
-        self.train()
-        gradient_mask = dict()
-        for name, params in self.named_parameters():
-            if 'transformer' in name:
-                gradient_mask[params] = params.new_zeros(params.size())
-        for _ in tqdm(range(N)):
-            loss, _ = forward_step(train_data, self, args, timers)
-            loss.backward()
-
-            for name, params in self.named_parameters():
-                if 'transformer' in name:
-                    torch.nn.utils.clip_grad_norm_(params, args.max_grad_norm)
-                    gradient_mask[params] += (params.grad ** 2) / N
-            self.zero_grad()
-        print('Calculate Fisher Information')
-
-        # Numpy
-        r = None
-        for k, v in gradient_mask.items():
-            v = v.view(-1).cpu().numpy()
-            if r is None:
-                r = v
-            else:
-                r = np.append(r, v)
-        polar = np.percentile(r, (1-args.reserve_p)*100)
-        for k in gradient_mask:
-            gradient_mask[k] = gradient_mask[k] >= polar
-        print('Polar => {}'.format(polar))
-        return gradient_mask
 
 
     def get_optimizer(self, args, train_data):
-        train_data = iter(train_data)
-        no_decay = ["bias", "layernorm.weight"]
-        optimizer_grouped_parameters = [
-            {
-                "params": [p for n, p in self.named_parameters() if not any(nd in n for nd in no_decay)],
-                "weight_decay": args.weight_decay
-            },
-            {
-                "params": [p for n, p in self.named_parameters() if any(nd in n for nd in no_decay)],
-                "weight_decay": 0.0,
-            },
-        ]
         optimizer_kwargs = {
             "betas": (0.9, 0.98),
             "eps": 1e-6,
         }
         optimizer_kwargs["lr"] = args.lr
-
-        optimizer = ChildTuningAdamW(optimizer_grouped_parameters, reserve_p=args.reserve_p, mode=args.child_type, **optimizer_kwargs)
-        if args.child_type == "ChildTuning-D":
-            grad_mask = self.calc_mask(args, train_data)
-            optimizer.set_gradient_mask(grad_mask)
-
+        optimizer = partial(ChildTuningAdamW, reserve_p=args.reserve_p, mode=args.child_type, **optimizer_kwargs)
         return optimizer
 
+def calc_mask(model, args, train_data):
+    timers = Timers()
+    N = len(train_data)//1000
+    print(f"{N} samples to calc mask")
+
+    model.train()
+    gradient_mask = dict()
+    for name, params in model.named_parameters():
+        if 'transformer.layers' in name:
+            gradient_mask[params] = params.new_zeros(params.size())
+    for _ in tqdm(range(N)):
+        loss, _ = forward_step(train_data, model, args, timers)
+        loss.backward()
+
+        for name, params in model.named_parameters():
+            if 'transformer.layers' in name:
+                torch.nn.utils.clip_grad_norm_(params, args.max_grad_norm)
+                gradient_mask[params] += (params.grad ** 2)
+        model.zero_grad()
+    print('Calculate Fisher Information')
+
+    # Numpy
+    r = None
+    for k, v in gradient_mask.items():
+        v = v.view(-1).cpu().numpy()
+        if r is None:
+            r = v
+        else:
+            r = np.append(r, v)
+    polar = np.percentile(r, (1-args.reserve_p)*100)
+    for k in gradient_mask:
+        gradient_mask[k] = gradient_mask[k] >= polar
+
+    print('Polar => {}'.format(polar))
+
+    for name, params in model.named_parameters():
+        if 'transformer.layers' in name:
+            cnt = gradient_mask[params].sum()
+            sz = gradient_mask[params].size()
+            cnt2 = 1
+            for szz in sz:
+                cnt2 *= szz
+            print(name[18:], f"{cnt}/{cnt2}", (cnt/cnt2).cpu().numpy().tolist())
+    return gradient_mask
+
+def set_optimizer_mask(model, args, train_data, optimizer):
+    train_data = iter(train_data)
+    if args.child_type == "ChildTuning-D":
+        grad_mask = calc_mask(model, args, train_data)
+        optimizer.set_gradient_mask(grad_mask)
 
 def get_batch(data_iterator, args, timers):
     # Items and their type.
@@ -257,13 +257,12 @@ def create_dataset_function(path, args):
             'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
             'label': label
         }
-    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="sst2_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=False, transformer_name="sst2_transformer")
 
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
-    py_parser = argparse.ArgumentParser(add_help=False)
-    py_parser.add_argument('--child-type', type=str, default="ChildTuning-F")
+    py_parser.add_argument('--child-type', type=str, default="ChildTuning-D")
     py_parser.add_argument('--reserve-p', type=float, default=0.3)
     py_parser.add_argument('--max-grad-norm', type=float, default=1.0)
     py_parser.add_argument('--child-load', type=str, default=None)
@@ -279,4 +278,4 @@ if __name__ == '__main__':
         args.load = args.child_load
     # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
     # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
-    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, get_optimizer_from_model=True)
+    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, get_optimizer_from_model=True, set_optimizer_mask=set_optimizer_mask)
