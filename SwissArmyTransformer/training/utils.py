@@ -24,7 +24,7 @@ import torch
 from tensorboardX import SummaryWriter
 
 SUMMARY_WRITER_DIR_NAME = 'runs'
-
+ARGS_DIR_NAME = 'args'
 
 def get_sample_writer(name, base="..", iteration=0):
     """Returns a tensorboard summary writer
@@ -48,6 +48,13 @@ def print_args(args):
     for arg in vars(args):
         dots = '.' * (29 - len(arg))
         print('  {} {} {}'.format(arg, dots, getattr(args, arg)), flush=True)
+    if args.save_args:
+        os.makedirs(ARGS_DIR_NAME, exist_ok=True)
+        with open(os.path.join(ARGS_DIR_NAME, args.experiment_name+'.txt'), "w") as f:
+            for arg in vars(args):
+                dots = '.' * (29 - len(arg))
+                f.write('  {} {} {}\n'.format(arg, dots, getattr(args, arg)))
+
 
 class Timers:
     """Group of timers."""
