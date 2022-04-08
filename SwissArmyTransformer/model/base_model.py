@@ -106,7 +106,7 @@ class BaseModel(torch.nn.Module):
         return self.transformer(*args, **kwargs)
 
     def collect_hooks_(self):
-        names = ['word_embedding_forward', 'position_embedding_forward',
+        names = ['word_embedding_forward', 'position_embedding_forward', 'after_position_forward',
                  'attention_forward', 'cross_attention_forward', 'mlp_forward', 'final_forward', 'layer_forward',
                  'attention_fn'
                  ]

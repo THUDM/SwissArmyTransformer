@@ -532,6 +532,11 @@ class BaseTransformer(torch.nn.Module):
             hidden_states = hidden_states + position_embeddings
         hidden_states = self.embedding_dropout(hidden_states)
 
+        # We should add a hook here for random_masking in MAE.
+        dic_buffer = {}
+        if 'after_position_forward' in self.hooks:
+            hidden_states, dic_buffer = self.hooks['after_position_forward'](hidden_states, **kw_args)
+
         output_per_layers = []
         if self.checkpoint_activations:
             # define custom_forward for checkpointing
@@ -667,5 +672,6 @@ class BaseTransformer(torch.nn.Module):
 
         outputs = [logits_parallel]
         outputs.extend(output_per_layers)
+        outputs.append(dic_buffer)
 
         return outputs
