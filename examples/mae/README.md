@@ -10,6 +10,6 @@ Then use `transform_param.py` to transform weights into `SwissArmyTransformer`.
 python transform_param.py
 ```
 
-## Usage
+## Inference
 
-TODO.
+`inference_mae.ipynb`

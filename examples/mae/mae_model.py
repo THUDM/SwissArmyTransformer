@@ -146,3 +146,17 @@ class MAE(EncoderDecoderModel):
         encoder_outputs, dic_buffer = self.encode(input_ids, enc_position_ids, enc_attention_mask, **kw_args)
         decoder_outputs, *mems = self.decode(input_ids, dec_position_ids, dec_attention_mask, encoder_outputs=encoder_outputs, ids_restore=dic_buffer["ids_restore"], **kw_args)
         return encoder_outputs, decoder_outputs, dic_buffer, *mems
+
+    def unpatchify(self, x):
+        """
+        x: (N, L, patch_size**2 *3)
+        imgs: (N, 3, H, W)
+        """
+        p = self.encoder.property.patch_size
+        h = w = int(x.shape[1]**.5)
+        assert h * w == x.shape[1]
+        
+        x = x.reshape(shape=(x.shape[0], h, w, p, p, 3))
+        x = torch.einsum('nhwpqc->nchpwq', x)
+        imgs = x.reshape(shape=(x.shape[0], 3, h * p, h * p))
+        return imgs
