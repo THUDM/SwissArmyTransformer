@@ -50,29 +50,7 @@ class PosMixin(InterpolatedPositionEmbeddingMixin):
             hidden_states, dic_buffer = self.after_position_forward(hidden_states, **kw_args)
             for k in dic_buffer:
                 kw_args['output_this_layer'][k] = dic_buffer[k]
-        # Layer norm at the begining of the transformer layer.
-        layernorm_output1 = layer.input_layernorm(hidden_states)
-        # Self attention.
-        attention_output = layer.attention(layernorm_output1, mask, **kw_args)
-
-        # Third LayerNorm
-        if layer.sandwich_ln:
-            attention_output = layer.third_layernorm(attention_output)
-
-        # Residual connection.
-        layernorm_input = hidden_states + attention_output
-        # Layer norm post the self attention.
-        layernorm_output = layer.post_attention_layernorm(layernorm_input)
-
-        # MLP.
-        mlp_output = layer.mlp(layernorm_output, **kw_args)
-
-        # Fourth LayerNorm
-        if layer.sandwich_ln:
-            mlp_output = layer.fourth_layernorm(mlp_output)
-
-        # Second residual connection.
-        output = layernorm_input + mlp_output
+        output, *mem = layer(hidden_states, mask, *args, **kw_args)
 
         return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
 
