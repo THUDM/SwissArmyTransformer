@@ -147,7 +147,9 @@ class ViTModel(BaseModel):
         else:
             self.old_property = self.property
         args.max_sequence_length = self.old_property.pre_len + self.old_property.num_patches + self.old_property.post_len
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output, activation_func=gelu, **kwargs)
+        if 'activation_func' not in kwargs:
+            kwargs['activation_func'] = gelu
+        super().__init__(args, transformer=transformer, parallel_output=parallel_output, **kwargs)
         self.add_mixin("patch_embedding", ImagePatchEmbeddingMixin(args.in_channels, args.hidden_size, self.property))
         self.add_mixin("pos_embedding", InterpolatedPositionEmbeddingMixin(args.hidden_size, self.old_property, self.property))
         self.add_mixin("cls", ClsMixin(args.hidden_size, args.num_classes))
