@@ -21,4 +21,7 @@ bash scripts/finetune_cifar10.sh
 ```
 
 * mae-base: iteration 1000:
-    * acc 0.5703
+    * 224x224 acc 0.9739
+    * 384x384 acc 0.9470
+
+The results show that fixed position embeddings do not generalize well to larger resolution.

@@ -66,7 +66,7 @@ def forward_step(data_iterator, model, args, timers):
 def create_dataset_function(path, args):
     transform = transforms.Compose(
         [transforms.ToTensor(),
-         transforms.Resize(384),
+         transforms.Resize(224),
          transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     trainset = torchvision.datasets.CIFAR10(root='/'.join(path.split('/')[:-1]), train=(path.split('/')[-1]=='train'),
                                             download=True, transform=transform)
@@ -94,7 +94,7 @@ if __name__ == '__main__':
         hidden_dropout=0.,
         attention_dropout=0.,
         in_channels=3,
-        image_size=[384, 384],
+        image_size=[224, 224],
         patch_size=16,
         pre_len=1,
         post_len=0,
@@ -104,9 +104,9 @@ if __name__ == '__main__':
         checkpoint_num_layers=1,
         sandwich_ln=False,
         post_ln=False,
-        model_parallel_size=1,
-        world_size=1,
-        rank=0,
+        # model_parallel_size=1,
+        # world_size=1,
+        # rank=0,
         num_classes=1000,
         dec_num_layers=8,
         dec_hidden_size=512,

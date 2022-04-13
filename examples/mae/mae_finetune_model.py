@@ -10,4 +10,4 @@ class MAE_finetune(torch.nn.Module):
         x = self.final(x[:, 0])
         return x
     def disable_untrainable_params(self):
-        pass
+        self.encoder.transformer.position_embeddings.requires_grad_(False)

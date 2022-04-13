@@ -4,7 +4,7 @@
 CHECKPOINT_PATH=/data/qingsong/pretrain/
 
 NUM_WORKERS=1
-NUM_GPUS_PER_WORKER=6
+NUM_GPUS_PER_WORKER=8
 MP_SIZE=1
 
 script_path=$(realpath $0)
@@ -50,7 +50,7 @@ gpt_options="${gpt_options}
 "
               
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:2,3,5,6,7,8 --master_port 16666 --hostfile ${HOST_FILE_PATH} finetune_mae_cifar10.py $@ ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:1,2,3,4,5,6,7,8 --master_port 16666 --hostfile ${HOST_FILE_PATH} finetune_mae_cifar10.py $@ ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 
