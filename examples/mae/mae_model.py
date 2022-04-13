@@ -25,7 +25,7 @@ class PosMixin(InterpolatedPositionEmbeddingMixin):
     def reinit(self, parent_model=None):
         old_weight = self.transformer.position_embeddings.weight.data
         self.transformer.position_embeddings = torch.nn.Embedding(self.property.seq_len, old_weight.shape[1]).type(old_weight.dtype).to(old_weight.device).requires_grad_(False)
-        self.transformer.position_embeddings.weight.data = get_2d_sincos_pos_embed(self.hidden_size, self.property.grid_size, self.property.pre_len, self.property.post_len)
+        self.transformer.position_embeddings.weight.data = torch.Tensor(get_2d_sincos_pos_embed(self.hidden_size, self.property.grid_size, self.property.pre_len, self.property.post_len))
     
     def after_position_forward(self, hidden_states, **kw_args):
         """
