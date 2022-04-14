@@ -31,11 +31,11 @@ eval_data="hf://super_glue/${dataset_name}/validation"
 
 config_json="$script_dir/ds_config_ft.json"
 
-finetune_type="bitfit"
+finetune_type="cls+pt"
 
 gpt_options=" \
        --finetune-type ${finetune_type} \
-       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-${finetune_type}-1e-3-bz32-seed${seed}- \
+       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-${finetune_type}-7e-3-seed${seed}- \
        --summary-dir runs/finetune-$MODEL_TYPE-${dataset_name}-${finetune_type} \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
@@ -57,11 +57,12 @@ gpt_options=" \
        --warmup 0.1 \
        --save-interval 4000 \
        --seed ${seed} \
+       --save-args \
 "
 
+#       --child-load /workspace/yzy/ST_develop/SwissArmyTransformer/examples/roberta_test/checkpoints/finetune-roberta-large-boolq-pt-7e-3-seed408805958-03-25-13-25 \
 #child part
 gpt_options="${gpt_options}
-       --child-load /workspace/yzy/ST_develop/SwissArmyTransformer/examples/roberta_test/checkpoints/finetune-roberta-large-boolq-pt-7e-3-nowarmup-03-08-10-58 \
        --child-type ChildTuning-D \
        --reserve-p 0.3 \
        --max-grad-norm 1.0 \
@@ -71,8 +72,9 @@ gpt_options="${gpt_options}
 
 # --head-load \
 gpt_options="${gpt_options}
-       --head-path /workspace/yzy/ST_develop/SwissArmyTransformer/examples/roberta_test/checkpoints/finetune-roberta-large-boolq-lora-1e-4-03-18-12-27 \
+       --head-path /dataset/fd5061f6/yzy/roberta_v100/checkpoints/finetune-roberta-large-boolq-bitfit-1e-3-seed7549048-03-25-13-22 \
 "
+#       --body-path /dataset/fd5061f6/yzy/roberta_v100/checkpoints/finetune-roberta-large-boolq-all-1e-5-seed465049921-loadbithead-03-27-01-18 \
 
 gpt_options="${gpt_options}
        --deepspeed \

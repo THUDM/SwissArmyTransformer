@@ -1,10 +1,115 @@
+from lib2to3.pytree import Base
 import torch
 import torch.nn as nn
 import math
 from SwissArmyTransformer.mpu.transformer import LayerNorm, standard_attention
-from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel
+from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel, non_conflict
 from SwissArmyTransformer.mpu.utils import split_tensor_along_last_dim
+import torch.nn.functional as F
+from SwissArmyTransformer import mpu
 roberta_gelu = nn.functional.gelu
+
+class PrefixTuningMixin(BaseMixin):
+    def __init__(self, num_layers, hidden_size_per_attention_head, num_attention_heads, prefix_len):
+        super().__init__()
+        self.prefix = torch.nn.ParameterList([
+            torch.nn.Parameter(torch.randn(2, num_attention_heads, prefix_len, hidden_size_per_attention_head)*0.01)
+            for layer_id in range(num_layers)
+        ])
+        self.prefix_len = prefix_len
+
+    @non_conflict
+    def attention_fn(self, q, k, v, mask, dropout_fn, old_impl=standard_attention, **kw_args):
+        prefix_k, prefix_v = self.prefix[kw_args['layer_id']]
+
+        b, nh, seq_len, hidden_size = k.shape
+        prefix_k = prefix_k.unsqueeze(0).expand(b, nh, -1, hidden_size)
+        prefix_v = prefix_v.unsqueeze(0).expand(b, nh, -1, hidden_size)
+
+        k = torch.cat((k, prefix_k), dim=2)
+        v = torch.cat((v, prefix_v), dim=2)
+        if mask.numel() > 1:
+            mask_prefixed = torch.ones(self.prefix_len, device=mask.device, dtype=mask.dtype)
+            mask_prefixed = mask_prefixed.expand(*(mask.size()[:-1]), -1)
+            mask = torch.cat((mask, mask_prefixed), dim=-1)
+        return old_impl(q, k, v, mask, dropout_fn, **kw_args)
+
+class CollectorMixin(BaseMixin):
+    def __init__(self, number_layers, hidden_size_per_attention_head, num_attention_heads, collect_len):
+        super().__init__()
+        self.collectors = torch.nn.ParameterList([
+            torch.nn.Parameter(torch.randn(num_attention_heads, collect_len, hidden_size_per_attention_head)*0.002)
+            for layer_id in range(number_layers)
+        ])
+        self.collect_len = collect_len
+
+    @non_conflict
+    def attention_fn(self, q, k, v, mask, dropout_fn, attention_output, log_attention_weights=None, scaling_attention_score=True, **kw_args):
+        collector_q = self.collectors[kw_args['layer_id']]
+
+        b, nh, seq_len, hidden_size = k.shape
+        collector_q = collector_q.unsqueeze(0).expand(b, nh, -1, hidden_size)
+
+        q = torch.cat((q, collector_q), dim=2)
+        if scaling_attention_score:
+            q = q / math.sqrt(q.shape[-1])
+        attention_scores = torch.matmul(q, k.transpose(-1, -2))
+        if log_attention_weights is not None:
+            attention_scores += log_attention_weights
+
+        if not (mask.shape[-2] == 1 and (mask > 0).all()):
+            # if auto-regressive, skip
+            attention_scores = torch.mul(attention_scores, mask) - \
+                               10000.0 * (1.0 - mask)
+
+        attention_probs = F.softmax(attention_scores, dim=-1)
+
+        if dropout_fn is not None:
+            if mpu.get_cuda_rng_tracker is not None:
+                with mpu.get_cuda_rng_tracker().fork():
+                    attention_probs = dropout_fn(attention_probs)
+            else:
+                attention_probs = dropout_fn(attention_probs)
+
+        context_layer = torch.matmul(attention_probs, v)
+        output_shape = context_layer.shape[:-3] + (self.collect_len, -1,)
+        attention_output.append(context_layer[:,:,:self.collect_len].permute(0, 2, 1, 3).contiguous().view(*output_shape))
+        return context_layer[:,:,self.collect_len:]
+
+
+class CLSMixin(BaseMixin):
+    def __init__(self, args):
+        super().__init__()
+        self.cls_number = args.cls_number
+        self.hidden_size = args.hidden_size
+        self.cls_embeddings = torch.nn.Parameter(torch.zeros([self.cls_number, self.hidden_size]))
+        torch.nn.init.normal_(self.cls_embeddings, mean=0.0, std=0.02)
+
+    def word_embedding_forward(self, input_ids, **kw_tensors):
+        origin_embeddings = self.transformer.word_embeddings(input_ids)
+        CLS_embeddings = self.cls_embeddings.unsqueeze(0).repeat([origin_embeddings.shape[0], 1, 1])
+        new_embeddings = torch.cat([CLS_embeddings, origin_embeddings[:, 1:]], dim=1)
+
+        return new_embeddings
+
+    def position_embedding_forward(self, position_ids, **kw_tensors):
+        cls_id = position_ids[0,0].cpu().numpy().tolist()
+        if self.cls_number > 1:
+            position_ids = torch.cat([torch.ones(position_ids.shape[0], self.cls_number-1).long().cuda()*cls_id, position_ids], dim=1)
+        position_embeddings = self.transformer.position_embeddings(position_ids)
+        return  position_embeddings
+
+    @non_conflict
+    def attention_fn(self, q, k, v, mask, dropout_fn, old_impl=standard_attention, **kw_args):
+        if self.cls_number > 1 and mask.numel() > 1:
+            mask_fixed = torch.ones(self.cls_number - 1, device=mask.device, dtype=mask.dtype)
+            mask_fixed = mask_fixed.expand(*(mask.size()[:-1]), -1)
+            mask = torch.cat((mask, mask_fixed), dim=-1)
+        return old_impl(q, k, v, mask, dropout_fn, **kw_args)
+
+    def reinit(self, *pre_mixins):
+        old_weights = self.transformer.word_embeddings.weight.data[0]
+        self.cls_embeddings.data[0].copy_(old_weights)
 
 class LoRAMixin(BaseMixin):
     def __init__(

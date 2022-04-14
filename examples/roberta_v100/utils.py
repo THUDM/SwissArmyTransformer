@@ -36,7 +36,8 @@ def create_dataset_function(path, args):
                 'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
                 'label': label
             }
-        return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/workspace/yzy/SwissArmyTransformerDatasets', offline=True, transformer_name="rte_transformer")
+        transformer_name = f"rte_transformer_{args.sample_length}"
+        return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/workspace/SwissArmyTransformerDatasets', offline=True, transformer_name=transformer_name)
     elif dataset_name == "boolq":
         def process_fn(row):
             pack, label = _encode_double_text(row['passage'], row['question'], args), int(row['label'])
@@ -46,7 +47,8 @@ def create_dataset_function(path, args):
                 'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
                 'label': label
             }
-        return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/workspace/yzy/SwissArmyTransformerDatasets', offline=True, transformer_name="boolq_transformer")
+        transformer_name = f"boolq_transformer_{args.sample_length}"
+        return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/workspace/SwissArmyTransformerDatasets', offline=True, transformer_name=transformer_name)
 
 
 class ChildTuningAdamW(Optimizer):

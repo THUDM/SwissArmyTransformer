@@ -40,7 +40,9 @@ from SwissArmyTransformer.data_utils import make_loaders
 from SwissArmyTransformer.tokenization import get_tokenizer
 
 
-def training_main(args, model_cls, forward_step_function, create_dataset_function, init_function=None, get_optimizer_from_model=False, has_mask=False, already_init=False, set_optimizer_mask=None):
+def training_main(args, model_cls, forward_step_function, create_dataset_function, 
+                  init_function=None, get_optimizer_from_model=False, already_init=False, 
+                  set_optimizer_mask=None, reset_part=None):
     """Main training program."""
     hooks = {
         'forward_step': forward_step_function,
@@ -78,6 +80,12 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         #     args.iteration = load_checkpoint(model, optimizer, args)
     else:
         args.iteration = 0
+
+    if reset_part is not None:
+        if 'head' in reset_part:
+            print("reset head para!!!!!!!!!!!!---------------------------------")
+            model.mixins['classification_head'].reset_parameter()
+
     if args.save:
         args.save = os.path.join(args.save, args.experiment_name)
     torch.distributed.barrier()
@@ -168,7 +176,7 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
 
     model.disable_untrainable_params() # mark trainable params
 
-    param_groups = get_optimizer_param_groups(model)
+    param_groups = get_optimizer_param_groups(args, model)
 
     if args.train_data is not None:
         if args.deepspeed:
@@ -190,7 +198,7 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
     return model, optimizer
 
 
-def get_params_for_weight_decay_optimization(module):
+def get_params_for_weight_decay_optimization(args, module):
     weight_decay_params = {'params': []}
     no_weight_decay_params = {'params': [], 'weight_decay': 0.0}
     for module_ in module.modules():
@@ -214,11 +222,14 @@ def get_params_for_weight_decay_optimization(module):
     return weight_decay_params, no_weight_decay_params
 
 
-def get_optimizer_param_groups(model):
+def get_optimizer_param_groups(args, model):
     # Build parameter groups (weight decay and non-decay).
     if hasattr(model, 'module'):
         model = model.module
-    param_groups = get_params_for_weight_decay_optimization(model)  # TODO move to here
+    # if args.get_optimizer_group is not None:
+    #     param_groups = args.get_optimizer_group(model)
+    # else:
+    param_groups = get_params_for_weight_decay_optimization(args, model)  # TODO move to here
     # Add model parallel attribute if it is not set.
     for param_group in param_groups:
         for param in param_group['params']:

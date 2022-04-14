@@ -20,7 +20,7 @@ def run(gpu, seed_per_gpu, dataset, log_dir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu-s', type=int, default=0)
-    parser.add_argument('--number-gpu', type=int, default=2)
+    parser.add_argument('--number-gpu', type=int, default=4)
     parser.add_argument('--seed-per-gpu', type=int, default=1)
     parser.add_argument('--dataset', type=str, required=True)
     parser.add_argument('--node', type=int, default=3)

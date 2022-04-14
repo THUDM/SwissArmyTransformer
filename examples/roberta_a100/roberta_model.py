@@ -1,3 +1,4 @@
+from lib2to3.pytree import Base
 import torch
 import torch.nn as nn
 import math
@@ -6,6 +7,27 @@ from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel
 from SwissArmyTransformer.mpu.utils import split_tensor_along_last_dim
 roberta_gelu = nn.functional.gelu
 
+# class CoMixin(BaseMixin):
+#     def __init__(self):
+#         super().__init__()
+#     def 
+
+class CLSMixin(BaseMixin):
+    def __init__(self, args):
+        super().__init__()
+        self.cls_embeddings = torch.nn.Parameter(torch.zeros([1, args.hidden_size]))
+        torch.nn.init.normal_(self.cls_embeddings, mean=0.0, std=0.02)
+
+    def word_embedding_forward(self, input_ids, **kw_tensors):
+        origin_embeddings = self.transformer.word_embeddings(input_ids)
+        CLS_embeddings = self.cls_embeddings.view([1,1,-1]).repeat([origin_embeddings.shape[0], 1, 1])
+        new_embeddings = torch.cat([CLS_embeddings, origin_embeddings[:, 1:]], dim=1)
+        return new_embeddings
+
+    def reinit(self, *pre_mixins):
+        old_weights = self.transformer.word_embeddings.weight.data[0]
+        self.cls_embeddings.data.copy_(old_weights)
+        
 class LoRAMixin(BaseMixin):
     def __init__(
             self,

@@ -5,15 +5,18 @@ import argparse
 import numpy as np
 
 from SwissArmyTransformer import mpu, get_args
-from SwissArmyTransformer.training.deepspeed_training import training_main, initialize_distributed, load_checkpoint
-from roberta_model import RobertaModel, LoRAMixin
+from SwissArmyTransformer\
+    .training.deepspeed_training import training_main, initialize_distributed, load_checkpoint
+from roberta_model import RobertaModel, LoRAMixin, CLSMixin
 from SwissArmyTransformer.model.mixins import PrefixTuningMixin, BaseMixin
 from functools import partial
 from utils import create_dataset_function, ChildTuningAdamW, set_optimizer_mask
 
+        
 class MLPHeadMixin(BaseMixin):
     def __init__(self, hidden_size, *output_sizes, bias=True, activation_func=torch.nn.functional.relu, init_mean=0, init_std=0.005, old_model=None):
         super().__init__()
+        # init_std = 0.1
         self.activation_func = activation_func
         last_size = hidden_size
         self.layers = torch.nn.ModuleList()
@@ -26,6 +29,11 @@ class MLPHeadMixin(BaseMixin):
                 old_weights = old_model.mixins["classification_head"].layers[i].weight.data
                 this_layer.weight.data.copy_(old_weights)
             self.layers.append(this_layer)
+
+    def reset_parameter(self):
+        for i in range(len(self.layers)):
+            self.layers[i].reset_parameters()
+            torch.nn.init.normal_(self.layers[i].weight, mean=0, std=0.005)
 
     def final_forward(self, logits, **kw_args):
         for i, layer in enumerate(self.layers):
@@ -46,9 +54,11 @@ class ClassificationModel(RobertaModel):
         if 'lora' in self.finetune_type:
             print('Add lora mixin')
             self.add_mixin('lora', LoRAMixin(args.hidden_size, args.num_layers, args.lora_r, args.lora_alpha, args.lora_dropout))
-
+        if 'cls' in self.finetune_type:
+            print('Add CLS mixin')
+            self.add_mixin('cls', CLSMixin(args))
+            
     def disable_untrainable_params(self):
-        breakpoint()
         if not 'all' in self.finetune_type:
             print('froze model parameter')
             self.transformer.requires_grad_(False)
@@ -145,6 +155,7 @@ if __name__ == '__main__':
     #old_model
     py_parser.add_argument('--head-load', action="store_true")
     py_parser.add_argument('--head-path', type=str, default=None)
+    py_parser.add_argument('--body-path', type=str, default=None)
 
 
     known, args_list = py_parser.parse_known_args()
@@ -157,26 +168,33 @@ if __name__ == '__main__':
     print(f"*******************Finetune Type is {args.finetune_type}****************************")
     print(f"*******************Learning Rate is {args.lr}****************************")
 
+    args.get_optimizer_group = None
+    
+    
     if 'child' in args.finetune_type:
         if args.child_load is not None:
             args.load = args.child_load
         training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, get_optimizer_from_model=True, set_optimizer_mask=set_optimizer_mask)
     elif args.head_load:
-        args.old_model = None
-        load = args.load
-        args.load = args.head_path
-        initialize_distributed(args)
-        old_model = ClassificationModel(args)
-        args.do_train=True
-        _ = load_checkpoint(old_model, args)
-        old_model.requires_grad_(False)
-        if args.fp16:
-            old_model.half()
-        elif args.bf16:
-            old_model.bfloat16()
-        old_model.cuda(torch.cuda.current_device())
-        args.old_model = old_model
-        training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, already_init=True)
+        if args.body_path:
+            args.load = args.body_path
+            training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, reset_part="head")
+        else:
+            args.old_model = None
+            load = args.load
+            args.load = args.head_path
+            initialize_distributed(args)
+            old_model = ClassificationModel(args)
+            args.do_train=True
+            _ = load_checkpoint(old_model, args)
+            old_model.requires_grad_(False)
+            if args.fp16:
+                old_model.half()
+            elif args.bf16:
+                old_model.bfloat16()
+            old_model.cuda(torch.cuda.current_device())
+            args.old_model = old_model
+            training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, already_init=True)
     else:
         training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
 
