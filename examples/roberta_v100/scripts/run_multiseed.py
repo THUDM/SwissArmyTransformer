@@ -70,10 +70,10 @@ if __name__ == "__main__":
     log_dir = f"multiseed_node{args.node}_/"
 
     if args.lr_search:
-        lr_search = [1e-5, 5e-5, 1e-4, 5e-4]
+        lr_search = [5e-5, 1e-4, 5e-4, 1e-3]
         assert len(lr_search) == args.number_gpu
     else:
-        lr_search = [1e-3] * args.number_gpu
+        lr_search = [5e-4] * args.number_gpu
 
     for i in range(args.number_gpu):
         p = Process(target=run, args=(gpu_start+i,args.seed_per_gpu,args.dataset,log_dir,lr_search[i], ))

@@ -180,6 +180,100 @@ class LoRAMixin(BaseMixin):
             output = layer.output_dropout(output)
         return output
 
+class LoRAM2Mixin(BaseMixin):
+    def __init__(
+            self,
+            hidden_size: int,
+            layer_num: int = 24,
+            r: int = 0,
+            lora_alpha: int = 1,
+            lora_dropout: float = 0.,
+    ):
+        super().__init__()
+        # Actual trainable parameters
+        self.r = r
+        self.lora_alpha = lora_alpha
+        if lora_dropout and lora_dropout > 0:
+            self.lora_dropout = nn.Dropout(p=lora_dropout)
+        else:
+            self.lora_dropout = lambda x: x
+
+        self.lora_linear = nn.ModuleList([
+            nn.ParameterDict()
+            for layer_id in range(layer_num)
+        ])
+        matrices = ["M2"]
+
+        for i in range(layer_num):
+            for matrix in matrices:
+                input_dim = 4 * hidden_size if matrix == "M2" else hidden_size
+                output_dim = 4 * hidden_size if matrix == "M1" else hidden_size
+                self.lora_linear[i][matrix+"_A"] = nn.Parameter(torch.zeros((r, input_dim)))
+                self.lora_linear[i][matrix+"_B"] = nn.Parameter(torch.zeros((output_dim, r)))
+                nn.init.kaiming_uniform_(self.lora_linear[i][matrix+"_A"], a=math.sqrt(5))
+                nn.init.zeros_(self.lora_linear[i][matrix+"_B"])
+
+
+        self.scaling = self.lora_alpha / self.r
+
+
+    def mlp_forward(self, hidden_states, layer_id, **kw_args):
+        layer = self.transformer.layers[layer_id].mlp
+        lora_layer = self.lora_linear[layer_id]
+
+        intermediate_parallel = layer.dense_h_to_4h(hidden_states)
+        intermediate_parallel = layer.activation_func(intermediate_parallel)
+        output = layer.dense_4h_to_h(intermediate_parallel)
+
+        output = output + (self.lora_dropout(intermediate_parallel) @ lora_layer["M2_A"].T @ lora_layer["M2_B"].T) * self.scaling
+
+        if self.training:
+            output = layer.dropout(output)
+
+        return output
+
+class FFADDMixin(BaseMixin):
+    def __init__(
+            self,
+            hidden_size: int,
+            layer_num: int = 24,
+            r: int = 0,
+    ):
+        super().__init__()
+        # Actual trainable parameters
+        self.r = r
+
+        self.ffadd_linear = nn.ModuleList([
+            nn.ModuleList()
+            for layer_id in range(layer_num)
+        ])
+
+        for i in range(layer_num):
+            self.ffadd_linear[i].append(torch.nn.Linear(hidden_size, r, bias=True))
+            self.ffadd_linear[i].append(torch.nn.Linear(r, hidden_size, bias=True))
+            nn.init.zeros_(self.ffadd_linear[i][1].weight)
+            nn.init.zeros_(self.ffadd_linear[i][1].bias)
+
+
+    def mlp_forward(self, hidden_states, layer_id, **kw_args):
+        layer = self.transformer.layers[layer_id].mlp
+        ffadd_layer = self.ffadd_linear[layer_id]
+
+        intermediate_parallel = layer.dense_h_to_4h(hidden_states)
+        intermediate_parallel = layer.activation_func(intermediate_parallel)
+        output = layer.dense_4h_to_h(intermediate_parallel)
+
+        intermediate_add = ffadd_layer[0](hidden_states)
+        intermediate_add = layer.activation_func(intermediate_add)
+        output2 = ffadd_layer[1](intermediate_add)
+        output = output + output2
+
+
+        if self.training:
+            output = layer.dropout(output)
+
+        return output
+
 class roberta_lm_head(torch.nn.Module):
     def __init__(self, vocab_size, hidden_size, layernorm_epsilon=1.0e-5):
         super().__init__()

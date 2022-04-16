@@ -6,7 +6,7 @@ import numpy as np
 import copy
 from SwissArmyTransformer import mpu, get_args
 from SwissArmyTransformer.training.deepspeed_training import training_main, initialize_distributed, load_checkpoint
-from roberta_model import RobertaModel, LoRAMixin, CLSMixin, CollectorMixin, PrefixTuningMixin
+from roberta_model import RobertaModel, LoRAMixin, CLSMixin, CollectorMixin, PrefixTuningMixin, FFADDMixin, LoRAM2Mixin
 from SwissArmyTransformer.model.mixins import BaseMixin
 from functools import partial
 from utils import create_dataset_function, ChildTuningAdamW, set_optimizer_mask
@@ -60,10 +60,16 @@ class ClassificationModel(RobertaModel):
             self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
         if 'lora' in self.finetune_type:
             print('Add lora mixin')
-            self.add_mixin('lora', LoRAMixin(args.hidden_size, args.num_layers, args.lora_r, args.lora_alpha, args.lora_dropout))
+            if 'lora_m2' in self.finetune_type:
+                self.add_mixin('loraM2', LoRAM2Mixin(args.hidden_size, args.num_layers, args.lora_r, args.lora_alpha))
+            else:
+                self.add_mixin('lora', LoRAMixin(args.hidden_size, args.num_layers, args.lora_r, args.lora_alpha, args.lora_dropout))
         if 'cls' in self.finetune_type:
             print('Add CLS mixin')
             self.add_mixin('cls', CLSMixin(args))
+        if 'ffadd' in self.finetune_type:
+            print('Add FFADD mixin')
+            self.add_mixin('ffadd', FFADDMixin(args.hidden_size, args.num_layers, args.ffadd_r))
             
     def disable_untrainable_params(self):
         if not 'all' in self.finetune_type:
@@ -196,6 +202,9 @@ if __name__ == '__main__':
     #2step
     py_parser.add_argument('--step1-lr', type=float, default=5e-5)
     py_parser.add_argument('--step1-iters', type=int, default=4000)
+
+    #ffadd
+    py_parser.add_argument('--ffadd-r', type=int, default=32)
 
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)

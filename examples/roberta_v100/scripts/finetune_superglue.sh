@@ -33,7 +33,7 @@ eval_data="hf://super_glue/${dataset_name}/validation"
 
 config_json="$script_dir/ds_config_${seed}.json"
 
-finetune_type="all"
+finetune_type="ffadd"
 
 gpt_options=" \
        --finetune-type ${finetune_type} \
@@ -64,6 +64,11 @@ gpt_options=" \
        --save-args \
 "
 
+#ffadd part
+gpt_options="${gpt_options}
+        --ffadd-r 32 \
+"
+
 #2step
 gpt_options="${gpt_options}
         --step1-lr 3e-5 \
@@ -80,7 +85,6 @@ gpt_options="${gpt_options}
 "
 
 #load head part
-
 # --head-load \
 gpt_options="${gpt_options}
        --head-path /dataset/fd5061f6/yzy/roberta_v100/checkpoints/finetune-roberta-large-boolq-bitfit-1e-3-seed7549048-03-25-13-22 \
