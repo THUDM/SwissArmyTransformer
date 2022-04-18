@@ -61,19 +61,23 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         args.experiment_name = args.experiment_name + datetime.now().strftime("%m-%d-%H-%M")
 
     # Pytorch distributed. must before seed
-    if not already_init:
-        initialize_distributed(args)
-    set_random_seed(args.seed)  # Random seeds for reproducability.
+    if isinstance(model_cls, type):
+        if not already_init:
+            initialize_distributed(args)
+        set_random_seed(args.seed)  # Random seeds for reproducability.
     # init tokenizer
     get_tokenizer(args)  # set args.vocab_size.
     # Data stuff.
     train_data, val_data, test_data = make_loaders(args, hooks['create_dataset_function'])
 
     # Build model
-    model = get_model(args, model_cls)
+    if isinstance(model_cls, type):
+        model = get_model(args, model_cls)
+    else:
+        model = model_cls
 
     # Config model IO
-    if args.load is not None:
+    if args.load is not None and isinstance(model_cls, type): # If you pass a model by yourself, you need to load it by youself as well.
         args.iteration = load_checkpoint(model, args)
         # if we don't load optim_states, filelock is no more needed.
         # with FileLock("/root/checkpoint_lock", timeout=-1):

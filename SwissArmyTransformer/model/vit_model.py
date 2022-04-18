@@ -3,6 +3,9 @@
 # @Time    :   2021/12/16
 # @Author  :   Zhuoyi Yang
 # @Contact :   yangzhuo18@mails.tsinghua.edu.cn
+# @Modified:   2022/04/08
+# @By      :   Qingsong Lv
+# @Contact :   lqs19@mails.tsinghua.edu.cn
 import argparse
 
 import torch
@@ -42,7 +45,11 @@ class ImagePatchEmbeddingMixin(BaseMixin):
 
     def word_embedding_forward(self, input_ids, **kwargs):
         """
-        you should pass input_ids with shape (batch_size, pre_len+post_len)
+        Input:
+        * input_ids with shape (batch_size, pre_len+post_len)
+        * kwargs["image"] with shape (B, C, H, W)
+        Output:
+        * (batch_size, hidden_size)
         """
         images = kwargs["image"]
         embeddings = self.proj(images)
@@ -88,6 +95,16 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
         return torch.cat((pre_pos_embed, patch_pos_embed, post_pos_embed), dim=0)
     
     def position_embedding_forward(self, position_ids, **kwargs):
+        """
+        There are two modes for position_embedding:
+        * offline mode: You have reinited position_embeddings to a pre-defined new seq_len.
+        * online mode: You need to interpolate position_embeddings for every forward pass.
+
+        Input:
+        * position_ids: (batch_size, seq_len)
+        * kwargs["offline"]: boolean to identify offline or not
+        * kwargs["height"], kwargs["width"]: specified image height and width for online mode
+        """
         if kwargs["offline"]:
             return self.transformer.position_embeddings(position_ids)
         else:
@@ -130,7 +147,9 @@ class ViTModel(BaseModel):
         else:
             self.old_property = self.property
         args.max_sequence_length = self.old_property.pre_len + self.old_property.num_patches + self.old_property.post_len
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output, activation_func=gelu, **kwargs)
+        if 'activation_func' not in kwargs:
+            kwargs['activation_func'] = gelu
+        super().__init__(args, transformer=transformer, parallel_output=parallel_output, **kwargs)
         self.add_mixin("patch_embedding", ImagePatchEmbeddingMixin(args.in_channels, args.hidden_size, self.property))
         self.add_mixin("pos_embedding", InterpolatedPositionEmbeddingMixin(args.hidden_size, self.old_property, self.property))
         self.add_mixin("cls", ClsMixin(args.hidden_size, args.num_classes))
