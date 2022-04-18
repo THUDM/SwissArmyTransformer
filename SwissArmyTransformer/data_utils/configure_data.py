@@ -79,7 +79,10 @@ def make_dataset_full(path, split, args, create_dataset_function,
                 scale = max(200, 1 + (args.train_iters * args.batch_size * world_size) // len(ds))
             else:
                 scale = 200
-            ds = RandomMappingDataset(ds, scale=scale)
+            if args.static_ramdom:
+                ds = RandomDataset(ds, scale=scale)
+            else:
+                ds = RandomMappingDataset(ds, scale=scale)
         return ds 
     else:
         # must first split datasets, then reweight/concat, finally random-mapping.
@@ -283,6 +286,7 @@ class RandomMappingDataset(data.Dataset):
     '''
     Dataset wrapper to randomly mapping indices to original order.
     Will also enlarge the length
+
     '''
     def __init__(self, ds, scale=200, **kwargs):
         self.wrapped_data = ds
@@ -296,6 +300,23 @@ class RandomMappingDataset(data.Dataset):
         rng = np.random.RandomState(seed=[rng.randint(0, 2**32-1) for _ in range(16)])
         index = rng.randint(len(self.wrapped_data))
         return self.wrapped_data[index]
+
+class RandomDataset(data.Dataset):
+    '''
+    Dataset wrapper to randomly mapping indices to original order.
+    The indices are pre-processed.
+    Will also enlarge the length
+    '''
+    def __init__(self, ds, scale=200, **kwargs):
+        self.wrapped_data = ds
+        self.scale = scale
+        self.indices = np.random.permutation(np.array(range(len(ds))))
+
+    def __len__(self):
+        return len(self.wrapped_data) * self.scale
+
+    def __getitem__(self, index):
+        return self.wrapped_data[self.indices[index % len(self.wrapped_data)]]
 
 class BlockedRandomSplitDataset(data.Dataset):
     '''

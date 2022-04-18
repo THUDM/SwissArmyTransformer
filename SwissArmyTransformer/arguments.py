@@ -211,6 +211,9 @@ def add_data_args(parser):
     group.add_argument('--block-size', type=int, default=10000,
                        help="""Size of block to reduce memory in dataset""")
 
+    group.add_argument('--static-random', action='store_true',
+                       help="""Calculate the random indices when dataset init""")
+
     return parser
     
 def add_tokenization_args(parser):
