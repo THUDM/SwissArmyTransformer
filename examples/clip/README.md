@@ -13,3 +13,13 @@ python transform_param.py
 ## Inference
 
 `inference_clip.ipynb`
+
+## Fine-tune
+
+Here is an example of fine-tuning image encoder for CIFAR-10.
+
+```bash
+bash scripts/finetune_cifar10.sh
+```
+
+* iteration 1000 validation acc: 0.9402
