@@ -21,7 +21,7 @@ python -m torch.distributed.launch --nproc_per_node=$MPSIZE --master_port $MASTE
        --mode inference \
        --model-parallel-size $MPSIZE \
        $MODEL_ARGS \
-       --num-beams 4 \
+       --num-beams 1 \
        --no-repeat-ngram-size 3 \
        --length-penalty 0.7 \
        --fp16 \
@@ -29,8 +29,7 @@ python -m torch.distributed.launch --nproc_per_node=$MPSIZE --master_port $MASTE
        --temperature $TEMP \
        --top_k $TOPK \
        --output-path samples_glm \
-       --batch-size 2 \
-       --out-seq-length 200 \
+       --batch-size 1 \
        --mode inference \
-       --input-source ./input.txt \
-       --sampling-strategy BeamSearchStrategy
+       --input-source ./1.txt \
+       --sampling-strategy BaseStrategy

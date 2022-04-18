@@ -92,7 +92,7 @@ if __name__ == "__main__":
     import torch
     init_method = 'tcp://'
     master_ip = os.getenv('MASTER_ADDR', '127.0.0.1')
-    master_port = os.getenv('MASTER_PORT', '16677')
+    master_port = os.getenv('MASTER_PORT', '16678')
     init_method += master_ip + ':' + master_port
     torch.distributed.init_process_group(
         backend='nccl',
@@ -117,7 +117,6 @@ if __name__ == "__main__":
         #position_ids = create_position_ids_from_input_ids(encoded_input['input_ids'], bert.embeddings.padding_idx, 0)
         #print(position_ids)
         position_ids=torch.arange(len(encoded_input['input_ids'][0])).expand((len(encoded_input)-1, -1))
-        breakpoint()
         output = bert(**encoded_input)
         hugging_output = lm_head(output.pooler_output)
         model.cuda()

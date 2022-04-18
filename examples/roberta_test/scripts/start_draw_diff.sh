@@ -1,7 +1,7 @@
 #! /bin/bash
 
 # Change for multinode config
-CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/roberta
+CHECKPOINT_PATH=/workspace/roberta
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=1
@@ -48,7 +48,7 @@ gpt_options=" \
        --valid-data ${eval_data} \
        --strict-eval \
        --save-interval 4000\
-       --ssl_load2 /workspace/yzy/ST_develop/SwissArmyTransformer/examples/roberta_test/checkpoints/finetune-roberta-large-boolq-baseline-1e-5-03-09-10-25
+       --ssl_load2 /workspace/yzy/ST_deve/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-boolq-all+NO_Bitfit-lr1e-05-seed33460825-04-07-09-15
 "
 
 
@@ -62,7 +62,7 @@ gpt_options="${gpt_options}
 if [ "$FINETUNE_GPU" ]; then
   echo "use gpu $FINETUNE_GPU"
 else
-  export FINETUNE_GPU=0
+  export FINETUNE_GPU=1
   echo "use gpu $FINETUNE_GPU"
 fi
 

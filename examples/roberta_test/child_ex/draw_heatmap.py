@@ -10,7 +10,7 @@ import os
 if __name__ == "__main__":
     number_layer = 24
     # files = ["boolq","finetune_16000_boolq","bitfit_4000_boolq", "bitfit_16000_boolq", "pt_4000_boolq", "pt_16000_boolq"]
-    files = ["diff_boolq_baseline"]
+    files = ["diff_no_bitfit_boolq"]
     names = []
     values = np.zeros([len(files), 12 * number_layer])
     for i, file in enumerate(files):
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     os.chdir(dir)
 
     for i in range(number_layer):
-        plt.figure(figsize=(10,5))
+        plt.figure(figsize=(6,5))
         plt.yticks(fontsize=7)
         plt.xticks(fontsize=7)
         sns.heatmap(values[i*12:(i+1)*12], cmap='Reds', yticklabels =names[i*12 : (i+1)*12], xticklabels=files)
