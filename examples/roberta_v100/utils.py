@@ -13,6 +13,7 @@ from torch.distributions.bernoulli import Bernoulli
 from typing import Callable, Iterable, Tuple
 from tqdm import tqdm
 from SwissArmyTransformer.training.utils import Timers
+from SwissArmyTransformer import mpu
 
 pretrain_path = ''
 from transformers import RobertaTokenizer
@@ -20,14 +21,150 @@ tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'robert
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
 from SwissArmyTransformer.data_utils import load_hf_dataset
 
+def _encode_single_text(text, args):
+    encoded_input = tokenizer(text, max_length=args.sample_length, padding='max_length', truncation='only_first')
+    position_ids = create_position_ids_from_input_ids(torch.tensor([encoded_input['input_ids']]), 1, 0)
+    return dict(input_ids=encoded_input['input_ids'], position_ids=position_ids[0].numpy(), attention_mask=encoded_input['attention_mask'])
+
 def _encode_double_text(text, text_pair, args):
     encoded_input = tokenizer(text, text_pair, max_length=args.sample_length, padding='max_length', truncation='only_first')
     position_ids = create_position_ids_from_input_ids(torch.tensor([encoded_input['input_ids']]), 1, 0)
     return dict(input_ids=encoded_input['input_ids'], position_ids=position_ids[0].numpy(), attention_mask=encoded_input['attention_mask'])
 
+def get_dataset_keys(dataset_name):
+    dataset_keys = {
+        'boolq':["input_ids", "position_ids", "attention_mask", "label"],
+        'rte':["input_ids", "position_ids", "attention_mask", "label"],
+        'copa':["input_ids_1", "position_ids_1", "attention_mask_1", "input_ids_2", "position_ids_2", "attention_mask_2", "label"],
+        'cb':["input_ids", "position_ids", "attention_mask", "label"],
+        'wic':["input_ids", "position_ids", "attention_mask", "label", "pos1", "pos2"]
+    }
+    return dataset_keys[dataset_name]
+
+def get_class_num(dataset_name):
+    dataset_class_num = {
+        'boolq':2,
+        'rte':2,
+        'copa':2,
+        'cb':3,
+        'wic':2,
+    }
+    return dataset_class_num[dataset_name]
+
+def get_batch_function(dataset_name):
+    if dataset_name == "boolq" or dataset_name == "rte" or dataset_name == "cb":
+        def get_batch(data_iterator, args, timers):
+            # Items and their type.
+            keys = ['input_ids', 'position_ids', 'attention_mask', 'label']
+            datatype = torch.int64
+
+            # Broadcast data.
+            timers('data loader').start()
+            if data_iterator is not None:
+                data = next(data_iterator)
+            else:
+                data = None
+            timers('data loader').stop()
+            data_b = mpu.broadcast_data(keys, data, datatype)
+            # Unpack.
+            tokens = data_b['input_ids'].long()
+            labels = data_b['label'].long()
+            position_ids = data_b['position_ids'].long()
+            attention_mask = data_b['attention_mask'][:, None, None, :].float()
+
+            # Convert
+            if args.fp16:
+                attention_mask = attention_mask.half()
+
+            return tokens, labels, attention_mask, position_ids, (tokens!=1)
+    elif dataset_name == "copa":
+        def get_batch(data_iterator, args, timers):
+            # Items and their type.
+            keys = ["input_ids_1", "position_ids_1", "attention_mask_1", "input_ids_2", "position_ids_2", "attention_mask_2", "label"]
+            datatype = torch.int64
+
+            # Broadcast data.
+            timers('data loader').start()
+            if data_iterator is not None:
+                data = next(data_iterator)
+            else:
+                data = None
+            timers('data loader').stop()
+            data_b = mpu.broadcast_data(keys, data, datatype)
+            # Unpack.
+            tokens_1 = data_b['input_ids_1'].long()
+            tokens_2 = data_b['input_ids_2'].long()
+            tokens = torch.cat([tokens_1, tokens_2], dim=0)
+            labels = data_b['label'].long()
+            position_ids_1 = data_b['position_ids_1'].long()
+            position_ids_2 = data_b['position_ids_2'].long()
+            position_ids = torch.cat([position_ids_1, position_ids_2], dim=0)
+
+            attention_mask_1 = data_b['attention_mask_1'][:, None, None, :].float()
+            attention_mask_2 = data_b['attention_mask_2'][:, None, None, :].float()
+            attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=0)
+
+            # Convert
+            if args.fp16:
+                attention_mask = attention_mask.half()
+
+            return tokens, labels, attention_mask, position_ids, (tokens!=1)
+    elif dataset_name == 'wic':
+        def get_batch(data_iterator, args, timers):
+            # Items and their type.
+            keys = ['input_ids', 'position_ids', 'attention_mask', 'label', 'pos1', 'pos2']
+            datatype = torch.int64
+
+            # Broadcast data.
+            timers('data loader').start()
+            if data_iterator is not None:
+                data = next(data_iterator)
+            else:
+                data = None
+            timers('data loader').stop()
+            data_b = mpu.broadcast_data(keys, data, datatype)
+            # Unpack.
+            tokens = data_b['input_ids'].long()
+            labels = data_b['label'].long()
+            position_ids = data_b['position_ids'].long()
+            attention_mask = data_b['attention_mask'][:, None, None, :].float()
+            pos1 = data_b['pos1'].long()
+            pos2 = data_b['pos2'].long()
+            bz = tokens.shape[0]
+            for i in range(bz):
+                pos1[i] += i * tokens.shape[1]
+                pos2[i] += i * tokens.shape[1]
+
+            # Convert
+            if args.fp16:
+                attention_mask = attention_mask.half()
+
+            return tokens, labels, attention_mask, position_ids, (tokens!=1), {'pos1':pos1, 'pos2':pos2}
+    else:
+        raise Exception('dataset name is wrong')
+    return get_batch
 def create_dataset_function(path, args):
     dataset_name = args.dataset_name
-    if dataset_name == "rte":
+    cache_dir = '/workspace/SwissArmyTransformerDatasets'
+    offline = True
+    transformer_name = f"{dataset_name}_transformer_{args.sample_length}"
+    if dataset_name == "wic":
+        def process_fn(row):
+            pack = _encode_double_text(row['sentence1'], row['sentence2'])
+            label = int(row['label'])
+            start1, end1 = int(row['start1']), int(row['end1'])
+            start2, end2 = int(row['start2']), int(row['end2'])
+            pos1 = tokenizer(row['sentence1'][:start1])['input_ids'].__len__() - 2
+            pos2 = tokenizer(row['sentence2'][:start2])['input_ids'].__len__() - 2 + tokenizer(row['sentence1'])['input_ids'].__len__()
+            return {
+                'input_ids': np.array(pack['input_ids'], dtype=np.int64),
+                'position_ids': np.array(pack['position_ids'], dtype=np.int64),
+                'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
+                'label': label,
+                'pos1': pos1,
+                'pos2': pos2
+            }
+    elif dataset_name == 'cb':
         def process_fn(row):
             pack, label = _encode_double_text(row['premise'], row['hypothesis'], args), int(row['label'])
             return {
@@ -36,8 +173,15 @@ def create_dataset_function(path, args):
                 'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
                 'label': label
             }
-        transformer_name = f"rte_transformer_{args.sample_length}"
-        return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/workspace/SwissArmyTransformerDatasets', offline=True, transformer_name=transformer_name)
+    elif dataset_name == "rte":
+        def process_fn(row):
+            pack, label = _encode_double_text(row['premise'], row['hypothesis'], args), int(row['label'])
+            return {
+                'input_ids': np.array(pack['input_ids'], dtype=np.int64),
+                'position_ids': np.array(pack['position_ids'], dtype=np.int64),
+                'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
+                'label': label
+            }
     elif dataset_name == "boolq":
         def process_fn(row):
             pack, label = _encode_double_text(row['passage'], row['question'], args), int(row['label'])
@@ -47,9 +191,35 @@ def create_dataset_function(path, args):
                 'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
                 'label': label
             }
-        transformer_name = f"boolq_transformer_{args.sample_length}"
-        return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/workspace/SwissArmyTransformerDatasets', offline=True, transformer_name=transformer_name)
-
+    elif dataset_name == "copa":
+        def process_fn(row):
+            type = row['question']
+            premise, choice1, choice2 = row['premise'], row['choice1'], row['choice2']
+            premise = premise[:-1]
+            choice1 = choice1[0].lower() + choice1[1:]
+            choice2 = choice2[0].lower() + choice2[1:]
+            if type=='cause':
+                sentence1 = premise + ' because ' + choice1
+                sentence2 = premise + ' because ' + choice2
+            else:
+                sentence1 = premise + ' so ' + choice1
+                sentence2 = premise + ' so ' + choice2
+                pass
+            pack_1 = _encode_single_text(sentence1, args)
+            pack_2 = _encode_single_text(sentence2, args)
+            label = int(row['label'])
+            return {
+                'input_ids_1': np.array(pack_1['input_ids'], dtype=np.int64),
+                'input_ids_2': np.array(pack_2['input_ids'], dtype=np.int64),
+                'position_ids_1': np.array(pack_1['position_ids'], dtype=np.int64),
+                'position_ids_2': np.array(pack_2['position_ids'], dtype=np.int64),
+                'attention_mask_1': np.array(pack_1['attention_mask'], dtype=np.int64),
+                'attention_mask_2': np.array(pack_2['attention_mask'], dtype=np.int64),
+                'label': label
+            }
+    else:
+        raise Exception('Dataset name is wrong.')
+    return load_hf_dataset(path, process_fn, columns = get_dataset_keys(dataset_name), cache_dir=cache_dir, offline=offline, transformer_name=transformer_name)
 
 class ChildTuningAdamW(Optimizer):
     def __init__(

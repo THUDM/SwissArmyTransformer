@@ -9,9 +9,9 @@ import random
 import argparse
 import os
 
-def change_ds_config(lr, seed):
+def change_ds_config(lr, seed, batch_size):
     ds_config = {
-            "train_micro_batch_size_per_gpu":24,
+            "train_micro_batch_size_per_gpu":batch_size,
             "gradient_accumulation_steps": 1,
             "steps_per_print": 10,
             "gradient_clipping": 0.1,
@@ -43,12 +43,12 @@ def change_ds_config(lr, seed):
     with open(f"scripts/ds_config_{seed}.json", "w") as f:
         json.dump(ds_config, f)
 
-def run(gpu, seed_per_gpu, dataset, log_dir, lr=None):
+def run(gpu, seed_per_gpu, dataset, log_dir, lr, batch_size):
     os.makedirs(log_dir, exist_ok=True)
     f = open(log_dir + str(gpu) + ".txt", "w")
     for i in range(seed_per_gpu):
         seed = random.randint(1, 1000000000)
-        change_ds_config(lr, seed)
+        change_ds_config(lr, seed, batch_size)
         f.write(f"{i} run begin")
         os.system(f"bash scripts/finetune_superglue.sh {dataset} {seed} {gpu} {lr}")
         f.write(f"{i} run end")
@@ -73,12 +73,21 @@ if __name__ == "__main__":
         lr_search = [5e-5, 1e-4, 5e-4, 1e-3]
         assert len(lr_search) == args.number_gpu
     else:
-        lr_search = [5e-4] * args.number_gpu
-
+        lr_search = [1e-5] * args.number_gpu
+    batch_size = 24
     for i in range(args.number_gpu):
-        p = Process(target=run, args=(gpu_start+i,args.seed_per_gpu,args.dataset,log_dir,lr_search[i], ))
+        p = Process(target=run, args=(gpu_start+i,args.seed_per_gpu,args.dataset,log_dir,lr_search[i], batch_size, ))
         p.start()
         Plist.append(p)
     for i in range(args.number_gpu):
         Plist[i].join()
     print("*****************************all seed finished!!*****************************")
+
+'''
+finetune 1e-5
+bitfit 1e-3
+ptv2 5e-3
+lora 5e-4
+
+python scripts/run_multissed.py --gpu-s 6 --number-gpu 4 --dataset rte
+'''

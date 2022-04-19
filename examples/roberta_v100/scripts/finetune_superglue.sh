@@ -33,17 +33,17 @@ eval_data="hf://super_glue/${dataset_name}/validation"
 
 config_json="$script_dir/ds_config_${seed}.json"
 
-finetune_type="ffadd"
+finetune_type="all"
 
 gpt_options=" \
        --finetune-type ${finetune_type} \
-       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-${finetune_type}-lr${lr}-seed${seed}- \
+       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-${finetune_type}-lr${lr}-seed${seed}-loadgoodpthead- \
        --summary-dir runs/finetune-$MODEL_TYPE-${dataset_name}-${finetune_type} \
        --cls-number 1 \
        --collect-len 2 \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
-       --train-iters 14000 \
+       --train-iters 4000 \
        --resume-dataloader \
        $MODEL_ARGS \
        --train-data ${en_data} \
@@ -59,7 +59,7 @@ gpt_options=" \
        --strict-eval \
        --dataset-name ${dataset_name} \
        --warmup 0.1 \
-       --save-interval 4000 \
+       --save-interval 1000 \
        --seed ${seed} \
        --save-args \
 "
@@ -87,7 +87,8 @@ gpt_options="${gpt_options}
 #load head part
 # --head-load \
 gpt_options="${gpt_options}
-       --head-path /dataset/fd5061f6/yzy/roberta_v100/checkpoints/finetune-roberta-large-boolq-bitfit-1e-3-seed7549048-03-25-13-22 \
+       --head-load \
+       --head-path  /workspace/yzy/ST_deve/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-copa-pt-lr0.005-seed55883230-04-19-03-42 \
 "
 #       --body-path /dataset/fd5061f6/yzy/roberta_v100/checkpoints/finetune-roberta-large-boolq-all-1e-5-seed465049921-loadbithead-03-27-01-18 \
 

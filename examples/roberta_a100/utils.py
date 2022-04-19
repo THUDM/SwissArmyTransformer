@@ -20,6 +20,11 @@ tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'robert
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
 from SwissArmyTransformer.data_utils import load_hf_dataset
 
+def _encode_single_text(text, args):
+    encoded_input = tokenizer(text, max_length=args.sample_length, padding='max_length')
+    position_ids = create_position_ids_from_input_ids(torch.tensor([encoded_input['input_ids']]), 1, 0)
+    return dict(input_ids=encoded_input['input_ids'], position_ids=position_ids[0].numpy(), attention_mask=encoded_input['attention_mask'])
+
 def _encode_double_text(text, text_pair, args):
     encoded_input = tokenizer(text, text_pair, max_length=args.sample_length, padding='max_length', truncation='only_first')
     position_ids = create_position_ids_from_input_ids(torch.tensor([encoded_input['input_ids']]), 1, 0)

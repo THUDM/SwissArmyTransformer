@@ -255,7 +255,7 @@ class FFADDMixin(BaseMixin):
             nn.init.zeros_(self.ffadd_linear[i][1].bias)
 
 
-    def mlp_forward(self, hidden_states, layer_id, **kw_args):
+    def mlp_forward(self, hidden_states, layer_id,  attention_output = None, **kw_args):
         layer = self.transformer.layers[layer_id].mlp
         ffadd_layer = self.ffadd_linear[layer_id]
 
@@ -265,6 +265,8 @@ class FFADDMixin(BaseMixin):
 
         intermediate_add = ffadd_layer[0](hidden_states)
         intermediate_add = layer.activation_func(intermediate_add)
+        if attention_output is not None:
+            attention_output.append(intermediate_add)
         output2 = ffadd_layer[1](intermediate_add)
         output = output + output2
 

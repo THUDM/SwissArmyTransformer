@@ -9,13 +9,14 @@ from SwissArmyTransformer.training.deepspeed_training import training_main, init
 from roberta_model import RobertaModel, LoRAMixin, CLSMixin, CollectorMixin, PrefixTuningMixin, FFADDMixin, LoRAM2Mixin
 from SwissArmyTransformer.model.mixins import BaseMixin
 from functools import partial
-from utils import create_dataset_function, ChildTuningAdamW, set_optimizer_mask
+from utils import *
 
         
 class MLPHeadMixin(BaseMixin):
     def __init__(self, args, hidden_size, *output_sizes, bias=True, activation_func=torch.nn.functional.relu, init_mean=0, init_std=0.005, old_model=None):
         super().__init__()
         # init_std = 0.1
+        self.args = args
         self.cls_number = args.cls_number
         self.activation_func = activation_func
         last_size = hidden_size
@@ -26,6 +27,7 @@ class MLPHeadMixin(BaseMixin):
             if old_model is None:
                 torch.nn.init.normal_(this_layer.weight, mean=init_mean, std=init_std)
             else:
+                print("****************************load head weight***********************************")
                 old_weights = old_model.mixins["classification_head"].layers[i].weight.data
                 this_layer.weight.data.copy_(old_weights)
             self.layers.append(this_layer)
@@ -50,7 +52,9 @@ class ClassificationModel(RobertaModel):
     def __init__(self, args, transformer=None, parallel_output=True):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)
         self.del_mixin('roberta-final')
-        self.add_mixin('classification_head', MLPHeadMixin(args, args.hidden_size, 2048, 1))
+        num_input = args.final_input
+        num_output = 1 if args.class_num == 2 else args.class_num
+        self.add_mixin('classification_head', MLPHeadMixin(args, num_input, 2048, num_output, old_model=args.old_model))
         self.finetune_type = args.finetune_type
         if 'coll' in self.finetune_type:
             print('Add collector')
@@ -116,52 +120,48 @@ class ClassificationModel(RobertaModel):
         return optimizer
 
 
-def get_batch(data_iterator, args, timers):
-    # Items and their type.
-    keys = ['input_ids', 'position_ids', 'attention_mask', 'label']
-    datatype = torch.int64
-
-    # Broadcast data.
-    timers('data loader').start()
-    if data_iterator is not None:
-        data = next(data_iterator)
-    else:
-        data = None
-    timers('data loader').stop()
-    data_b = mpu.broadcast_data(keys, data, datatype)
-    # Unpack.
-    tokens = data_b['input_ids'].long()
-    labels = data_b['label'].long()
-    position_ids = data_b['position_ids'].long()
-    attention_mask = data_b['attention_mask'][:, None, None, :].float()
-
-    # Convert
-    if args.fp16:
-        attention_mask = attention_mask.half()
-    
-    return tokens, labels, attention_mask, position_ids, (tokens!=1)
-
+def get_loss_metrics(logits, labels, dataset_name):
+    if dataset_name=='rte' or dataset_name == 'boolq' or dataset_name=='wic':
+        pred = logits.contiguous().float().squeeze(-1)
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            pred,
+            labels.float()
+        )
+        acc = ((pred > 0.).long() == labels).sum() / labels.numel()
+        return loss, {'acc': acc}
+    elif dataset_name=="copa":
+        bz = logits.shape[0] // 2
+        logits = logits.squeeze(-1).reshape(2, bz).permute(1, 0)
+        pred = logits.contiguous().float()
+        loss = torch.nn.functional.cross_entropy(
+            pred,
+            labels
+        )
+        acc = (torch.argmax(pred, dim=1).long() == labels).sum() / labels.numel()
+        return loss, {'acc': acc}
+    elif dataset_name=='cb':
+        pred = logits.contiguous().float()
+        loss = torch.nn.functional.cross_entropy(pred, labels)
+        acc = (torch.argmax(pred, dim=1).long() == labels).sum() / labels.numel()
+        return loss, {'acc': acc}
 
 def forward_step(data_iterator, model, args, timers):
     """Forward step."""
 
     # Get the batch.
     timers('batch generator').start()
-    tokens, labels, attention_mask, position_ids, loss_mask = get_batch(
+    get_batch = get_batch_function(args.dataset_name)
+    tokens, labels, attention_mask, position_ids, loss_mask, *extra_data = get_batch(
         data_iterator, args, timers)
     timers('batch generator').stop()
-
+    if len(extra_data) > 1:
+        extra_data = extra_data[0]
+    else:
+        extra_data = {}
     attention_output = []
-    logits, *mems = model(tokens, position_ids, attention_mask, attention_output = attention_output)
+    logits, *mems = model(tokens, position_ids, attention_mask, attention_output = attention_output, **extra_data)
 
-    # pred = ((logits.contiguous().float().squeeze(-1)) * loss_mask).sum(dim=-1) / loss_mask.sum(dim=-1)
-    pred = logits.contiguous().float().squeeze(-1)
-    loss = torch.nn.functional.binary_cross_entropy_with_logits(
-        pred,
-        labels.float()
-    )
-    acc = ((pred > 0.).long() == labels).sum() / labels.numel()
-    return loss, {'acc': acc}
+    return get_loss_metrics(logits, labels, args.dataset_name)
 
 #模型并行会有问题！！
 if __name__ == '__main__':
@@ -216,6 +216,9 @@ if __name__ == '__main__':
     print(f"*******************Finetune Type is {args.finetune_type}****************************")
     print(f"*******************Learning Rate is {args.lr}****************************")
 
+    if args.dataset_name == 'copa':
+        args.sample_length = args.sample_length // 2
+
     if 'pt' in args.finetune_type:
         args.sample_length -= args.prefix_len
     if 'cls' in args.finetune_type:
@@ -225,7 +228,12 @@ if __name__ == '__main__':
 
     print(f"*******************True Sample length is {args.sample_length}****************************")
 
+    args.class_num = get_class_num(args.dataset_name)
+    args.final_input = args.hidden_size
+    if args.dataset_name == 'wic':
+        args.final_input = 3 * args.hidden_size
     args.get_optimizer_group = None
+    args.old_model = None
     
 
 
@@ -265,7 +273,6 @@ if __name__ == '__main__':
             args.load = args.body_path
             training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, reset_part="head")
         else:
-            args.old_model = None
             load = args.load
             args.load = args.head_path
             initialize_distributed(args)

@@ -79,7 +79,7 @@ def make_dataset_full(path, split, args, create_dataset_function,
                 scale = max(200, 1 + (args.train_iters * args.batch_size * world_size) // len(ds))
             else:
                 scale = 200
-            if args.static_ramdom:
+            if args.static_random:
                 ds = RandomDataset(ds, scale=scale)
             else:
                 ds = RandomMappingDataset(ds, scale=scale)

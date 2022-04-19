@@ -66,9 +66,6 @@ class ClassificationModel(RobertaModel):
             self.add_mixin('cls', CLSMixin(args))
 
     def disable_untrainable_params(self):
-        if 'froze' in self.finetune_type:
-            print('froze all parameter')
-            self.requires_grad_(False)
 
         if not 'all' in self.finetune_type:
             print('froze model parameter')
