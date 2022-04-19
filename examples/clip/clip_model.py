@@ -140,3 +140,6 @@ class CLIP(nn.Module):
         group.add_argument("--text-hidden-size-per-attention-head", type=int, default=None)
         group.add_argument("--logit-scale-init-value", type=float, default=None)
         return parser
+    
+    def disable_untrainable_params(self):
+        pass
