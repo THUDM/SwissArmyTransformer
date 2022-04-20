@@ -8,7 +8,7 @@ import torchvision
 import torchvision.transforms as transforms
 import torch.nn.functional as F
 from SwissArmyTransformer import mpu, get_args
-from clip_model import CLIP
+from clip_finetune_model import CLIP_wp
 from SwissArmyTransformer.training.deepspeed_training import training_main
 
 def get_batch(data_iterator, args, timers):
@@ -22,6 +22,7 @@ def get_batch(data_iterator, args, timers):
         data = next(data_iterator)
     else:
         data = None
+    trans = torchvision.transforms.ToPILImage()
     image_data = {"image":data[0]}
     label_data = {"label":data[1]}
     timers('data loader').stop()
@@ -30,8 +31,23 @@ def get_batch(data_iterator, args, timers):
 
     # Unpack.
     label_data = label_data['label'].long()
-    image_data = image_data['image']
+    image_data = [trans(x) for x in image_data['image']]
     batch_size = label_data.size()[0]
+
+    import os
+    pretrain_path = '/data/qingsong/pretrain'
+    from transformers import CLIPProcessor
+    processor = CLIPProcessor.from_pretrained(os.path.join(pretrain_path, 'clip-vit-base-patch32'))
+    inputs = processor(
+        text=["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"], images=image_data, return_tensors="pt", padding=True
+    )
+    text_input_ids = inputs["input_ids"].to(label_data.device)
+    text_position_ids = torch.arange(inputs["input_ids"].size(1)).unsqueeze(0).expand_as(inputs["input_ids"]).to(label_data.device)
+    text_attention_mask = inputs["attention_mask"][:, None, None, :].expand(text_input_ids.size(0), 1, text_input_ids.size(1), text_input_ids.size(1)).to(label_data.device).to(torch.float)
+    if args.fp16:
+        text_attention_mask = text_attention_mask.half()
+    image_data = inputs["pixel_values"].to(label_data.device)
+
     seq_length = args.pre_len + (args.image_size[0]//args.patch_size)*(args.image_size[1]//args.patch_size) + args.post_len
     position_ids = torch.zeros(seq_length, device=image_data.device, dtype=torch.long)
     torch.arange(0, seq_length, out=position_ids[:seq_length])
@@ -43,21 +59,6 @@ def get_batch(data_iterator, args, timers):
     if args.fp16:
         attention_mask = attention_mask.half()
         image_data = image_data.half()
-    import os
-    pretrain_path = '/data/qingsong/pretrain'
-    from transformers import CLIPProcessor
-    processor = CLIPProcessor.from_pretrained(os.path.join(pretrain_path, 'clip-vit-base-patch32'))
-    from PIL import Image
-    url = "./000000039769.jpg"
-    image = Image.open(url)
-    inputs = processor(
-        text=["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"], images=image, return_tensors="pt", padding=True
-    )
-    text_input_ids = inputs["input_ids"].to(image_data.device)
-    text_position_ids = torch.arange(inputs["input_ids"].size(1)).unsqueeze(0).expand_as(inputs["input_ids"]).to(image_data.device)
-    text_attention_mask = inputs["attention_mask"][:, None, None, :].expand(text_input_ids.size(0), 1, text_input_ids.size(1), text_input_ids.size(1)).to(image_data.device).to(torch.float)
-    if args.fp16:
-        text_attention_mask = text_attention_mask.half()
     return tokens, image_data, label_data, attention_mask, position_ids, text_input_ids, text_position_ids, text_attention_mask
 
 
@@ -79,10 +80,7 @@ def forward_step(data_iterator, model, args, timers):
 
 #/dataset/fd5061f6/SwissArmyTransformerDatasets/
 def create_dataset_function(path, args):
-    transform = transforms.Compose(
-        [transforms.ToTensor(),
-         transforms.Resize(224),
-         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    transform = transforms.ToTensor()
     trainset = torchvision.datasets.CIFAR10(root='/'.join(path.split('/')[:-1]), train=(path.split('/')[-1]=='train'),
                                             download=True, transform=transform)
     return trainset
@@ -94,7 +92,7 @@ if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--old_checkpoint', action="store_true")
     # py_parser.add_argument('--prefix_len', type=int, default=16)
-    py_parser = CLIP.add_model_specific_args(py_parser)
+    py_parser = CLIP_wp.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
@@ -137,7 +135,7 @@ if __name__ == '__main__':
         mode='finetune'
         )
     from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
-    swiss_model = CLIP(swiss_args)
+    swiss_model = CLIP_wp(swiss_args)
     load_checkpoint(swiss_model, swiss_args)
     if args.fp16:
         swiss_model.half()

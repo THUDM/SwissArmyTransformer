@@ -1,4 +1,5 @@
 import torch
+from clip_model import CLIP
 
 class CLIP_finetune(torch.nn.Module):
     def __init__(self, encoder, hidden_size, num_classes):
@@ -12,3 +13,10 @@ class CLIP_finetune(torch.nn.Module):
         return x
     def disable_untrainable_params(self):
         self.encoder.transformer.position_embeddings.requires_grad_(False)
+
+class CLIP_wp(CLIP):
+    def disable_untrainable_params(self):
+        for param in self.text_encoder.parameters():
+            param.requires_grad_(False)
+        self.logit_scale.requires_grad_(False)
+        self.image_encoder.transformer.position_embeddings.requires_grad_(False)
