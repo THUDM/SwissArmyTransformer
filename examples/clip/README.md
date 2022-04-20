@@ -30,5 +30,7 @@ Here is an example of fine-tuning CIFAR-10 by prompt.
 bash scripts/finetune_cifar10wp.sh
 ```
 
-* iteration 100 validation acc: 0.9488
-* iteration 1000 validation acc: 0.9410
+* iteration 100 validation acc: 0.9568
+* iteration 1000 validation acc: 0.9478
+
+It's interesting that the accuracy going upward first, then dropping down, then going upward again.
