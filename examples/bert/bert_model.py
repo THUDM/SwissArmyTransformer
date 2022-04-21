@@ -35,13 +35,9 @@ class BertTypeMixin(BaseMixin):
     def word_embedding_forward(self, input_ids, **kwargs):
         return self.transformer.word_embeddings(input_ids) + self.type_embeddings(kwargs["token_type_ids"])
 
-
-class BertModel(BaseModel):
-    def __init__(self, args, transformer=None, **kwargs):
-        super(BertModel, self).__init__(args, transformer=transformer, activation_func=gelu, **kwargs)
-        self.add_mixin("bert-final", BertFinalMixin(args.vocab_size, args.hidden_size))
-        self.add_mixin("bert-type", BertTypeMixin(args.num_types, args.hidden_size))
-
+class ForwardMixin(BaseMixin):
+    def __init__(self):
+        super().__init__()
     def layer_forward(self, hidden_states, mask, *args, **kw_args):
         '''
             hidden_states: [batch, seq_len, hidden_size]
@@ -65,6 +61,13 @@ class BertModel(BaseModel):
         output = layernorm_output + mlp_output
 
         return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
+
+class BertModel(BaseModel):
+    def __init__(self, args, transformer=None, **kwargs):
+        super(BertModel, self).__init__(args, transformer=transformer, activation_func=gelu, **kwargs)
+        self.add_mixin("bert-final", BertFinalMixin(args.vocab_size, args.hidden_size))
+        self.add_mixin("bert-type", BertTypeMixin(args.num_types, args.hidden_size))
+        self.add_mixin("bert-forward", ForwardMixin())
 
     @classmethod
     def add_model_specific_args(cls, parser):
