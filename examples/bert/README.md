@@ -16,7 +16,7 @@ Finetune bert-base-uncased:
 bash scripts/finetune_boolq.sh
 ```
 
-* iter 1000 val acc: 0.7053
+* iter 1000 val acc: 0.7138
 
 Finetune bert with adapter:
 
