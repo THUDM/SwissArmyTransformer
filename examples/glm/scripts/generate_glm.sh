@@ -1,5 +1,5 @@
 #!/bin/bash
-CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/glm
+CHECKPOINT_PATH=/sharefs/cognitive/dataset/fd5061f60d4dd7a8e055690bd68d1e2c/sat_pretrained/glm
 
 source $1
 MPSIZE=1
@@ -29,8 +29,8 @@ python -m torch.distributed.launch --nproc_per_node=$MPSIZE --master_port $MASTE
        --temperature $TEMP \
        --top_k $TOPK \
        --output-path samples_glm \
-       --batch-size 2 \
+       --batch-size 1 \
        --out-seq-length 200 \
        --mode inference \
-       --input-source ./input.txt \
-       --sampling-strategy BeamSearchStrategy
+       --input-source interactive \
+       --sampling-strategy BaseStrategy

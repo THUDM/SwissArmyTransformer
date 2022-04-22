@@ -121,6 +121,94 @@ def filling_sequence(
     return strategy.finalize(tokens, mems)
 
 
+def filling_two_sequences(
+        model,
+        seq1,
+        seq2,
+        alpha,
+        batch_size,
+        strategy=BaseStrategy(),
+        max_memory_length=100000,
+        get_masks_and_position_ids1=get_masks_and_position_ids_default,
+        get_masks_and_position_ids2=get_masks_and_position_ids_default,
+        mems1=None,
+        mems2=None,
+        **kw_args
+        ):
+    '''
+        seq: [2, 3, 5, ..., -1(to be generated), -1, ...]
+        mems: [num_layers, batch_size, len_mems(index), mem_hidden_size]
+            cache, should be first mems.shape[1] parts of context_tokens.
+            mems are the first-level citizens here, but we don't assume what is memorized.
+            input mems are used when multi-phase generation.
+    '''
+    assert len(seq1.shape) == 1 and len(seq2.shape) == 1
+
+    # building the initial tokens, attention_mask, and position_ids
+    context_length1, context_length2 = 0, 0
+    while seq1[context_length1] >= 0:
+        context_length1 += 1 # [0, context_length-1] are given
+    while seq2[context_length2] >= 0:
+        context_length2 += 1
+    assert context_length1 > 0 and context_length2 > 0
+    tokens1, attention_mask1, position_ids1 = get_masks_and_position_ids1(seq1)
+    tokens1 = tokens1[..., :context_length1]
+    attention_mask1 = attention_mask1.type_as(next(model.parameters())) # if fp16
+    tokens2, attention_mask2, position_ids2 = get_masks_and_position_ids2(seq2)
+    tokens2 = tokens2[..., :context_length2]
+    attention_mask2 = attention_mask2.type_as(next(model.parameters()))  # if fp16
+    # initialize generation
+    counter1 = context_length1 - 1 # Last fixed index is ``counter''
+    index1 = 0 if mems1 is None else mems1.shape[2] # Next forward starting index, also the length of cache.
+    counter2 = context_length2 - 1
+    index2 = 0 if mems2 is None else mems2.shape[2]  # Next forward starting index, also the length of cache.
+    # step-by-step generation
+    while counter1 < len(seq1) - 1:
+        # Now, we want to generate seq[counter + 1],
+        # token[:, index: counter+1] needs forwarding.
+
+        # forward
+        logits1, *output_per_layers1 = model(
+            tokens1[:, index1:],
+            position_ids1[..., index1: counter1+1],
+            attention_mask1[..., index1: counter1+1, :counter1+1], # TODO memlen
+            mems=mems1,
+            **kw_args
+        )
+        mem_kv1 = [o['mem_kv'] for o in output_per_layers1]
+        mems1 = update_mems(mem_kv1, mems1, max_memory_length=max_memory_length)
+        counter1 += 1
+        index1 = counter1
+
+        logits2, *output_per_layers2 = model(
+            tokens2[:, index2:],
+            position_ids2[..., index2: counter2 + 1],
+            attention_mask2[..., index2: counter2 + 1, :counter2 + 1],  # TODO memlen
+            mems=mems2,
+            **kw_args
+        )
+        mem_kv2 = [o['mem_kv'] for o in output_per_layers2]
+        mems2 = update_mems(mem_kv2, mems2, max_memory_length=max_memory_length)
+        counter2 += 1
+        index2 = counter2
+
+        # sampling
+        logits1 = logits1[:, -1].expand(batch_size, -1) # [batch size, vocab size]
+        tokens1 = tokens1.expand(batch_size, -1)
+        logits2 = logits2[:, -1].expand(batch_size, -1)  # [batch size, vocab size]
+        tokens2 = tokens2.expand(batch_size, -1)
+
+        logits = logits2 + alpha * (logits1 - logits2)
+
+        tokens1, mems1 = strategy.forward(logits, tokens1, mems1)
+
+        tokens2 = torch.cat((tokens2, tokens1[..., -1:]), dim=-1)
+
+        if strategy.is_done:
+            break
+    return strategy.finalize(tokens1, mems1)
+
+
 
 def evaluate_perplexity(model, tokens, attention_mask, position_ids, loss_mask, invalid_slices=[], reduction='mean'):
     # sanity check

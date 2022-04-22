@@ -23,7 +23,8 @@ from SwissArmyTransformer import mpu, get_args, get_tokenizer, load_checkpoint, 
 
 from SwissArmyTransformer.model import GLMModel
 from SwissArmyTransformer.model.mixins import CachedAutoregressiveMixin
-from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence, evaluate_perplexity
+from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence, filling_two_sequences, \
+    evaluate_perplexity
 from SwissArmyTransformer.generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
 from SwissArmyTransformer.generation.utils import timed_name, generate_continually
 
@@ -62,7 +63,7 @@ def main(args):
     end_tokens = [tokenizer.get_command('eop').Id, tokenizer.get_command('eos').Id]
     # define function for each query
     if args.sampling_strategy == 'BaseStrategy':
-        strategy = BaseStrategy(temperature=args.temperature, top_k=args.top_k,end_tokens=end_tokens)
+        strategy = BaseStrategy(temperature=args.temperature, top_k=args.top_k, end_tokens=end_tokens)
     elif args.sampling_strategy == 'BeamSearchStrategy':
         strategy = BeamSearchStrategy(args.batch_size, length_penalty=args.length_penalty, consider_end=True, end_tokens=end_tokens, no_repeat_ngram_size=args.no_repeat_ngram_size, min_tgt_length=args.min_tgt_length)
     else:
@@ -72,69 +73,80 @@ def main(args):
         if args.with_id:
             query_id, raw_text = raw_text.split('\t')
         # add MASK
+        if "|||" in raw_text:
+            texts = raw_text.split("|||")
+            uncond_text, cond_text = texts
+        else:
+            uncond_text, cond_text = None, raw_text
         generation_mask = '[gMASK]' if args.task_mask else '[MASK]'
-        if 'MASK]' not in raw_text:
-            raw_text += ' ' + generation_mask
-        seq = tokenizer.EncodeAsIds(raw_text).tokenization
-        seq = [tokenizer.get_command('ENC').Id] + seq
-        if not raw_text.endswith('MASK]'):
-            seq = seq + [tokenizer.get_command('eos').Id]
-        print('raw text: {}\n'.format(raw_text))
-        if len(seq) > args.max_sequence_length:
-            raise ValueError('text too long.')
+
+        def process_text(text):
+            if 'MASK]' not in text:
+                text += ' ' + generation_mask
+            if 'MASK]' not in text:
+                text += ' ' + generation_mask
+            seq = tokenizer.EncodeAsIds(text).tokenization
+            seq = [tokenizer.get_command('ENC').Id] + seq
+            if not text.endswith('MASK]'):
+                seq = seq + [tokenizer.get_command('eos').Id]
+            if len(seq) > args.max_sequence_length:
+                raise ValueError('text too long.')
+            print('text: {}\n'.format(text))
+            return seq
+
+        cond_seq = process_text(cond_text)
+        if uncond_text is not None:
+            uncond_seq = process_text(uncond_text)
 
         # generation
-        mbz = args.max_inference_batch_size
+        mbz = args.max_inference_batch_size # 12
         assert args.batch_size < mbz or args.batch_size % mbz == 0
-        output_list = [seq]
         # continually detect the first mark position
-        while True:
-            seq = output_list[0] # TODO find the best one
-            # detect
-            mask_tokens = ['MASK', 'sMASK', 'gMASK'] if args.task_mask else ['MASK']
-            mask_tokens = [tokenizer.get_command(token).Id for token in mask_tokens]
-            mask_position = len(seq)
+        # detect
+        mask_tokens = ['MASK', 'sMASK', 'gMASK'] if args.task_mask else ['MASK']
+        mask_tokens = [tokenizer.get_command(token).Id for token in mask_tokens]
+        cond_mask_position = len(cond_seq)
+        for token in mask_tokens:
+            try:
+                cond_mask_position = min(cond_mask_position, cond_seq.index(token))
+            except ValueError:
+                pass
+        cond_get_func = partial(get_masks_and_position_ids_glm, mask_position=cond_mask_position, context_length=len(cond_seq))
+
+        if uncond_text is not None:
+            uncond_mask_position = len(uncond_seq)
             for token in mask_tokens:
                 try:
-                    mask_position = min(mask_position, seq.index(token))
+                    uncond_mask_position = min(uncond_mask_position, uncond_seq.index(token))
                 except ValueError:
                     pass
-            if mask_position == len(seq):
-                break
-            
-            get_func = partial(get_masks_and_position_ids_glm, mask_position=mask_position, context_length=len(seq))
-            output_list = []
-            for tim in range(max(args.batch_size // mbz, 1)):
-                input_seq = torch.cuda.LongTensor(
-                    seq + [tokenizer.get_command('sop').Id] + [-1] * (args.out_seq_length - len(seq) - 1),
-                    device=args.device)
-                output = filling_sequence(model, input_seq,
-                        batch_size=min(args.batch_size, mbz),
-                        strategy=strategy,
-                        log_attention_weights=None,
-                        get_masks_and_position_ids=get_func
-                        )[0] # we don't use mems, fill back
-                if isinstance(output, torch.Tensor): # different strategies
-                    output = list(output)
+            uncond_get_func = partial(get_masks_and_position_ids_glm, mask_position=uncond_mask_position,
+                                      context_length=len(uncond_seq))
 
-                output_list.extend(output)
-
-            # clip -1s and fill back generated things into seq
-            for i in range(len(output_list)):
-                output = output_list[i].tolist()
-                try:
-                    unfinished = output.index(-1)
-                except ValueError:
-                    unfinished = len(output)
-                if output[unfinished - 1] in end_tokens:
-                    unfinished -= 1
-                bog = output.index(tokenizer.get_command('sop').Id)
-                output_list[i] = output[:mask_position] + output[bog + 1:unfinished] + output[mask_position + 1:bog]
+        cond_seq = torch.cuda.LongTensor(
+            cond_seq + [tokenizer.get_command('sop').Id] + [-1] * (args.out_seq_length - len(cond_seq) - 1),
+            device=args.device)
+        if uncond_text is not None:
+            uncond_seq = torch.cuda.LongTensor(
+                uncond_seq + [tokenizer.get_command('sop').Id] + [-1] * (args.out_seq_length - len(uncond_seq) - 1),
+                device=args.device)
+            output_list = filling_two_sequences(model, cond_seq, uncond_seq,
+                                                alpha=5,
+                                                batch_size=min(args.batch_size, mbz),
+                                                strategy=strategy,
+                                                get_masks_and_position_ids1=cond_get_func,
+                                                get_masks_and_position_ids2=uncond_get_func,
+                                                )[0]  # we don't use mems, fill back
+        else:
+            output_list = filling_sequence(model, cond_seq, batch_size=min(args.batch_size, mbz), strategy=strategy,
+                                           get_masks_and_position_ids=cond_get_func)[0]
+        if isinstance(output_list, torch.Tensor): # different strategies
+            output_list = list(output_list)
 
         # decoding
         txts = []
         for seq in output_list:
-            decode_tokens = tokenizer.DecodeIds(seq)
+            decode_tokens = tokenizer.DecodeIds(seq.tolist())
             txts.append(decode_tokens)
 
         # save
