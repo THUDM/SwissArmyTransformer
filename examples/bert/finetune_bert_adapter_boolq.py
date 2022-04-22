@@ -56,23 +56,24 @@ class AdapterMixin(BaseMixin):
         return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
     
     def reinit(self, parent_model=None):
+        # refer to https://github.com/google-research/adapter-bert/blob/1a31fc6e92b1b89a6530f48eb0f9e1f04cc4b750/modeling.py#L321
         for ly in self.ff1:
-            nn.init.normal_(ly.weight, std=1e-3)
+            nn.init.trunc_normal_(ly.weight, std=1e-3)
             nn.init.zeros_(ly.bias)
         for ly in self.ff2:
-            nn.init.normal_(ly.weight, std=1e-3)
+            nn.init.trunc_normal_(ly.weight, std=1e-3)
             nn.init.zeros_(ly.bias)
         for ly in self.ff3:
-            nn.init.normal_(ly.weight, std=1e-3)
+            nn.init.trunc_normal_(ly.weight, std=1e-3)
             nn.init.zeros_(ly.bias)
         for ly in self.ff4:
-            nn.init.normal_(ly.weight, std=1e-3)
+            nn.init.trunc_normal_(ly.weight, std=1e-3)
             nn.init.zeros_(ly.bias)
         
 
 class AdapterModel(BertModel):
-    def __init__(self, args, transformer=None, parallel_output=True):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output)
+    def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-12, **kwargs):
+        super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon, **kwargs)
         self.del_mixin('bert-final')
         self.del_mixin('bert-forward')
         self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
