@@ -133,6 +133,7 @@ def filling_two_sequences(
         get_masks_and_position_ids2=get_masks_and_position_ids_default,
         mems1=None,
         mems2=None,
+        tokenizer=None,
         **kw_args
         ):
     '''
@@ -175,6 +176,7 @@ def filling_two_sequences(
             mems=mems1,
             **kw_args
         )
+        # print(tokenizer.DecodeIds(tokens1[0, index1:].tolist()))
         mem_kv1 = [o['mem_kv'] for o in output_per_layers1]
         mems1 = update_mems(mem_kv1, mems1, max_memory_length=max_memory_length)
         counter1 += 1
@@ -187,6 +189,7 @@ def filling_two_sequences(
             mems=mems2,
             **kw_args
         )
+        # print(tokenizer.DecodeIds(tokens2[0, index2:].tolist()))
         mem_kv2 = [o['mem_kv'] for o in output_per_layers2]
         mems2 = update_mems(mem_kv2, mems2, max_memory_length=max_memory_length)
         counter2 += 1
@@ -200,9 +203,7 @@ def filling_two_sequences(
 
         logits = logits2 + alpha * (logits1 - logits2)
 
-        tokens1, mems1 = strategy.forward(logits, tokens1, mems1)
-
-        tokens2 = torch.cat((tokens2, tokens1[..., -1:]), dim=-1)
+        tokens1, mems1, tokens2, mems2 = strategy.forward(logits, tokens1, mems1, tokens2=tokens2, mems2=mems2)
 
         if strategy.is_done:
             break

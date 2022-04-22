@@ -40,7 +40,7 @@ class BeamSearchStrategy:
         self.end_beams = self.end_beams[:self.num_beams]
         self.end_beams_penalized_scores = self.end_beams_penalized_scores[:self.num_beams]
 
-    def forward(self, logits, tokens, mems):
+    def forward(self, logits, tokens, mems, tokens2=None, mems2=None):
         batch_size, vocab_size = logits.shape
         seq_len = tokens.shape[-1]
         logits = logits.float()
@@ -76,10 +76,13 @@ class BeamSearchStrategy:
         # select out end beams or continue beams
         if mems.shape[1] < batch_size:
             mems = mems.expand(-1, batch_size, -1, -1)
+        if mems2 is not None and mems2.shape[1] < batch_size:
+            mems2 = mems2.expand(-1, batch_size, -1, -1)
         beam_continue = []
+        mems_contiue = []
+        beam_continue2, mems_continue2 = [], []
         scores_continue = []
         bans_continue = []
-        mems_contiue = []
         for i in range(len(next_tokens)):
             beam = torch.cat((tokens[next_indices[i]], next_tokens[i:i+1]))
             if int(next_tokens[i]) in self.end_tokens:
@@ -87,6 +90,10 @@ class BeamSearchStrategy:
             elif len(beam_continue) < self.num_beams:
                 beam_continue.append(beam)
                 mems_contiue.append(mems[:, next_indices[i]])
+                if tokens2 is not None:
+                    beam2 = torch.cat((tokens2[next_indices[i]], next_tokens[i:i+1]))
+                    beam_continue2.append(beam2)
+                    mems_continue2.append(mems2[:, next_indices[i]])
                 # update caches
                 scores_continue.append(next_token_scores[i])
                 if self.ngram > 0:
@@ -102,7 +109,12 @@ class BeamSearchStrategy:
         self.cached_beam_ngram_bans = bans_continue
 
         # TODO is_done
-        return tokens, mems
+        if tokens2 is None:
+            return tokens, mems
+        else:
+            tokens2 = torch.stack(beam_continue2)
+            mems2 = torch.stack(mems_continue2, dim=1)
+            return tokens, mems, tokens2, mems2
 
     def finalize(self, tokens, mems):
         if self.consider_end:

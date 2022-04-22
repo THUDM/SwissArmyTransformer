@@ -136,6 +136,7 @@ def main(args):
                                                 strategy=strategy,
                                                 get_masks_and_position_ids1=cond_get_func,
                                                 get_masks_and_position_ids2=uncond_get_func,
+                                                tokenizer=tokenizer
                                                 )[0]  # we don't use mems, fill back
         else:
             output_list = filling_sequence(model, cond_seq, batch_size=min(args.batch_size, mbz), strategy=strategy,

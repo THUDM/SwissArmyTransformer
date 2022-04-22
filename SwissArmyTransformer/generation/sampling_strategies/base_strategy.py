@@ -59,7 +59,7 @@ class BaseStrategy:
     def is_done(self) -> bool:
         return self._is_done
 
-    def forward(self, logits, tokens, mems, temperature=None):
+    def forward(self, logits, tokens, mems, temperature=None, tokens2=None, mems2=None):
         if temperature is None:
             temperature = self.temperature
         logits = logits / temperature
@@ -71,8 +71,13 @@ class BaseStrategy:
         pred = torch.multinomial(probs, num_samples=1)
         if pred.numel() == 1 and pred.item() in self.end_tokens:
             self._is_done = True
-        tokens = torch.cat((tokens, pred.view(tokens.shape[0], 1)), dim=1)
-        return tokens, mems
+        pred = pred.view(tokens.shape[0], 1)
+        tokens = torch.cat((tokens, pred), dim=1)
+        if tokens2 is None:
+            return tokens, mems
+        else:
+            tokens2 = torch.cat((tokens2, pred), dim=1)
+            return tokens, mems, tokens2, mems2
 
     def finalize(self, tokens, mems):
         self._is_done = False
