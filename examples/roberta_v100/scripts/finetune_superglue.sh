@@ -1,7 +1,7 @@
 #! /bin/bash
 
 # Change for multinode config
-CHECKPOINT_PATH=/workspace/roberta
+CHECKPOINT_PATH=/thudm/workspace/yzy/roberta
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=1
@@ -28,8 +28,12 @@ if [[ "$task_name" == "wsc" ]]; then
   dataset_name="wsc.fixed"
 fi
 
-en_data="hf://super_glue/${dataset_name}/train"
-eval_data="hf://super_glue/${dataset_name}/validation"
+hf_path="super_glue"
+if [[ "$task_name" == "cola" || "$task_name" == "sst2" || "$task_name" == "qqp" || "$task_name" == "wsc" || "$task_name" == "wsc" || "$task_name" == "wsc" || "$task_name" == "wsc" ]]; then
+    hf_path="glue"
+fi
+en_data="hf://${hf_path}/${dataset_name}/train"
+eval_data="hf://${hf_path}/${dataset_name}/validation"
 
 config_json="$script_dir/ds_config_${seed}.json"
 
@@ -37,13 +41,13 @@ finetune_type="all"
 
 gpt_options=" \
        --finetune-type ${finetune_type} \
-       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-${finetune_type}-lr${lr}-seed${seed}-loadgoodpthead- \
+       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-${finetune_type}-lr${lr}-seed${seed}- \
        --summary-dir runs/finetune-$MODEL_TYPE-${dataset_name}-${finetune_type} \
        --cls-number 1 \
        --collect-len 2 \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
-       --train-iters 4000 \
+       --train-iters 14000 \
        --resume-dataloader \
        $MODEL_ARGS \
        --train-data ${en_data} \
@@ -87,7 +91,6 @@ gpt_options="${gpt_options}
 #load head part
 # --head-load \
 gpt_options="${gpt_options}
-       --head-load \
        --head-path  /workspace/yzy/ST_deve/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-copa-pt-lr0.005-seed55883230-04-19-03-42 \
 "
 #       --body-path /dataset/fd5061f6/yzy/roberta_v100/checkpoints/finetune-roberta-large-boolq-all-1e-5-seed465049921-loadbithead-03-27-01-18 \

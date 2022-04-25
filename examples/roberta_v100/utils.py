@@ -145,8 +145,8 @@ def get_batch_function(dataset_name):
     return get_batch
 def create_dataset_function(path, args):
     dataset_name = args.dataset_name
-    cache_dir = '/workspace/SwissArmyTransformerDatasets'
-    offline = True
+    cache_dir = '/thudm/workspace/SwissArmyTransformerDatasets'
+    offline = False
     transformer_name = f"{dataset_name}_transformer_{args.sample_length}"
     if dataset_name == "wic":
         def process_fn(row):
