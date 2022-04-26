@@ -33,11 +33,17 @@ def _encode_double_text(text, text_pair, args):
 
 def get_dataset_keys(dataset_name):
     dataset_keys = {
+        #superglue
         'boolq':["input_ids", "position_ids", "attention_mask", "label"],
         'rte':["input_ids", "position_ids", "attention_mask", "label"],
         'copa':["input_ids_1", "position_ids_1", "attention_mask_1", "input_ids_2", "position_ids_2", "attention_mask_2", "label"],
         'cb':["input_ids", "position_ids", "attention_mask", "label"],
-        'wic':["input_ids", "position_ids", "attention_mask", "label", "pos1", "pos2"]
+        'wic':["input_ids", "position_ids", "attention_mask", "label", "pos1", "pos2"],
+        #glue
+        'mrpc':["input_ids", "position_ids", "attention_mask", "label"],
+        'qnli':["input_ids", "position_ids", "attention_mask", "label"],
+        'qqp':["input_ids", "position_ids", "attention_mask", "label"],
+        'cola':["input_ids", "position_ids", "attention_mask", "label"],
     }
     return dataset_keys[dataset_name]
 
@@ -48,11 +54,15 @@ def get_class_num(dataset_name):
         'copa':2,
         'cb':3,
         'wic':2,
+        'mrpc':2,
+        'qnli':2,
+        'qqp':2,
+        'cola':2,
     }
     return dataset_class_num[dataset_name]
 
 def get_batch_function(dataset_name):
-    if dataset_name == "boolq" or dataset_name == "rte" or dataset_name == "cb":
+    if dataset_name in ["boolq", "rte", "cb", "mrpc", "qnli", "qqp", "cola"] :
         def get_batch(data_iterator, args, timers):
             # Items and their type.
             keys = ['input_ids', 'position_ids', 'attention_mask', 'label']
@@ -215,6 +225,42 @@ def create_dataset_function(path, args):
                 'position_ids_2': np.array(pack_2['position_ids'], dtype=np.int64),
                 'attention_mask_1': np.array(pack_1['attention_mask'], dtype=np.int64),
                 'attention_mask_2': np.array(pack_2['attention_mask'], dtype=np.int64),
+                'label': label
+            }
+    elif dataset_name == "mrpc":
+        def process_fn(row):
+            pack, label = _encode_double_text(row['sentence1'], row['sentence2'], args), int(row['label'])
+            return {
+                'input_ids': np.array(pack['input_ids'], dtype=np.int64),
+                'position_ids': np.array(pack['position_ids'], dtype=np.int64),
+                'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
+                'label': label
+            }
+    elif dataset_name == "qnli":
+        def process_fn(row):
+            pack, label = _encode_double_text(row['sentence'], row['question'], args), int(row['label'])
+            return {
+                'input_ids': np.array(pack['input_ids'], dtype=np.int64),
+                'position_ids': np.array(pack['position_ids'], dtype=np.int64),
+                'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
+                'label': label
+            }
+    elif dataset_name == "qqp":
+        def process_fn(row):
+            pack, label = _encode_double_text(row['question1'], row['question2'], args), int(row['label'])
+            return {
+                'input_ids': np.array(pack['input_ids'], dtype=np.int64),
+                'position_ids': np.array(pack['position_ids'], dtype=np.int64),
+                'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
+                'label': label
+            }
+    elif dataset_name == "cola":
+        def process_fn(row):
+            pack, label = _encode_single_text(row['sentence'], args), int(row['label'])
+            return {
+                'input_ids': np.array(pack['input_ids'], dtype=np.int64),
+                'position_ids': np.array(pack['position_ids'], dtype=np.int64),
+                'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
                 'label': label
             }
     else:

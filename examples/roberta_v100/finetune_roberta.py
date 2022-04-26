@@ -121,7 +121,7 @@ class ClassificationModel(RobertaModel):
 
 
 def get_loss_metrics(logits, labels, dataset_name):
-    if dataset_name=='rte' or dataset_name == 'boolq' or dataset_name=='wic':
+    if dataset_name in ['rte', 'boolq', 'wic', 'mrpc', 'qnli', 'qqp', 'cola']:
         pred = logits.contiguous().float().squeeze(-1)
         loss = torch.nn.functional.binary_cross_entropy_with_logits(
             pred,

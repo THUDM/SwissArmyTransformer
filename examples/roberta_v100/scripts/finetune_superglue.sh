@@ -29,7 +29,7 @@ if [[ "$task_name" == "wsc" ]]; then
 fi
 
 hf_path="super_glue"
-if [[ "$task_name" == "cola" || "$task_name" == "sst2" || "$task_name" == "qqp" || "$task_name" == "wsc" || "$task_name" == "wsc" || "$task_name" == "wsc" || "$task_name" == "wsc" ]]; then
+if [[ "$task_name" == "cola" || "$task_name" == "sst2" || "$task_name" == "qqp" || "$task_name" == "mrpc" || "$task_name" == "stsb" || "$task_name" == "mnli" || "$task_name" == "qnli" ]]; then
     hf_path="glue"
 fi
 en_data="hf://${hf_path}/${dataset_name}/train"
@@ -57,7 +57,7 @@ gpt_options=" \
        --eval-interval 200 \
        --save checkpoints/ \
        --split 1 \
-       --eval-batch-size 2 \
+       --eval-batch-size 10 \
        --warmup 0.1 \
        --valid-data ${eval_data} \
        --strict-eval \
