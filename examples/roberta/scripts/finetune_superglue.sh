@@ -32,7 +32,7 @@ gpt_options=" \
        --experiment-name finetune-$MODEL_TYPE-${dataset_name}-best-WTPT-\
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
-       --train-iters 8000 \
+       --epochs 20 \
        --resume-dataloader \
        $MODEL_ARGS \
        --train-data ${en_data} \
@@ -40,7 +40,6 @@ gpt_options=" \
        --lr-decay-style linear \
        --checkpoint-activations \
        --fp16 \
-       --eval-interval 100 \
        --save checkpoints/ \
        --split 1 \
        --eval-batch-size 2 \

@@ -40,12 +40,13 @@ from SwissArmyTransformer.data_utils import make_loaders
 from SwissArmyTransformer.tokenization import get_tokenizer
 
 
-def training_main(args, model_cls, forward_step_function, create_dataset_function, init_function=None):
+def training_main(args, model_cls, forward_step_function, create_dataset_function, handle_metrics=None, init_function=None):
     """Main training program."""
     hooks = {
         'forward_step': forward_step_function,
         'init_function': init_function,
-        'create_dataset_function': create_dataset_function
+        'create_dataset_function': create_dataset_function,
+        'handle_metrics': handle_metrics,
     }
 
     torch.backends.cuda.matmul.allow_tf32 = False
@@ -66,6 +67,9 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     get_tokenizer(args)  # set args.vocab_size.
     # Data stuff.
     train_data, val_data, test_data = make_loaders(args, hooks['create_dataset_function'])
+    if args.epochs:
+        args.train_iters = len(train_data)
+        args.eval_interval = len(train_data)//args.epochs
 
     # Build model
     if isinstance(model_cls, type):
@@ -444,18 +448,25 @@ def evaluate(data_iterator, model, eval_iters, args, timers, verbose=False, hook
             total_lm_loss += lm_loss.data.detach().float().item()
             for name in metrics:
                 if name not in metrics_total:
-                    metrics_total[name] = 0.0
-                metrics_total[name] += metrics[name]
+                    metrics_total[name] = []
+                metrics_gathered = [torch.zeros_like(metrics[name], dtype=metrics[name].dtype, device=metrics[name].device) for _ in range(args.world_size)]
+                torch.distributed.all_gather(metrics_gathered, metrics[name])
+                for tensor in metrics_gathered:
+                    metrics_total[name].append(tensor.data.cpu())
+
 
     # Move model back to the train mode.
     model.train()
 
     total_lm_loss /= eval_iters
-    metrics_avg = {key: value / eval_iters for key, value in metrics_total.items()}
-    for name in metrics_avg:
-        torch.distributed.all_reduce(metrics_avg[name].data)
-        metrics_avg[name].data /= args.world_size # model parallel will also reduce
-    return total_lm_loss, metrics_avg
+    # metrics_avg = {key: value / eval_iters for key, value in metrics_total.items()}
+    for name in metrics_total:
+        metrics_total[name] = torch.stack(metrics_total[name], dim=0)
+    if hooks['handle_metrics'] is not None:
+        metrics = hooks['handle_metrics'](metrics_total)
+    else:
+        metrics = {key: sum(value.split(1,0))/len(value) for key, value in metrics_total.items()}
+    return total_lm_loss, metrics
 
 def evaluate_and_print_results(prefix, data_iterator, model, eval_iters,
                             args, timers, verbose=False, step=None, summary_writer=None, hooks={}):
@@ -491,7 +502,7 @@ def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step, avg_metrics
     string += 'loss: {:.6E} | '.format(loss)
     string += 'PPL: {:.6E}'.format(ppl)
     for key in avg_metrics:
-        string += ' {} {:.6E} |'.format(key, avg_metrics[key])
+        string += ' {} {:.6E} |'.format(key, avg_metrics[key].item())
     length = len(string) + 1
     print_rank_0('-' * 100)
     print_rank_0('-' * length)

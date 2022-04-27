@@ -62,13 +62,28 @@ def forward_step(data_iterator, model, args, timers):
         pred,
         labels.float()
     )
+    true_pos = ((pred > 0.).long() * labels).sum() * 1.0
+    false_pos = ((1-(pred > 0.).long()) * labels).sum() * 1.0
+    true_neg = ((1-(pred > 0.).long()) * (1-labels)).sum() * 1.0
+    false_neg = ((pred > 0.).long() * (1-labels)).sum() * 1.0
     acc = ((pred > 0.).long() == labels).sum() / labels.numel()
-    return loss, {'acc': acc}
+    return loss, {'acc': acc, 'tp': true_pos, 'fp': false_pos, 'tn': true_neg, 'fn': false_neg}
 
 pretrain_path = ''
 from transformers import RobertaTokenizer
 tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-large'))
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
+
+def handle_metrics(metrics):
+    acc = sum(metrics['acc'].split(1,0))/len(metrics['acc'])
+    TP = sum(metrics['tp'].split(1,0))
+    FP = sum(metrics['fp'].split(1,0))
+    FN = sum(metrics['fn'].split(1,0))
+
+    Precision = TP/(TP+FP)
+    Recall = TP/(TP+FN)
+    F1 = 2*(Precision*Recall)/(Precision+Recall)
+    return {'acc': acc, 'f1': F1}
 
 def _encode(text, text_pair):
     encoded_input = tokenizer(text, text_pair, max_length=args.sample_length, padding='max_length', truncation='only_first')
@@ -98,4 +113,4 @@ if __name__ == '__main__':
     args = argparse.Namespace(**vars(args), **vars(known))
     # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
     # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
-    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
+    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, handle_metrics=handle_metrics)

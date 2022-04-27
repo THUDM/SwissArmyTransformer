@@ -32,7 +32,7 @@ def make_data_loader(dataset, batch_size, args):
 
     sampler = torch.utils.data.SequentialSampler(dataset)
     # drop_last = distributed
-    drop_last = True # TODO will always drop last to keep the consistency. 
+    drop_last = False # TODO will always drop last to keep the consistency.
     # or, how to avg in eval last batch?
     
     # the GPUs in the same model parallel group receive the same data
@@ -71,15 +71,18 @@ def make_dataset_full(path, split, args, create_dataset_function,
             ds.append(d)
         ds = ConcatDataset(ds, weights=dataset_weights)
         if random_mapping:
-            if is_train_data:
-                # only train-dataset will set this to True, 
-                # so we enlarge it to make sure that the data is sufficient.
-                world_size = torch.distributed.get_world_size(
-                    group=mpu.get_data_parallel_group())
-                scale = max(200, 1 + (args.train_iters * args.batch_size * world_size) // len(ds))
+            if args.epochs is not None:
+                ds = RandomDataset(ds, scale=args.epochs)
             else:
-                scale = 200
-            ds = RandomMappingDataset(ds, scale=scale)
+                if is_train_data:
+                # only train-dataset will set this to True,
+                # so we enlarge it to make sure that the data is sufficient.
+                    world_size = torch.distributed.get_world_size(
+                        group=mpu.get_data_parallel_group())
+                    scale = max(200, 1 + (args.train_iters * args.batch_size * world_size) // len(ds))
+                else:
+                    scale = 200
+                ds = RandomMappingDataset(ds, scale=scale)
         return ds 
     else:
         # must first split datasets, then reweight/concat, finally random-mapping.
@@ -296,6 +299,23 @@ class RandomMappingDataset(data.Dataset):
         rng = np.random.RandomState(seed=[rng.randint(0, 2**32-1) for _ in range(16)])
         index = rng.randint(len(self.wrapped_data))
         return self.wrapped_data[index]
+
+class RandomDataset(data.Dataset):
+    '''
+    Dataset wrapper to randomly mapping indices to original order.
+    The indices are pre-processed.
+    Will also enlarge the length
+    '''
+    def __init__(self, ds, scale=200, **kwargs):
+        self.wrapped_data = ds
+        self.scale = scale
+        self.indices = np.random.permutation(np.array(range(len(ds))))
+
+    def __len__(self):
+        return len(self.wrapped_data) * self.scale
+
+    def __getitem__(self, index):
+        return self.wrapped_data[int(self.indices[index % len(self.wrapped_data)])]
 
 class BlockedRandomSplitDataset(data.Dataset):
     '''
