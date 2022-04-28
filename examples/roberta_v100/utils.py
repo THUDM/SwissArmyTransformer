@@ -17,7 +17,7 @@ from SwissArmyTransformer import mpu
 
 pretrain_path = ''
 from transformers import RobertaTokenizer
-tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-large'))
+tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-large'), local_files_only=True)
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
 from SwissArmyTransformer.data_utils import load_hf_dataset
 
@@ -156,7 +156,7 @@ def get_batch_function(dataset_name):
 def create_dataset_function(path, args):
     dataset_name = args.dataset_name
     cache_dir = '/thudm/workspace/SwissArmyTransformerDatasets'
-    offline = False
+    offline = True
     transformer_name = f"{dataset_name}_transformer_{args.sample_length}"
     if dataset_name == "wic":
         def process_fn(row):

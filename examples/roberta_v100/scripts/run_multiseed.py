@@ -74,7 +74,7 @@ if __name__ == "__main__":
         assert len(lr_search) == args.number_gpu
     else:
         lr_search = [1e-5] * args.number_gpu
-    batch_size = 24
+    batch_size = 32
     for i in range(args.number_gpu):
         p = Process(target=run, args=(gpu_start+i,args.seed_per_gpu,args.dataset,log_dir,lr_search[i], batch_size, ))
         p.start()

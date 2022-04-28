@@ -47,14 +47,13 @@ gpt_options=" \
        --collect-len 2 \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
-       --train-iters 14000 \
+       --epochs 20 \
        --resume-dataloader \
        $MODEL_ARGS \
        --train-data ${en_data} \
        --distributed-backend nccl \
        --lr-decay-style linear \
        --fp16 \
-       --eval-interval 200 \
        --save checkpoints/ \
        --split 1 \
        --eval-batch-size 10 \
@@ -109,7 +108,7 @@ gpt_options="${gpt_options}
 #  echo "use gpu $FINETUNE_GPU"
 #fi
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include=localhost:$gpu --master_port ${port} --hostfile ${HOST_FILE_PATH} finetune_roberta.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include=localhost:${gpu} --master_port ${port} --hostfile ${HOST_FILE_PATH} finetune_roberta.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 
