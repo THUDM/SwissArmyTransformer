@@ -1,55 +1,76 @@
 import torch
 import torch.nn as nn
-
 from SwissArmyTransformer.mpu.transformer import LayerNorm
 from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel
 
-bert_gelu = nn.functional.gelu
+gelu = nn.functional.gelu
 
-class bert_lm_head(torch.nn.Module):
-    def __init__(self, hidden_size, output_size, layernorm_epsilon=1.0e-5):
+class lm_head(torch.nn.Module):
+    def __init__(self, vocab_size, hidden_size, layernorm_epsilon=1.0e-5):
         super().__init__()
-        self.dense1 = nn.Linear(hidden_size, hidden_size, bias = True)
-        self.dense2 = nn.Linear(hidden_size, output_size, bias=True)
-        self.dropout = nn.Dropout(p=0.1, inplace=False)
-
+        self.dense = nn.Linear(hidden_size, hidden_size)
+        self.layer_norm = LayerNorm(hidden_size, eps=layernorm_epsilon)
+        self.decoder = nn.Linear(hidden_size, vocab_size)
+    
     def forward(self, x):
-        x = self.dense1(x)
-        x = nn.Tanh()(x)
-        x = self.dropout(x)
-        x = self.dense2(x)
+        x = self.dense(x)
+        x = gelu(x)
+        x = self.layer_norm(x)
+        x = self.decoder(x)
         return x
 
 class BertFinalMixin(BaseMixin):
-    def __init__(self, hidden_size, output_size):
+    def __init__(self, vocab_size, hidden_size):
         super().__init__()
         self.hidden_size = hidden_size
-        self.lm_head = bert_lm_head(hidden_size, output_size)
+        self.lm_head = lm_head(vocab_size, hidden_size)
 
-    def final_forward(self, hidden_states, **kwargs):
-        return self.lm_head(hidden_states[:,0])
+    def final_forward(self, logits, **kwargs):
+        return self.lm_head(logits)
 
-class BertPositionEmbeddingMixin(BaseMixin):
-    def __init__(self, hidden_size):
+class BertTypeMixin(BaseMixin):
+    def __init__(self, num_types, hidden_size):
         super().__init__()
-        self.token_type_embeddings = nn.Embedding(2, hidden_size)
+        self.type_embeddings = nn.Embedding(num_types, hidden_size)
+    def word_embedding_forward(self, input_ids, **kwargs):
+        return self.transformer.word_embeddings(input_ids) + self.type_embeddings(kwargs["token_type_ids"])
 
-    def position_embedding_forward(self, position_ids, **kw_args):
-        position_embeddings = self.transformer.position_embeddings(position_ids)
+class ForwardMixin(BaseMixin):
+    def __init__(self):
+        super().__init__()
+    def layer_forward(self, hidden_states, mask, *args, **kw_args):
+        '''
+            hidden_states: [batch, seq_len, hidden_size]
+            mask: [(1, 1), seq_len, seq_len]
+        '''
+        layer = self.transformer.layers[kw_args['layer_id']]
+        # Layer norm at the begining of the transformer layer.
+        hidden_states = layer.input_layernorm(hidden_states)
+        # Self attention.
+        attention_output = layer.attention(hidden_states, mask, **kw_args)
 
-        if 'token_type_ids' not in kw_args:
-            #device = position_ids.device
-            token_type_ids = torch.zeros(position_ids.size(), dtype=torch.long).cuda()
-        else:
-            token_type_ids =kw_args['token_type_ids']
-        token_type_embeddings = self.token_type_embeddings(token_type_ids)
-        position_embeddings = position_embeddings + token_type_embeddings
-        return position_embeddings
+        # Residual connection.
+        layernorm_input = hidden_states + attention_output
+        # Layer norm post the self attention.
+        layernorm_output = layer.post_attention_layernorm(layernorm_input)
 
+        # MLP.
+        mlp_output = layer.mlp(layernorm_output, **kw_args)
+
+        # Second residual connection.
+        output = layernorm_output + mlp_output
+
+        return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
 
 class BertModel(BaseModel):
     def __init__(self, args, transformer=None, **kwargs):
-        super(BertModel, self).__init__(args, transformer=transformer,
-                                        activation_func=bert_gelu, **kwargs)
-        self.add_mixin("position_embedding_forward", BertPositionEmbeddingMixin(args.hidden_size))
-        self.add_mixin("final_forward", BertFinalMixin(args.hidden_size, args.output_size))
+        super(BertModel, self).__init__(args, transformer=transformer, activation_func=gelu, **kwargs)
+        self.add_mixin("bert-final", BertFinalMixin(args.vocab_size, args.hidden_size))
+        self.add_mixin("bert-type", BertTypeMixin(args.num_types, args.hidden_size))
+        self.add_mixin("bert-forward", ForwardMixin())
+
+    @classmethod
+    def add_model_specific_args(cls, parser):
+        group = parser.add_argument_group('BERT', 'BERT Configurations')
+        group.add_argument('--num-types', type=int)
+        return parser

@@ -1,18 +1,47 @@
 import os
-os.environ["TRANSFORMERS_OFFLINE"] = '1'
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+pretrain_path = '/data/qingsong/pretrain'
 
-pretrain_path = '/workspace/bert'
-
-
-from transformers import BertTokenizer, BertModel, BertForSequenceClassification
+from transformers import BertTokenizer, BertForMaskedLM
 tokenizer = BertTokenizer.from_pretrained(os.path.join(pretrain_path, 'bert-base-uncased'))
-bert = BertForSequenceClassification.from_pretrained(os.path.join(pretrain_path, 'bert-base-uncased'), output_hidden_states=True)
-# tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", do_lower_case=True)
-# bert = BertForSequenceClassification.from_pretrained("bert-base-uncased", do_lower_case=True)
+bert = BertForMaskedLM.from_pretrained(os.path.join(pretrain_path, 'bert-base-uncased'), output_hidden_states=True)
+lm_head = bert.cls
+bert = bert.bert
 
-# lm_head = roberta.lm_head
-# roberta = roberta.roberta
+import argparse
+args = argparse.Namespace(
+    num_layers=12,
+    vocab_size=30522,
+    hidden_size=768,
+    num_attention_heads=12,
+    max_sequence_length=512,
+    num_types=2,
+    hidden_dropout=0.1,
+    attention_dropout=0.1,
+    inner_hidden_size=None,
+    hidden_size_per_attention_head=None,
+    checkpoint_activations=True,
+    checkpoint_num_layers=1,
+    sandwich_ln=False,
+    model_parallel_size=1,
+    world_size=1,
+    rank=0
+    )
+
+import torch
+init_method = 'tcp://'
+master_ip = os.getenv('MASTER_ADDR', '127.0.0.1')
+master_port = os.getenv('MASTER_PORT', '16666')
+init_method += master_ip + ':' + master_port
+torch.distributed.init_process_group(
+        backend='nccl',
+        world_size=args.world_size, rank=args.rank, init_method=init_method)
+
+import SwissArmyTransformer.mpu as mpu
+mpu.initialize_model_parallel(args.model_parallel_size)
+
+from bert_model import BertModel
+model = BertModel(args, layernorm_epsilon=1e-12)
+
 def copy_layer_param(src, dst):
     """
     in-place copy from src to dst
@@ -55,75 +84,31 @@ def copy_transformer_layer_wo_ln(src, dst):
 def transform_weight(hugging_model, swiss_model):
     copy_layer_param(hugging_model.embeddings.word_embeddings, swiss_model.transformer.word_embeddings)
     copy_layer_param(hugging_model.embeddings.position_embeddings, swiss_model.transformer.position_embeddings)
-    copy_layer_param(hugging_model.embeddings.token_type_embeddings,
-                     model.mixins['position_embedding_forward'].token_type_embeddings)
-    # swiss_model.transformer.word_embeddings.padding_idx = roberta.embeddings.padding_idx
-    # swiss_model.transformer.position_embeddings.padding_idx = roberta.embeddings.padding_idx
     copy_layer_norm(hugging_model, swiss_model)
     for src_l, dst_l in zip(hugging_model.encoder.layer, swiss_model.transformer.layers):
         copy_transformer_layer_wo_ln(src_l, dst_l)
-    copy_layer_param(hugging_model.pooler.dense, model.mixins['final_forward'].lm_head.dense1)
-    copy_layer_param(lm_head, model.mixins['final_forward'].lm_head.dense2)
-
-if __name__ == "__main__":
-    lm_head = bert.classifier
-    bert = bert.bert
-    import argparse
-    args = argparse.Namespace(
-        num_layers=12,
-        vocab_size=30522,
-        hidden_size=768,
-        num_attention_heads=12,
-        max_sequence_length=512,
-        hidden_dropout=0.1,
-        attention_dropout=0.1,
-        inner_hidden_size=None,
-        hidden_size_per_attention_head=None,
-        checkpoint_activations=True,
-        checkpoint_num_layers=1,
-        sandwich_ln=False,
-        model_parallel_size=1,
-        world_size=1,
-        rank=0,
-        output_size=2,
-        use_final_layernorm = False
-    )
-
-    import torch
-    init_method = 'tcp://'
-    master_ip = os.getenv('MASTER_ADDR', '127.0.0.1')
-    master_port = os.getenv('MASTER_PORT', '16677')
-    init_method += master_ip + ':' + master_port
-    torch.distributed.init_process_group(
-        backend='nccl',
-        world_size=args.world_size, rank=args.rank, init_method=init_method)
-
-    import SwissArmyTransformer.mpu as mpu
-    mpu.initialize_model_parallel(args.model_parallel_size)
-
-    from bert_model import BertModel
-
-    model = BertModel(args)
+    copy_layer_param(lm_head.predictions.transform.dense, model.mixins['bert-final'].lm_head.dense)
+    copy_layer_param(lm_head.predictions.transform.LayerNorm, model.mixins['bert-final'].lm_head.layer_norm)
+    copy_layer_param(lm_head.predictions.decoder, model.mixins['bert-final'].lm_head.decoder)
+    copy_layer_param(hugging_model.embeddings.token_type_embeddings, swiss_model.mixins['bert-type'].type_embeddings)
 
 
-    from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
+bert.eval()
+model.eval()
+with torch.no_grad():
+    transform_weight(bert, model)
+    text = [["This is a piece of text.", "Another piece of text."]]
+    encoded_input = tokenizer(text, return_tensors='pt', padding=True)
+    seq_len = encoded_input['input_ids'].size(1)
+    position_ids = torch.arange(seq_len).unsqueeze(0).expand_as(encoded_input['input_ids'])
+    print(position_ids)
+    output = bert(**encoded_input)
+    hugging_output = lm_head(output[0])
+    model.to('cuda:0')
+    dst_output = model(input_ids=encoded_input['input_ids'].cuda(), position_ids=position_ids.cuda(), token_type_ids=encoded_input['token_type_ids'].cuda(), attention_mask=encoded_input['attention_mask'][:, None, None, :].cuda())
+    swiss_output = dst_output[0].cpu()
+    print("max error:", (hugging_output[:,0] - swiss_output[:,0]).abs().max())
+    print("max relative error:", ((hugging_output[:,0] - swiss_output[:,0]).abs() / torch.max(swiss_output[:,0].abs(), hugging_output[:,0].abs())).max())
+    torch.save({'module':model.state_dict()}, "output.pt")
 
-    bert.eval()
-    model.eval()
-    with torch.no_grad():
-        transform_weight(bert, model)
-        text = ["This is a piece of text.", "Another piece of text."]
-        encoded_input = tokenizer(text, return_tensors='pt', padding=True)
-        #position_ids = create_position_ids_from_input_ids(encoded_input['input_ids'], bert.embeddings.padding_idx, 0)
-        #print(position_ids)
-        position_ids=torch.arange(len(encoded_input['input_ids'][0])).expand((len(encoded_input)-1, -1))
-        output = bert(**encoded_input)
-        hugging_output = lm_head(output.pooler_output)
-        model.cuda()
-        attention_mask = encoded_input['attention_mask'][:, None, None, :]
-        swiss_output = model(input_ids=encoded_input['input_ids'].cuda(), position_ids=position_ids.cuda(), attention_mask=encoded_input['attention_mask'][:, None, None, :].cuda())[0].cpu()
-        print("max error:", (hugging_output[0] - swiss_output[0]).abs().max())
-        print("max relative error:", ((hugging_output[0] - swiss_output[0]).abs() / torch.max(swiss_output[0].abs(), hugging_output[0].abs())).max())
-        torch.save(model.state_dict(), os.path.join(pretrain_path, "bert-base.pt"))
-
-    # breakpoint()
+# breakpoint()

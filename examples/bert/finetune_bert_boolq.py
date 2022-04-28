@@ -1,3 +1,4 @@
+from lib2to3.pgen2 import token
 import os
 
 import torch
@@ -6,23 +7,28 @@ import numpy as np
 
 from SwissArmyTransformer import mpu, get_args
 from SwissArmyTransformer.training.deepspeed_training import training_main
-from roberta_model import RobertaModel
-from SwissArmyTransformer.model.mixins import PrefixTuningMixin, MLPHeadMixin
+from bert_model import BertModel
+from SwissArmyTransformer.model.mixins import MLPHeadMixin
 
-class ClassificationModel(RobertaModel):
-    def __init__(self, args, transformer=None, parallel_output=True):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output)
-        self.del_mixin('roberta-final')
+class ClassificationModel(BertModel):
+    def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-12, **kwargs):
+        super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon, **kwargs)
+        self.del_mixin('bert-final')
         self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
-        self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
+        # self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
     def disable_untrainable_params(self):
         self.transformer.word_embeddings.requires_grad_(False)
         # for layer_id in range(len(self.transformer.layers)):
         #     self.transformer.layers[layer_id].requires_grad_(False)
+    @classmethod
+    def add_model_specific_args(cls, parser):
+        group = parser.add_argument_group('BERT-finetune', 'BERT finetune Configurations')
+        # group.add_argument('--prefix_len', type=int, default=16)
+        return super().add_model_specific_args(parser)
 
 def get_batch(data_iterator, args, timers):
     # Items and their type.
-    keys = ['input_ids', 'position_ids', 'attention_mask', 'label']
+    keys = ['input_ids', 'position_ids', 'token_type_ids', 'attention_mask', 'label']
     datatype = torch.int64
 
     # Broadcast data.
@@ -37,13 +43,14 @@ def get_batch(data_iterator, args, timers):
     tokens = data_b['input_ids'].long()
     labels = data_b['label'].long()
     position_ids = data_b['position_ids'].long()
+    token_type_ids = data_b['token_type_ids'].long()
     attention_mask = data_b['attention_mask'][:, None, None, :].float()
 
     # Convert
     if args.fp16:
         attention_mask = attention_mask.half()
     
-    return tokens, labels, attention_mask, position_ids, (tokens!=1)
+    return tokens, labels, attention_mask, position_ids, token_type_ids, (tokens!=1)
 
 
 def forward_step(data_iterator, model, args, timers):
@@ -51,44 +58,29 @@ def forward_step(data_iterator, model, args, timers):
 
     # Get the batch.
     timers('batch generator').start()
-    tokens, labels, attention_mask, position_ids, loss_mask = get_batch(
+    tokens, labels, attention_mask, position_ids, token_type_ids, loss_mask = get_batch(
         data_iterator, args, timers)
     timers('batch generator').stop()
 
-    logits, *mems = model(tokens, position_ids, attention_mask)
+    logits, *mems = model(input_ids=tokens, position_ids=position_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
     # pred = ((logits.contiguous().float().squeeze(-1)) * loss_mask).sum(dim=-1) / loss_mask.sum(dim=-1)
     pred = logits.contiguous().float().squeeze(-1)[..., 0]
     loss = torch.nn.functional.binary_cross_entropy_with_logits(
         pred,
         labels.float()
     )
-    true_pos = ((pred > 0.).long() * labels).sum() * 1.0
-    false_pos = ((1-(pred > 0.).long()) * labels).sum() * 1.0
-    true_neg = ((1-(pred > 0.).long()) * (1-labels)).sum() * 1.0
-    false_neg = ((pred > 0.).long() * (1-labels)).sum() * 1.0
     acc = ((pred > 0.).long() == labels).sum() / labels.numel()
-    return loss, {'acc': acc, 'tp': true_pos, 'fp': false_pos, 'tn': true_neg, 'fn': false_neg}
+    return loss, {'acc': acc}
 
 pretrain_path = ''
-from transformers import RobertaTokenizer
-tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-large'))
-from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
-
-def handle_metrics(metrics):
-    acc = sum(metrics['acc'].split(1,0))/len(metrics['acc'])
-    TP = sum(metrics['tp'].split(1,0))
-    FP = sum(metrics['fp'].split(1,0))
-    FN = sum(metrics['fn'].split(1,0))
-
-    Precision = TP/(TP+FP)
-    Recall = TP/(TP+FN)
-    F1 = 2*(Precision*Recall)/(Precision+Recall)
-    return {'acc': acc, 'f1': F1}
+from transformers import BertTokenizer
+tokenizer = BertTokenizer.from_pretrained(os.path.join(pretrain_path, 'bert-base-uncased'))
 
 def _encode(text, text_pair):
     encoded_input = tokenizer(text, text_pair, max_length=args.sample_length, padding='max_length', truncation='only_first')
-    position_ids = create_position_ids_from_input_ids(torch.tensor([encoded_input['input_ids']]), 1, 0)
-    return dict(input_ids=encoded_input['input_ids'], position_ids=position_ids[0].numpy(), attention_mask=encoded_input['attention_mask'])
+    seq_len = len(encoded_input['input_ids'])
+    position_ids = torch.arange(seq_len)
+    return dict(input_ids=encoded_input['input_ids'], position_ids=position_ids.numpy(), token_type_ids=encoded_input['token_type_ids'], attention_mask=encoded_input['attention_mask'])
 
 from SwissArmyTransformer.data_utils import load_hf_dataset
 def create_dataset_function(path, args):
@@ -98,19 +90,19 @@ def create_dataset_function(path, args):
             'input_ids': np.array(pack['input_ids'], dtype=np.int64),
             'position_ids': np.array(pack['position_ids'], dtype=np.int64),
             'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
+            'token_type_ids': np.array(pack['token_type_ids'], dtype=np.int64),
             'label': label
         }
-    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="boolq_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "token_type_ids", "attention_mask", "label"], cache_dir='/data/qingsong/dataset', offline=False, transformer_name="boolq_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
-    py_parser.add_argument('--new_hyperparam', type=str, default=None)
     py_parser.add_argument('--sample_length', type=int, default=512-16)
-    py_parser.add_argument('--prefix_len', type=int, default=16)
     py_parser.add_argument('--old_checkpoint', action="store_true")
+    py_parser = ClassificationModel.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
     # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
     # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
-    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, handle_metrics=handle_metrics)
+    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
