@@ -23,8 +23,8 @@ from .samplers import DistributedBatchSampler
 
 from SwissArmyTransformer import mpu
 
-
-def make_data_loader(dataset, batch_size, args):
+# class ExDataLoader(torch.utils.data.DataLoader)
+def make_data_loader(dataset, batch_size, args, split):
     world_size = torch.distributed.get_world_size(
         group=mpu.get_data_parallel_group())
     rank = torch.distributed.get_rank(group=mpu.get_data_parallel_group())
@@ -37,6 +37,25 @@ def make_data_loader(dataset, batch_size, args):
     
     # the GPUs in the same model parallel group receive the same data
     if distributed: # TODO reformat this, but it is not urgent
+        last_len = len(dataset) % batch_size
+        batch_per_worker = batch_size // world_size
+        last_shape = [batch_per_worker] * (last_len//batch_per_worker)
+        if last_len != 0 :
+            if last_len % batch_per_worker != 0:
+                last_shape.append(last_len % batch_per_worker)
+            drop_number = world_size - ((last_len-1)//batch_per_worker + 1)
+            for j in range(drop_number):
+                last_shape.append(1)
+        else:
+            drop_number = 0
+        if split=='val':
+            args.val_last_shape = last_shape
+            args.val_drop_number = drop_number
+        elif split=='test':
+            args.test_last_shape = last_shape
+            args.test_drop_number = drop_number
+
+        # args.has_last = True if rank * batch_per_worker < last_len else False
         gradient_accumulation_steps = getattr(args, 'gradient_accumulation_steps', 1)
         batch_sampler = DistributedBatchSampler(sampler,
             batch_size,
@@ -74,14 +93,14 @@ def make_dataset_full(path, split, args, create_dataset_function,
             if args.epochs is not None:
                 ds = RandomDataset(ds, scale=args.epochs)
             else:
+                world_size = torch.distributed.get_world_size(
+                    group=mpu.get_data_parallel_group())
                 if is_train_data:
                 # only train-dataset will set this to True,
                 # so we enlarge it to make sure that the data is sufficient.
-                    world_size = torch.distributed.get_world_size(
-                        group=mpu.get_data_parallel_group())
                     scale = max(200, 1 + (args.train_iters * args.batch_size * world_size) // len(ds))
                 else:
-                    scale = 200
+                    scale = max(200, 1 + ((1 + args.train_iters // args.eval_interval) * args.eval_iters * args.eval_batch_size * world_size) // len(ds))
                 ds = RandomMappingDataset(ds, scale=scale)
         return ds 
     else:
@@ -154,18 +173,18 @@ def make_loaders(args, create_dataset_function):
 
     # wrap datasets with data loader
     if train is not None and args.batch_size > 0:
-        train = make_data_loader(train, batch_size, args)
+        train = make_data_loader(train, batch_size, args, split='train')
         args.do_train = True
     else:
         args.do_train = False
     eval_batch_size = eval_batch_size if eval_batch_size != 0 else batch_size
     if valid is not None:
-        valid = make_data_loader(valid, eval_batch_size, args)
+        valid = make_data_loader(valid, eval_batch_size, args, split='val')
         args.do_valid = True
     else:
         args.do_valid = False
     if test is not None:
-        test = make_data_loader(test, eval_batch_size, args)
+        test = make_data_loader(test, eval_batch_size, args, split='test')
         args.do_test = True
     else:
         args.do_test = False

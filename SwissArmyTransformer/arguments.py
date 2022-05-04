@@ -250,7 +250,7 @@ def get_args(args_list=None):
     if not args.train_data:
         print('WARNING: No training data specified')
 
-    assert (args.train_iters is None and args.eval_interval is None) or (args.epochs is None)
+    assert (args.train_iters is None)^(args.epochs is None)
 
     args.cuda = torch.cuda.is_available()
 
