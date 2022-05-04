@@ -298,6 +298,7 @@ def train(model, optimizer, lr_scheduler,
         total_lm_loss += lm_loss.data.detach().float()
         for name in metrics:
             if not 'eval' in name:
+                assert len(metrics[name].shape)==0, 'metrics without eval must be scalar'
                 total_metrics[name] += metrics[name].data.detach().float().item()
 
         # Logging.
@@ -460,7 +461,7 @@ def evaluate(data_iterator, model, eval_iters, args, timers, split, verbose=Fals
             if args.deepspeed and args.deepspeed_activation_checkpointing:
                 deepspeed.checkpointing.reset()
             total_lm_loss += lm_loss.data.detach().float().item()
-            is_last = True if iteration == eval_iters else False
+            is_last = True if iteration == eval_iters and args.strict_eval else False
             for name in metrics:
                 if name not in metrics_total:
                     metrics_total[name] = []
@@ -470,7 +471,7 @@ def evaluate(data_iterator, model, eval_iters, args, timers, split, verbose=Fals
                     metrics_gathered = [torch.zeros_like(metrics[name], dtype=metrics[name].dtype, device=metrics[name].device) for _ in range(args.world_size)]
                 else:
                     metrics_gathered = None
-                if not is_scalar[name] and iteration==eval_iters and metrics[name].shape[0] != last_shape[0]:
+                if not is_scalar[name] and is_last and metrics[name].shape[0] != last_shape[0]:
                     # pad tensor's first dim to args.batch_size
                     metrics[name] = torch.concat([metrics[name], torch.zeros([last_shape[0]-metrics[name].shape[0]] + shape[1:], dtype=metrics[name].dtype, device=metrics[name].device)])
                 torch.distributed.gather(metrics[name], metrics_gathered, 0)
@@ -495,6 +496,8 @@ def evaluate(data_iterator, model, eval_iters, args, timers, split, verbose=Fals
         if hooks['handle_metrics'] is not None:
             metrics = hooks['handle_metrics'](metrics_total)
         else:
+            for name in metrics_total:
+                assert is_scalar[name], 'you must return scalar metrics or implement handle_metrics hooks'
             metrics = {key: sum(value.split(1,0))/len(value) for key, value in metrics_total.items()}
     else:
         metrics = None
