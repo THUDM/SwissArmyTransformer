@@ -67,7 +67,10 @@ def forward_step(data_iterator, model, args, timers):
     true_neg = ((1-(pred > 0.).long()) * (1-labels)).sum() * 1.0
     false_neg = ((pred > 0.).long() * (1-labels)).sum() * 1.0
     acc = ((pred > 0.).long() == labels).sum() / labels.numel()
-    return loss, {'acc': acc, 'tp': true_pos, 'fp': false_pos, 'tn': true_neg, 'fn': false_neg}
+    test = pred
+    # name with 'eval' only considered in evaluation
+    # returned tensor must be scalar or [batch_size, ....]
+    return loss, {'acc': acc, 'tp': true_pos, 'fp': false_pos, 'tn': true_neg, 'fn': false_neg, 'eval_test':test}
 
 pretrain_path = ''
 from transformers import RobertaTokenizer
