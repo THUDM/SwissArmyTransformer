@@ -2,17 +2,17 @@ import os
 pretrain_path = ''
 
 from transformers import RobertaTokenizer, RobertaForMaskedLM
-tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-base'))
-roberta = RobertaForMaskedLM.from_pretrained(os.path.join(pretrain_path, 'roberta-base'), output_hidden_states=True)
+tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-large'))
+roberta = RobertaForMaskedLM.from_pretrained(os.path.join(pretrain_path, 'roberta-large'), output_hidden_states=True)
 lm_head = roberta.lm_head
 roberta = roberta.roberta
 
 import argparse
 args = argparse.Namespace(
-    num_layers=12,
+    num_layers=24,
     vocab_size=50265,
-    hidden_size=768,
-    num_attention_heads=12,
+    hidden_size=1024,
+    num_attention_heads=16,
     max_sequence_length=514,
     hidden_dropout=0.1,
     attention_dropout=0.1,
@@ -109,6 +109,6 @@ with torch.no_grad():
     swiss_output = model(input_ids=encoded_input['input_ids'].cuda(), position_ids=position_ids.cuda(), attention_mask=encoded_input['attention_mask'][:, None, None, :].cuda())[0].cpu()
     print("max error:", (hugging_output[0] - swiss_output[0]).abs().max())
     print("max relative error:", ((hugging_output[0] - swiss_output[0]).abs() / torch.max(swiss_output[0].abs(), hugging_output[0].abs())).max())
-    torch.save(model.state_dict(), os.path.join(pretrain_path, "roberta-base.pt"))
+    torch.save(model.state_dict(), os.path.join(pretrain_path, "roberta-large.pt"))
 
 # breakpoint()

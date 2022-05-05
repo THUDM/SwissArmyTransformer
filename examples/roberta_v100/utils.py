@@ -44,6 +44,7 @@ def get_dataset_keys(dataset_name):
         'qnli':["input_ids", "position_ids", "attention_mask", "label"],
         'qqp':["input_ids", "position_ids", "attention_mask", "label"],
         'cola':["input_ids", "position_ids", "attention_mask", "label"],
+        'wnli':["input_ids", "position_ids", "attention_mask", "label"],
     }
     return dataset_keys[dataset_name]
 
@@ -58,11 +59,12 @@ def get_class_num(dataset_name):
         'qnli':2,
         'qqp':2,
         'cola':2,
+        'wnli':2,
     }
     return dataset_class_num[dataset_name]
 
 def get_batch_function(dataset_name):
-    if dataset_name in ["boolq", "rte", "cb", "mrpc", "qnli", "qqp", "cola"] :
+    if dataset_name in ["boolq", "rte", "cb", "mrpc", "qnli", "qqp", "cola", 'wnli'] :
         def get_batch(data_iterator, args, timers):
             # Items and their type.
             keys = ['input_ids', 'position_ids', 'attention_mask', 'label']
@@ -155,12 +157,17 @@ def get_batch_function(dataset_name):
     return get_batch
 def create_dataset_function(path, args):
     dataset_name = args.dataset_name
-    cache_dir = '/thudm/workspace/SwissArmyTransformerDatasets'
+    if os.getenv('PLATFORM') == "jinan":
+        cache_dir = '/thudm/workspace/SwissArmyTransformerDatasets'
+    elif os.getenv('PLATFORM') == "wudao":
+        cache_dir = '/sharefs/cogview-new/yzy/SwissArmyTransformerDatasets'
+    else:
+        raise Exception("no PLATFORM")
     offline = True
     transformer_name = f"{dataset_name}_transformer_{args.sample_length}"
     if dataset_name == "wic":
         def process_fn(row):
-            pack = _encode_double_text(row['sentence1'], row['sentence2'])
+            pack = _encode_double_text(row['sentence1'], row['sentence2'], args)
             label = int(row['label'])
             start1, end1 = int(row['start1']), int(row['end1'])
             start2, end2 = int(row['start2']), int(row['end2'])
@@ -257,6 +264,15 @@ def create_dataset_function(path, args):
     elif dataset_name == "cola":
         def process_fn(row):
             pack, label = _encode_single_text(row['sentence'], args), int(row['label'])
+            return {
+                'input_ids': np.array(pack['input_ids'], dtype=np.int64),
+                'position_ids': np.array(pack['position_ids'], dtype=np.int64),
+                'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
+                'label': label
+            }
+    elif dataset_name == "wnli":
+        def process_fn(row):
+            pack, label = _encode_double_text(row['sentence1'], row['sentence2'], args), int(row['label'])
             return {
                 'input_ids': np.array(pack['input_ids'], dtype=np.int64),
                 'position_ids': np.array(pack['position_ids'], dtype=np.int64),

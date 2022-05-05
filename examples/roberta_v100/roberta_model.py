@@ -265,8 +265,8 @@ class FFADDMixin(BaseMixin):
 
         intermediate_add = ffadd_layer[0](hidden_states)
         intermediate_add = layer.activation_func(intermediate_add)
-        if attention_output is not None:
-            attention_output.append(intermediate_add)
+        # if attention_output is not None:
+        #     attention_output.append(intermediate_add)
         output2 = ffadd_layer[1](intermediate_add)
         output = output + output2
 

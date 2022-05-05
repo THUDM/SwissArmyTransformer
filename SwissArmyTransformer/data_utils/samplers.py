@@ -102,7 +102,6 @@ class DistributedSequentialSampler(data.sampler.Sampler):
         end = (self.rank+1)*self.batch_size//self.world_size
         return batch[start:end]
 
-
 class DistributedBatchSampler(data.sampler.BatchSampler):
     """
     similar to normal implementation of distributed sampler, except implementation is at the

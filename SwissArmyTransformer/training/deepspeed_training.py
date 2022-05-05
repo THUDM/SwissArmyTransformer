@@ -73,6 +73,8 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     if args.epochs:
         args.train_iters = len(train_data)
         args.eval_interval = len(train_data)//args.epochs
+        if args.save_interval is None:
+            args.save_interval = args.eval_interval
 
     # Build model
     if isinstance(model_cls, type):

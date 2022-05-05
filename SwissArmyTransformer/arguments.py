@@ -104,7 +104,7 @@ def add_training_args(parser):
                        help='Output directory to save checkpoints to.')
     group.add_argument('--load', type=str, default=None,
                        help='Path to a directory containing a model checkpoint.')
-    group.add_argument('--save-interval', type=int, default=5000,
+    group.add_argument('--save-interval', type=int, default=None,
                        help='number of iterations between saves')
     # group.add_argument('--no-save-optim', action='store_true',
     #                    help='Do not save current optimizer.')

@@ -1,3 +1,4 @@
+import math
 import os
 
 import torch
@@ -11,7 +12,30 @@ from SwissArmyTransformer.model.mixins import BaseMixin
 from functools import partial
 from utils import *
 
-        
+class WIC_MLPHeadMixin(BaseMixin):
+    def __init__(self, hidden_size, *output_sizes, bias=True, activation_func=torch.nn.functional.relu, init_mean=0, init_std=0.005):
+        super().__init__()
+        self.activation_func = activation_func
+        last_size = hidden_size
+        self.layers = torch.nn.ModuleList()
+        for sz in output_sizes:
+            this_layer = torch.nn.Linear(last_size, sz, bias=bias)
+            last_size = sz
+            torch.nn.init.normal_(this_layer.weight, mean=init_mean, std=init_std)
+            self.layers.append(this_layer)
+
+    def final_forward(self, logits, **kw_args):
+        cls_embedding = logits[:,0] #32 * hidden
+        logits = logits.reshape([-1, logits.shape[-1]])
+        pos1_embedding = logits[kw_args['pos1']] #32 * hidden
+        pos2_embedding = logits[kw_args['pos2']]
+        logits = torch.cat([cls_embedding, pos1_embedding, pos2_embedding], dim=-1)
+        for i, layer in enumerate(self.layers):
+            if i > 0:
+                logits = self.activation_func(logits)
+            logits = layer(logits)
+        return logits
+
 class MLPHeadMixin(BaseMixin):
     def __init__(self, args, hidden_size, *output_sizes, bias=True, activation_func=torch.nn.functional.relu, init_mean=0, init_std=0.005, old_model=None):
         super().__init__()
@@ -38,7 +62,13 @@ class MLPHeadMixin(BaseMixin):
             torch.nn.init.normal_(self.layers[i].weight, mean=0, std=0.005)
 
     def final_forward(self, logits, **kw_args):
-        logits = logits[:,:self.cls_number].sum(1)
+        cls_logits = logits[:,:self.cls_number].sum(1)
+        if 'pos1' in kw_args.keys():
+            logits = logits.reshape([-1, logits.shape[-1]])
+            pos1_embedding = logits[kw_args['pos1']] #32 * hidden
+            pos2_embedding = logits[kw_args['pos2']]
+            cls_logits = torch.cat([cls_logits, pos1_embedding, pos2_embedding], dim=-1)
+        logits = cls_logits
         if len(kw_args['attention_output']) > 0:
             attention_output = kw_args['attention_output']
             logits += torch.cat(attention_output, dim=1).sum(1)
@@ -121,17 +151,21 @@ class ClassificationModel(RobertaModel):
 
 def handle_metrics(metrics):
     acc = sum(metrics['acc'].split(1,0))/len(metrics['acc'])
-    TP = sum(metrics['tp'].split(1,0))
-    FP = sum(metrics['fp'].split(1,0))
-    FN = sum(metrics['fn'].split(1,0))
-
-    Precision = TP/(TP+FP)
-    Recall = TP/(TP+FN)
-    F1 = 2*(Precision*Recall)/(Precision+Recall)
-    return {'acc': acc, 'f1': F1}
+    if 'tp' in metrics.keys():
+        TP = sum(metrics['tp'].split(1,0))
+        TN = sum(metrics['tn'].split(1,0))
+        FP = sum(metrics['fp'].split(1,0))
+        FN = sum(metrics['fn'].split(1,0))
+        Precision = TP/(TP+FP)
+        Recall = TP/(TP+FN)
+        F1 = 2*(Precision*Recall)/(Precision+Recall)
+        MC = (TP*TN-FP*FN)/torch.sqrt((TP+FP)*(FN+TP)*(FN+TN)*(FP+TN))
+        return {'acc': acc, 'f1': F1, 'mc':MC}
+    else:
+        return {'acc': acc}
 
 def get_loss_metrics(logits, labels, dataset_name):
-    if dataset_name in ['rte', 'boolq', 'wic', 'mrpc', 'qnli', 'qqp', 'cola']:
+    if dataset_name in ['rte', 'boolq', 'wic', 'mrpc', 'qnli', 'qqp', 'cola', 'wnli']:
         pred = logits.contiguous().float().squeeze(-1)
         loss = torch.nn.functional.binary_cross_entropy_with_logits(
             pred,
@@ -142,7 +176,8 @@ def get_loss_metrics(logits, labels, dataset_name):
         true_neg = ((1-(pred > 0.).long()) * (1-labels)).sum() * 1.0
         false_neg = ((pred > 0.).long() * (1-labels)).sum() * 1.0
         acc = ((pred > 0.).long() == labels).sum() / labels.numel()
-        return loss, {'acc': acc, 'tp': true_pos, 'fp': false_pos, 'tn': true_neg, 'fn': false_neg}
+
+        return loss, {'acc': acc, 'tp': true_pos, 'fp': false_pos, 'tn': true_neg, 'fn': false_neg, 'eval_test':test}
     elif dataset_name=="copa":
         bz = logits.shape[0] // 2
         logits = logits.squeeze(-1).reshape(2, bz).permute(1, 0)
@@ -163,12 +198,12 @@ def forward_step(data_iterator, model, args, timers):
     """Forward step."""
 
     # Get the batch.
-    timers('batch generator').start()
+    # timers('batch generator').start()
     get_batch = get_batch_function(args.dataset_name)
     tokens, labels, attention_mask, position_ids, loss_mask, *extra_data = get_batch(
         data_iterator, args, timers)
-    timers('batch generator').stop()
-    if len(extra_data) > 1:
+    # timers('batch generator').stop()
+    if len(extra_data) >= 1:
         extra_data = extra_data[0]
     else:
         extra_data = {}
@@ -215,7 +250,8 @@ if __name__ == '__main__':
 
     #2step
     py_parser.add_argument('--step1-lr', type=float, default=5e-5)
-    py_parser.add_argument('--step1-iters', type=int, default=4000)
+    py_parser.add_argument('--step1-iters', type=int, default=None)
+    py_parser.add_argument('--step1-epochs', type=int, default=None)
 
     #ffadd
     py_parser.add_argument('--ffadd-r', type=int, default=32)
@@ -254,15 +290,18 @@ if __name__ == '__main__':
     if '2step' in args.finetune_type:
         step1_lr = args.step1_lr
         step2_lr = args.lr
-        step1_iters = args.step1_iters
-        step2_iters = args.train_iters - step1_iters
+        step1_epochs = args.step1_epochs
+        step2_epochs = args.epochs - args.step1_epochs
+        # step1_iters = args.step1_iters
+        # step2_iters = args.train_iters - step1_iters
 
 
         pre_args = copy.deepcopy(args)
         #step1
         args.lr = step1_lr
-        args.train_iters = step1_iters
-        training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
+        args.epochs = step1_epochs
+        # args.train_iters = step1_iters
+        training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, handle_metrics=handle_metrics)
         #step2
         pre_args.load = args.save
         del args
@@ -275,17 +314,18 @@ if __name__ == '__main__':
         args.lr = step2_lr
         args.experiment_name += f'pretype-{args.finetune_type}-'
         args.finetune_type = 'all'
-        args.train_iters = step2_iters
-        training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, already_init=True)
+        args.epochs = step2_epochs
+        # args.train_iters = step2_iters
+        training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, already_init=True, handle_metrics=handle_metrics)
 
     elif 'child' in args.finetune_type:
         if args.child_load is not None:
             args.load = args.child_load
-        training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, get_optimizer_from_model=True, set_optimizer_mask=set_optimizer_mask)
+        training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, get_optimizer_from_model=True, set_optimizer_mask=set_optimizer_mask, handle_metrics=handle_metrics)
     elif args.head_load:
         if args.body_path:
             args.load = args.body_path
-            training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, reset_part="head")
+            training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, reset_part="head", handle_metrics=handle_metrics)
         else:
             load = args.load
             args.load = args.head_path
@@ -300,7 +340,7 @@ if __name__ == '__main__':
                 old_model.bfloat16()
             old_model.cuda(torch.cuda.current_device())
             args.old_model = old_model
-            training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, already_init=True)
+            training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, already_init=True, handle_metrics=handle_metrics)
     else:
         training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, handle_metrics=handle_metrics)
 

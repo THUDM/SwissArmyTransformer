@@ -43,14 +43,14 @@ def change_ds_config(lr, seed, batch_size):
     with open(f"scripts/ds_config_{seed}.json", "w") as f:
         json.dump(ds_config, f)
 
-def run(gpu, seed_per_gpu, dataset, log_dir, lr, batch_size):
+def run(gpu, seed_per_gpu, dataset, log_dir, lr, batch_size, epochs):
     os.makedirs(log_dir, exist_ok=True)
     f = open(log_dir + str(gpu) + ".txt", "w")
     for i in range(seed_per_gpu):
         seed = random.randint(1, 1000000000)
         change_ds_config(lr, seed, batch_size)
         f.write(f"{i} run begin")
-        os.system(f"bash scripts/finetune_superglue.sh {dataset} {seed} {gpu} {lr}")
+        os.system(f"bash scripts/finetune_superglue.sh {dataset} {seed} {gpu} {lr} {epochs}")
         f.write(f"{i} run end")
     f.close()
 
@@ -75,8 +75,15 @@ if __name__ == "__main__":
     else:
         lr_search = [1e-5] * args.number_gpu
     batch_size = 32
+    epochs = 20
+    if args.dataset=="mrpc":
+        epochs=60
+    elif args.dataset in ["rte", "boolq"]:
+        epochs=40
+    elif args.dataset in ["wnli", "cb", "copa"]:
+        epochs=400
     for i in range(args.number_gpu):
-        p = Process(target=run, args=(gpu_start+i,args.seed_per_gpu,args.dataset,log_dir,lr_search[i], batch_size, ))
+        p = Process(target=run, args=(gpu_start+i,args.seed_per_gpu,args.dataset,log_dir,lr_search[i], batch_size, epochs, ))
         p.start()
         Plist.append(p)
     for i in range(args.number_gpu):

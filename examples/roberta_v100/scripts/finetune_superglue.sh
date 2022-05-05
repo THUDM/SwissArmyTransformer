@@ -1,10 +1,15 @@
 #! /bin/bash
 
 # Change for multinode config
-CHECKPOINT_PATH=/thudm/workspace/yzy/roberta
+
+if [[ "$PLATFORM" ==  "wudao" ]]; then
+  CHECKPOINT_PATH=/sharefs/cogview-new/yzy/roberta
+else
+  CHECKPOINT_PATH=/thudm/workspace/yzy/roberta
+fi
 
 NUM_WORKERS=1
-NUM_GPUS_PER_WORKER=1
+NUM_GPUS_PER_WORKER=4
 MP_SIZE=1
 
 script_path=$(realpath $0)
@@ -17,7 +22,7 @@ task_name=$1
 seed=$2
 gpu=$3
 lr=$4
-
+epochs=$5
 
 OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
@@ -29,7 +34,7 @@ if [[ "$task_name" == "wsc" ]]; then
 fi
 
 hf_path="super_glue"
-if [[ "$task_name" == "cola" || "$task_name" == "sst2" || "$task_name" == "qqp" || "$task_name" == "mrpc" || "$task_name" == "stsb" || "$task_name" == "mnli" || "$task_name" == "qnli" ]]; then
+if [[ "$task_name" == "cola" || "$task_name" == "sst2" || "$task_name" == "qqp" || "$task_name" == "mrpc" || "$task_name" == "stsb" || "$task_name" == "mnli" || "$task_name" == "qnli" || "$task_name" == "wnli" ]]; then
     hf_path="glue"
 fi
 en_data="hf://${hf_path}/${dataset_name}/train"
@@ -41,13 +46,13 @@ finetune_type="all"
 
 gpt_options=" \
        --finetune-type ${finetune_type} \
-       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-${finetune_type}-lr${lr}-seed${seed}- \
+       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-${finetune_type}-lr${lr}-seed${seed}-testdataloader- \
        --summary-dir runs/finetune-$MODEL_TYPE-${dataset_name}-${finetune_type} \
        --cls-number 1 \
        --collect-len 2 \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
-       --epochs 20 \
+       --epochs ${epochs} \
        --resume-dataloader \
        $MODEL_ARGS \
        --train-data ${en_data} \
@@ -56,13 +61,14 @@ gpt_options=" \
        --fp16 \
        --save checkpoints/ \
        --split 1 \
-       --eval-batch-size 10 \
+       --save-interval 4000 \
+       --eval-interval 1 \
+       --eval-batch-size 2 \
        --warmup 0.1 \
        --valid-data ${eval_data} \
        --strict-eval \
        --dataset-name ${dataset_name} \
        --warmup 0.1 \
-       --save-interval 1000 \
        --seed ${seed} \
        --save-args \
 "
@@ -74,8 +80,8 @@ gpt_options="${gpt_options}
 
 #2step
 gpt_options="${gpt_options}
-        --step1-lr 3e-5 \
-        --step1-iters 4000 \
+        --step1-lr 1e-3 \
+        --step1-epochs 2 \
 "
 
 
@@ -108,8 +114,7 @@ gpt_options="${gpt_options}
 #  echo "use gpu $FINETUNE_GPU"
 #fi
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include=localhost:${gpu} --master_port ${port} --hostfile ${HOST_FILE_PATH} finetune_roberta.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include=localhost:0,1,2,3 --master_port ${port} --hostfile ${HOST_FILE_PATH} finetune_roberta.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
-
 set +x
