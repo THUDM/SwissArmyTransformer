@@ -462,7 +462,6 @@ def evaluate(data_iterator, model, eval_iters, args, timers, split, verbose=Fals
         last_shape = args.test_last_shape
         drop_number = args.test_drop_number
     is_scalar = {}
-    print("rank!!!!!!!!!", rank, eval_iters)
     with torch.no_grad():
         iteration = 0
         while iteration < eval_iters:
