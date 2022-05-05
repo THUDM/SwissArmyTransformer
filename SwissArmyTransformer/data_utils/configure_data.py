@@ -34,43 +34,42 @@ def make_data_loader(dataset, batch_size, args, split):
     # drop_last = distributed
     drop_last = False # TODO will always drop last to keep the consistency.
     # or, how to avg in eval last batch?
-    
+
     # the GPUs in the same model parallel group receive the same data
     if distributed: # TODO reformat this, but it is not urgent
-        last_len = len(dataset) % batch_size
-        batch_per_worker = batch_size // world_size
-        last_shape = [batch_per_worker] * (last_len//batch_per_worker)
-        if last_len != 0 :
-            if last_len % batch_per_worker != 0:
-                last_shape.append(last_len % batch_per_worker)
-            drop_number = world_size - ((last_len-1)//batch_per_worker + 1)
-            for j in range(drop_number):
-                last_shape.append(1)
-        else:
-            drop_number = 0
-        if split=='val':
-            args.val_last_shape = last_shape
-            args.val_drop_number = drop_number
-        elif split=='test':
-            args.test_last_shape = last_shape
-            args.test_drop_number = drop_number
-
         # args.has_last = True if rank * batch_per_worker < last_len else False
         gradient_accumulation_steps = getattr(args, 'gradient_accumulation_steps', 1)
         batch_sampler = DistributedBatchSampler(sampler,
-            batch_size,
-            drop_last,
-            rank,
-            world_size,
-            gradient_accumulation_steps=gradient_accumulation_steps)
+                                                batch_size,
+                                                drop_last,
+                                                rank,
+                                                world_size,
+                                                gradient_accumulation_steps=gradient_accumulation_steps)
     else:
         batch_sampler = torch.utils.data.BatchSampler(sampler,
-                                                        batch_size,
-                                                        drop_last)
+                                                      batch_size,
+                                                      drop_last)
+    last_len = len(dataset) % batch_size
+    batch_per_worker = batch_size // world_size
+    last_shape = [batch_per_worker] * (last_len//batch_per_worker)
+    if last_len != 0 :
+        if last_len % batch_per_worker != 0:
+            last_shape.append(last_len % batch_per_worker)
+        drop_number = world_size - ((last_len-1)//batch_per_worker + 1)
+        for j in range(drop_number):
+            last_shape.append(1)
+    else:
+        drop_number = 0
+    if split=='val':
+        args.val_last_shape = last_shape
+        args.val_drop_number = drop_number
+    elif split=='test':
+        args.test_last_shape = last_shape
+        args.test_drop_number = drop_number
     data_loader = torch.utils.data.DataLoader(dataset,
-                                            batch_sampler=batch_sampler,
-                                            num_workers=args.num_workers,
-                                            pin_memory=True)
+                                              batch_sampler=batch_sampler,
+                                              num_workers=args.num_workers,
+                                              pin_memory=True)
     return data_loader
 
 
