@@ -9,7 +9,7 @@ else
 fi
 
 NUM_WORKERS=1
-NUM_GPUS_PER_WORKER=4
+NUM_GPUS_PER_WORKER=1
 MP_SIZE=1
 
 script_path=$(realpath $0)
@@ -37,6 +37,14 @@ hf_path="super_glue"
 if [[ "$task_name" == "cola" || "$task_name" == "sst2" || "$task_name" == "qqp" || "$task_name" == "mrpc" || "$task_name" == "stsb" || "$task_name" == "mnli" || "$task_name" == "qnli" || "$task_name" == "wnli" ]]; then
     hf_path="glue"
 fi
+if [[ "$task_name" == "squad" ]]; then
+  hf_path="squad"
+  dataset_name="plain_text"
+fi
+if [[ "$task_name" == "squad_v2" ]]; then
+  hf_path="squad_v2"
+fi
+
 en_data="hf://${hf_path}/${dataset_name}/train"
 eval_data="hf://${hf_path}/${dataset_name}/validation"
 
@@ -46,8 +54,8 @@ finetune_type="all"
 
 gpt_options=" \
        --finetune-type ${finetune_type} \
-       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-${finetune_type}-lr${lr}-seed${seed}-testdataloader- \
-       --summary-dir runs/finetune-$MODEL_TYPE-${dataset_name}-${finetune_type} \
+       --experiment-name finetune-$MODEL_TYPE-${task_name}-${finetune_type}-lr${lr}-seed${seed}-testsquad- \
+       --summary-dir runs/finetune-$MODEL_TYPE-${task_name}-${finetune_type} \
        --cls-number 1 \
        --collect-len 2 \
        --model-parallel-size ${MP_SIZE} \
@@ -62,12 +70,11 @@ gpt_options=" \
        --save checkpoints/ \
        --split 1 \
        --save-interval 4000 \
-       --eval-interval 1 \
        --eval-batch-size 2 \
        --warmup 0.1 \
        --valid-data ${eval_data} \
        --strict-eval \
-       --dataset-name ${dataset_name} \
+       --dataset-name ${task_name} \
        --warmup 0.1 \
        --seed ${seed} \
        --save-args \
@@ -114,7 +121,7 @@ gpt_options="${gpt_options}
 #  echo "use gpu $FINETUNE_GPU"
 #fi
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include=localhost:0,1,2,3 --master_port ${port} --hostfile ${HOST_FILE_PATH} finetune_roberta.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include=localhost:${gpu} --master_port ${port} --hostfile ${HOST_FILE_PATH} finetune_roberta.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 set +x

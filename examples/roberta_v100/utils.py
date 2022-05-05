@@ -45,6 +45,9 @@ def get_dataset_keys(dataset_name):
         'qqp':["input_ids", "position_ids", "attention_mask", "label"],
         'cola':["input_ids", "position_ids", "attention_mask", "label"],
         'wnli':["input_ids", "position_ids", "attention_mask", "label"],
+        #squad
+        'squad':["input_ids", "position_ids", "attention_mask", "label", "start_list", "end_list"],
+        'squad_v2':["input_ids", "position_ids", "attention_mask", "label", "start_list", "end_list"],
     }
     return dataset_keys[dataset_name]
 
@@ -60,6 +63,8 @@ def get_class_num(dataset_name):
         'qqp':2,
         'cola':2,
         'wnli':2,
+        'squad':2,
+        'squad_v2':2,
     }
     return dataset_class_num[dataset_name]
 
@@ -152,6 +157,32 @@ def get_batch_function(dataset_name):
                 attention_mask = attention_mask.half()
 
             return tokens, labels, attention_mask, position_ids, (tokens!=1), {'pos1':pos1, 'pos2':pos2}
+    elif dataset_name in ['squad', 'squad_v2']:
+        def get_batch(data_iterator, args, timers):
+            # Items and their type.
+            keys = ['input_ids', 'position_ids', 'attention_mask', 'label', 'start_list', 'end_list']
+            datatype = torch.int64
+
+            # Broadcast data.
+            timers('data loader').start()
+            if data_iterator is not None:
+                data = next(data_iterator)
+            else:
+                data = None
+            timers('data loader').stop()
+            data_b = mpu.broadcast_data(keys, data, datatype)
+            # Unpack.
+            tokens = data_b['input_ids'].long()
+            labels = data_b['label'].long()
+            position_ids = data_b['position_ids'].long()
+            attention_mask = data_b['attention_mask'][:, None, None, :].float()
+            start_list = data_b['start_list'].long()
+            end_list = data_b['end_list'].long()
+            # Convert
+            if args.fp16:
+                attention_mask = attention_mask.half()
+
+            return tokens, labels, attention_mask, position_ids, (tokens!=1), {'start_list':start_list, 'end_list':end_list}
     else:
         raise Exception('dataset name is wrong')
     return get_batch
@@ -163,7 +194,7 @@ def create_dataset_function(path, args):
         cache_dir = '/sharefs/cogview-new/yzy/SwissArmyTransformerDatasets'
     else:
         raise Exception("no PLATFORM")
-    offline = True
+    offline = False
     transformer_name = f"{dataset_name}_transformer_{args.sample_length}"
     if dataset_name == "wic":
         def process_fn(row):
@@ -279,6 +310,38 @@ def create_dataset_function(path, args):
                 'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
                 'label': label
             }
+    elif dataset_name in ['squad', 'squad_v2']:
+        def process_fn(row):
+            pack = _encode_double_text(row['question'], row['context'], args)
+            answers = row['answers']
+            label = 1 if len(answers) == 0 else 0
+            assert len(answers) <= 4
+
+            start_list = []
+            end_list = []
+            for i in range(len(answers["text"])):
+                texts = answers["text"][i]
+                start = answers["answer_start"][i]
+
+                start_pos = tokenizer(row['context'][:start])['input_ids'].__len__() - 2
+                if start_pos == 0:
+                    start_pos += 1
+                end_pos = tokenizer(row['context'][:(start+len(texts))])['input_ids'].__len__() - 2
+
+                start_pos += tokenizer(row['question'])['input_ids'].__len__()
+                end_pos += tokenizer(row['question'])['input_ids'].__len__()
+                start_list.append(start_pos)
+                end_list.append(end_pos)
+
+            return {
+                'input_ids': np.array(pack['input_ids'], dtype=np.int64),
+                'position_ids': np.array(pack['position_ids'], dtype=np.int64),
+                'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
+                'label': label,
+                'start_list': np.array(start_list, dtype=np.int64),
+                'end_list': np.array(end_list, dtype=np.int64)
+            }
+
     else:
         raise Exception('Dataset name is wrong.')
     return load_hf_dataset(path, process_fn, columns = get_dataset_keys(dataset_name), cache_dir=cache_dir, offline=offline, transformer_name=transformer_name)

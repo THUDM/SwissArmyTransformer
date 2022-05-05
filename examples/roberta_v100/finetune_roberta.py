@@ -12,6 +12,54 @@ from SwissArmyTransformer.model.mixins import BaseMixin
 from functools import partial
 from utils import *
 
+class QA_MLPHeadMixin(BaseMixin):
+    def __init__(self, args, hidden_size, *output_sizes, bias=True, activation_func=torch.nn.functional.relu, init_mean=0, init_std=0.005, old_model=None):
+        super().__init__()
+        # init_std = 0.1
+        self.args = args
+        self.cls_number = args.cls_number
+        self.activation_func = activation_func
+        last_size = hidden_size
+        self.layers = torch.nn.ModuleList()
+        for i, sz in enumerate(output_sizes):
+            this_layer = torch.nn.Linear(last_size, sz, bias=bias)
+            last_size = sz
+            if old_model is None:
+                torch.nn.init.normal_(this_layer.weight, mean=init_mean, std=init_std)
+            else:
+                print("****************************load head weight***********************************")
+                old_weights = old_model.mixins["classification_head"].layers[i].weight.data
+                this_layer.weight.data.copy_(old_weights)
+            self.layers.append(this_layer)
+        self.S = torch.nn.Parameter(torch.zeros(hidden_size))
+        self.E = torch.nn.Parameter(torch.zeros(hidden_size))
+        if old_model is None:
+            torch.nn.init.normal_(self.S, mean=init_mean, std=init_std)
+            torch.nn.init.normal_(self.E, mean=init_mean, std=init_std)
+        else:
+            self.S.data.copy_(old_model.mixins["classification_head"].S.weight.data)
+            self.E.data.copy_(old_model.mixins["classification_head"].E.weight.data)
+    def reset_parameter(self):
+        for i in range(len(self.layers)):
+            self.layers[i].reset_parameters()
+            torch.nn.init.normal_(self.layers[i].weight, mean=0, std=0.005)
+        torch.nn.init.normal_(self.S, mean=0, std=0.005)
+        torch.nn.init.normal_(self.E, mean=0, std=0.005)
+    def final_forward(self, logits, **kw_args):
+        #Start
+        start_logits = logits @ self.S
+        end_logits = logits @ self.E
+        cls_logits = logits[:,:self.cls_number].sum(1)
+        logits = cls_logits
+        if len(kw_args['attention_output']) > 0:
+            attention_output = kw_args['attention_output']
+            logits += torch.cat(attention_output, dim=1).sum(1)
+        for i, layer in enumerate(self.layers):
+            if i > 0:
+                logits = self.activation_func(logits)
+            logits = layer(logits)
+        return start_logits, end_logits, logits
+
 class WIC_MLPHeadMixin(BaseMixin):
     def __init__(self, hidden_size, *output_sizes, bias=True, activation_func=torch.nn.functional.relu, init_mean=0, init_std=0.005):
         super().__init__()
@@ -164,7 +212,7 @@ def handle_metrics(metrics):
     else:
         return {'acc': acc}
 
-def get_loss_metrics(logits, labels, dataset_name):
+def get_loss_metrics(logits, labels, dataset_name, **extra_data):
     if dataset_name in ['rte', 'boolq', 'wic', 'mrpc', 'qnli', 'qqp', 'cola', 'wnli']:
         pred = logits.contiguous().float().squeeze(-1)
         loss = torch.nn.functional.binary_cross_entropy_with_logits(
@@ -176,8 +224,9 @@ def get_loss_metrics(logits, labels, dataset_name):
         true_neg = ((1-(pred > 0.).long()) * (1-labels)).sum() * 1.0
         false_neg = ((pred > 0.).long() * (1-labels)).sum() * 1.0
         acc = ((pred > 0.).long() == labels).sum() / labels.numel()
+        eval_acc = ((pred > 0.).long() == labels).float()
 
-        return loss, {'acc': acc, 'tp': true_pos, 'fp': false_pos, 'tn': true_neg, 'fn': false_neg, 'eval_test':test}
+        return loss, {'acc': acc, 'tp': true_pos, 'fp': false_pos, 'tn': true_neg, 'fn': false_neg, 'eval_acc': eval_acc}
     elif dataset_name=="copa":
         bz = logits.shape[0] // 2
         logits = logits.squeeze(-1).reshape(2, bz).permute(1, 0)
@@ -191,8 +240,24 @@ def get_loss_metrics(logits, labels, dataset_name):
     elif dataset_name=='cb':
         pred = logits.contiguous().float()
         loss = torch.nn.functional.cross_entropy(pred, labels)
-        acc = (torch.argmax(pred, dim=1).long() == labels).sum() / labels.numel()
+        acc = ((pred > 0.).long() == labels).sum() / labels.numel()
         return loss, {'acc': acc}
+    elif dataset_name in ['squad', 'squad_v2']:
+        # For negative examples, abstaining receives a score of 1,
+        # and any other response gets 0, for both exact match and F1.
+        start_logits, end_logits, cls_logits = logits
+        start_logits = start_logits.contiguous().float()
+        end_logits = end_logits.contiguous().float()
+        cls_logits = cls_logits.contiguous().float()
+        start_list = extra_data['start_list']
+        end_list = extra_data['end_list']
+        pred = logits.contiguous().float().squeeze(-1)
+        loss1 = torch.nn.functional.binary_cross_entropy_with_logits(
+            pred,
+            labels.float()
+        )
+        loss = loss1 + 0
+        return loss, {'em': 0, 'f1':0}
 
 def forward_step(data_iterator, model, args, timers):
     """Forward step."""
@@ -210,7 +275,7 @@ def forward_step(data_iterator, model, args, timers):
     attention_output = []
     logits, *mems = model(tokens, position_ids, attention_mask, attention_output = attention_output, **extra_data)
 
-    return get_loss_metrics(logits, labels, args.dataset_name)
+    return get_loss_metrics(logits, labels, args.dataset_name, **extra_data)
 
 #模型并行会有问题！！
 if __name__ == '__main__':
