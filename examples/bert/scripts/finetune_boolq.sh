@@ -2,6 +2,8 @@
 
 # Change for multinode config
 CHECKPOINT_PATH=/data/qingsong/pretrain/
+MODEL_TYPE="swiss-bert-base-uncased"
+MODEL_ARGS="--load ${CHECKPOINT_PATH}/$MODEL_TYPE"
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=4
@@ -10,7 +12,6 @@ MP_SIZE=1
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
-source $main_dir/config/model_bert_base.sh
 echo $MODEL_TYPE
 
 OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"

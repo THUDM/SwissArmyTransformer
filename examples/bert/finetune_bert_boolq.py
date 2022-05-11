@@ -5,7 +5,7 @@ import torch
 import argparse
 import numpy as np
 
-from SwissArmyTransformer import mpu, get_args
+from SwissArmyTransformer import mpu, update_args_with_file
 from SwissArmyTransformer.training.deepspeed_training import training_main
 from bert_model import BertModel
 from SwissArmyTransformer.model.mixins import MLPHeadMixin
@@ -100,9 +100,7 @@ if __name__ == '__main__':
     py_parser.add_argument('--sample_length', type=int, default=512-16)
     py_parser.add_argument('--old_checkpoint', action="store_true")
     py_parser = ClassificationModel.add_model_specific_args(py_parser)
-    known, args_list = py_parser.parse_known_args()
-    args = get_args(args_list)
-    args = argparse.Namespace(**vars(args), **vars(known))
+    args = update_args_with_file(py_parser)
     # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
     # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
     training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
