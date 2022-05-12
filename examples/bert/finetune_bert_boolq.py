@@ -1,11 +1,10 @@
-from lib2to3.pgen2 import token
 import os
 
 import torch
 import argparse
 import numpy as np
 
-from SwissArmyTransformer import mpu, update_args_with_file
+from SwissArmyTransformer import mpu, get_args, update_args_with_file
 from SwissArmyTransformer.training.deepspeed_training import training_main
 from bert_model import BertModel
 from SwissArmyTransformer.model.mixins import MLPHeadMixin
@@ -99,8 +98,20 @@ if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--sample_length', type=int, default=512-16)
     py_parser.add_argument('--old_checkpoint', action="store_true")
+    py_parser.add_argument('--do_train', action="store_true")
     py_parser = ClassificationModel.add_model_specific_args(py_parser)
     args = update_args_with_file(py_parser)
+    from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
+    initialize_distributed(args)
+    set_random_seed(args.seed)
+    model = ClassificationModel.build_model(py_parser)
+    model.from_pretrained(py_parser)
+    if args.fp16:
+        model.half()
+    elif args.bf16:
+        model.bfloat16()
+    model = model.cuda(torch.cuda.current_device())
+    # args = update_args_with_file(py_parser)
     # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
     # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
-    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
+    training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function)

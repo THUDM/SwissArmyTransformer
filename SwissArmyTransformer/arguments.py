@@ -293,7 +293,11 @@ def get_args(args_list=None):
 def update_args_with_file(py_parser, path='model_config.json'):
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
-    with open(os.path.join(args.load, path), 'r', encoding='utf-8') as f:
+    if known.root is not None:
+        root = known.root
+    else:
+        root = args.load
+    with open(os.path.join(root, path), 'r', encoding='utf-8') as f:
         config = json.load(f)
     args = vars(args)
     for k in list(args.keys()):

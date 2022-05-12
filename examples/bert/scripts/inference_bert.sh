@@ -9,7 +9,7 @@ script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
 
-run_cmd="python inference_bert.py --pretrain_path $CHECKPOINT_PATH --mode inference $MODEL_ARGS"
+run_cmd="python inference_bert.py --root ${CHECKPOINT_PATH}/$MODEL_TYPE --pretrain_path $CHECKPOINT_PATH --mode inference $MODEL_ARGS"
 echo ${run_cmd}
 eval ${run_cmd}
 
