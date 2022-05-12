@@ -3,6 +3,9 @@ import torch.nn as nn
 from SwissArmyTransformer.mpu.transformer import LayerNorm
 from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel
 
+from SwissArmyTransformer import update_args_with_file
+from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
+
 gelu = nn.functional.gelu
 
 class lm_head(torch.nn.Module):
@@ -74,3 +77,12 @@ class BertModel(BaseModel):
         group = parser.add_argument_group('BERT', 'BERT Configurations')
         group.add_argument('--num-types', type=int)
         return parser
+    
+    @classmethod
+    def build_model(cls, py_parser):
+        args = update_args_with_file(py_parser)
+        return cls(args)
+    
+    def from_pretrained(self, py_parser):
+        args = update_args_with_file(py_parser)
+        load_checkpoint(self, args)
