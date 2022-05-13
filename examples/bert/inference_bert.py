@@ -28,8 +28,7 @@ torch.distributed.init_process_group(
 import SwissArmyTransformer.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
-model = BertModel.build_model(py_parser)
-model.from_pretrained(py_parser)
+model = BertModel.from_pretrained(py_parser)
 
 from transformers import BertTokenizer, BertForMaskedLM
 tokenizer = BertTokenizer.from_pretrained(os.path.join(pretrain_path, model_type))

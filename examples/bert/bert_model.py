@@ -80,10 +80,8 @@ class BertModel(BaseModel):
         return parser
     
     @classmethod
-    def build_model(cls, py_parser):
+    def from_pretrained(cls, py_parser):
         args = update_args_with_file(py_parser)
-        return cls(args)
-    
-    def from_pretrained(self, py_parser):
-        args = update_args_with_file(py_parser)
-        load_checkpoint(self, args)
+        model = cls(args)
+        load_checkpoint(model, args)
+        return model

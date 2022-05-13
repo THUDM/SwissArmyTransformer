@@ -104,8 +104,7 @@ if __name__ == '__main__':
     from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
     initialize_distributed(args)
     set_random_seed(args.seed)
-    model = ClassificationModel.build_model(py_parser)
-    model.from_pretrained(py_parser)
+    model = ClassificationModel.from_pretrained(py_parser)
     if args.fp16:
         model.half()
     elif args.bf16:
