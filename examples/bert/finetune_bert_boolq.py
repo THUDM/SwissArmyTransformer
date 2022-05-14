@@ -4,7 +4,7 @@ import torch
 import argparse
 import numpy as np
 
-from SwissArmyTransformer import mpu, get_args, update_args_with_file
+from SwissArmyTransformer import mpu, update_args_with_file
 from SwissArmyTransformer.training.deepspeed_training import training_main
 from bert_model import BertModel
 from SwissArmyTransformer.model.mixins import MLPHeadMixin

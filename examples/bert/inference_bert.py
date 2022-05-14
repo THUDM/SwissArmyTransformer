@@ -2,15 +2,13 @@ import os
 import argparse
 
 from bert_model import BertModel
-from SwissArmyTransformer import get_args
+from SwissArmyTransformer import update_args_with_file
 
 py_parser = argparse.ArgumentParser(add_help=False)
 py_parser.add_argument('--pretrain_path', type=str, default=None)
 py_parser.add_argument('--old_checkpoint', action="store_true")
 py_parser = BertModel.add_model_specific_args(py_parser)
-known, args_list = py_parser.parse_known_args()
-args = get_args(args_list)
-args = argparse.Namespace(**vars(args), **vars(known))
+args = update_args_with_file(py_parser)
 pretrain_path = args.pretrain_path
 model_type = '-'.join(args.load.split('/')[-1].split('-')[1:])
 print(model_type)

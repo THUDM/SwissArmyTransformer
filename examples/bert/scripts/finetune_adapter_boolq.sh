@@ -2,6 +2,8 @@
 
 # Change for multinode config
 CHECKPOINT_PATH=/data/qingsong/pretrain/
+MODEL_TYPE="swiss-bert-base-uncased"
+MODEL_ARGS="--load ${CHECKPOINT_PATH}/$MODEL_TYPE"
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=4
@@ -10,7 +12,6 @@ MP_SIZE=1
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
-source $main_dir/config/model_bert_base.sh
 echo $MODEL_TYPE
 
 OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
@@ -41,7 +42,8 @@ gpt_options=" \
        --save checkpoints/ \
        --split 1 \
        --strict-eval \
-       --eval-batch-size 8
+       --eval-batch-size 8 \
+       --do_train
 "
 
 
@@ -52,7 +54,7 @@ gpt_options="${gpt_options}
 "
 
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:1,2,7,9 --hostfile ${HOST_FILE_PATH} finetune_bert_adapter_boolq.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:5 --hostfile ${HOST_FILE_PATH} finetune_bert_adapter_boolq.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 
