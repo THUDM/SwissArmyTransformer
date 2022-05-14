@@ -98,7 +98,6 @@ if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--sample_length', type=int, default=512-16)
     py_parser.add_argument('--old_checkpoint', action="store_true")
-    py_parser.add_argument('--do_train', action="store_true")
     py_parser = ClassificationModel.add_model_specific_args(py_parser)
     args = update_args_with_file(py_parser)
     from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
