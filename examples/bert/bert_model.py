@@ -78,10 +78,3 @@ class BertModel(BaseModel):
         group.add_argument('--num-types', type=int)
         group.add_argument('--root', type=str, default=None)
         return parser
-    
-    @classmethod
-    def from_pretrained(cls, py_parser):
-        args = update_args_with_file(py_parser)
-        model = cls(args)
-        load_checkpoint(model, args)
-        return model
