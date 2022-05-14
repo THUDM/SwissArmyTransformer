@@ -135,7 +135,7 @@ def add_training_args(parser):
                        help='Run model in fp16 mode')
     group.add_argument('--bf16', action='store_true',
                        help='Run model in bf16 mode')
-    group.add_argument('--do_train', action="store_true")
+    group.add_argument('--do-train', action="store_true")
     
     return parser
 

@@ -43,7 +43,7 @@ gpt_options=" \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8 \
-       --do_train
+       --do-train
 "
 
 

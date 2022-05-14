@@ -36,6 +36,7 @@ gpt_options=" \
        --lr-decay-style cosine \
        --warmup .02 \
        --checkpoint-activations \
+       --checkpoint-num-layers 1 \
        --fp16 \
        --save-interval 1000 \
        --eval-interval 100 \
@@ -43,7 +44,7 @@ gpt_options=" \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8 \
-       --do_train
+       --do-train
 "
 
 
@@ -54,7 +55,7 @@ gpt_options="${gpt_options}
 "
 
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:7 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:5,6,7,8 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 
