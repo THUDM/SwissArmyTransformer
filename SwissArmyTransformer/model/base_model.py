@@ -146,3 +146,9 @@ class BaseModel(torch.nn.Module):
         model = cls(args)
         load_checkpoint(model, args)
         return model
+
+    @classmethod
+    def add_model_specific_args(cls, parser):
+        group = parser.add_argument_group('BaseModel', 'BaseModel Configurations')
+        group.add_argument('--root', type=str, default=None)
+        return parser

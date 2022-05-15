@@ -92,12 +92,13 @@ def create_dataset_function(path, args):
             'token_type_ids': np.array(pack['token_type_ids'], dtype=np.int64),
             'label': label
         }
-    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "token_type_ids", "attention_mask", "label"], cache_dir='/data/qingsong/dataset', offline=False, transformer_name="boolq_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "token_type_ids", "attention_mask", "label"], cache_dir=args.data_root, offline=False, transformer_name="boolq_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--sample_length', type=int, default=512-16)
     py_parser.add_argument('--old_checkpoint', action="store_true")
+    py_parser.add_argument('--data_root', type=str)
     py_parser = ClassificationModel.add_model_specific_args(py_parser)
     args = update_args_with_file(py_parser)
     from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed

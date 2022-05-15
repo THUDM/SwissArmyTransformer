@@ -1,8 +1,21 @@
 #! /bin/bash
 
 # Change for multinode config
-CHECKPOINT_PATH=/data/qingsong/pretrain/
+CHECKPOINT_PATH=$1
+if [[ "$1" == "" ]] || [[ "$2" == "" ]];
+then
+    echo "Please pass in two root folders to save model and data!"
+    exit
+fi
 MODEL_TYPE="swiss-bert-base-uncased"
+if [ ! -d "${CHECKPOINT_PATH}/$MODEL_TYPE" ]
+then
+    if [ ! -f "${CHECKPOINT_PATH}/$MODEL_TYPE.zip" ]
+    then
+        wget "https://cloud.tsinghua.edu.cn/f/9b4ab7c17ce842ea9c9d/?dl=1" -O "${CHECKPOINT_PATH}/$MODEL_TYPE.zip"
+    fi
+    unzip "${CHECKPOINT_PATH}/$MODEL_TYPE.zip" -d "${CHECKPOINT_PATH}"
+fi
 MODEL_ARGS="--load ${CHECKPOINT_PATH}/$MODEL_TYPE"
 
 NUM_WORKERS=1
@@ -44,7 +57,8 @@ gpt_options=" \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8 \
-       --do-train
+       --do-train \
+       --data_root $2
 "
 
 
@@ -55,7 +69,7 @@ gpt_options="${gpt_options}
 "
 
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:5,6,7,8 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:6,7,8,9 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 
