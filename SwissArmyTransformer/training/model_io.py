@@ -16,6 +16,7 @@ import numpy as np
 
 from SwissArmyTransformer import mpu
 from .utils import print_rank_0
+import torch.nn as nn
 
 
 def get_checkpoint_name(checkpoints_path, iteration, release=False, zero=False):
@@ -127,7 +128,7 @@ def load_checkpoint(model, args, subset=''):
         nsd = {'module':{}}
         for k in sd['module']:
             if k.startswith(subset):
-                nsd['module'][k[len(subset)+1:]] = sd['module'][k]
+                nsd['module'][k[len(subset):]] = sd['module'][k]
         sd = nsd
     
     assert not hasattr(args, 'do_train') or not args.do_train or args.deepspeed
@@ -137,7 +138,12 @@ def load_checkpoint(model, args, subset=''):
         module = model
 
     # only load module, other hyperparameters are just for recording.
-    missing_keys, unexpected_keys = module.load_state_dict(sd['module'], strict=False)
+    if type(module) is nn.Parameter:
+        module.weight = sd['module']['']
+        missing_keys = []
+        unexpected_keys = []
+    else:
+        missing_keys, unexpected_keys = module.load_state_dict(sd['module'], strict=False)
     if len(unexpected_keys) > 0:
         print_rank_0(
             f'Will continue but found unexpected_keys! Check whether you are loading correct checkpoints: {unexpected_keys}.')

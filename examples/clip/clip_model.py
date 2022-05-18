@@ -3,11 +3,16 @@ from re import L
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from yaml import load
 from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel, non_conflict
 from SwissArmyTransformer.model.vit_model import ViTModel, ImagePatchEmbeddingMixin
 from SwissArmyTransformer.model.mixins import BaseMixin
 from SwissArmyTransformer import mpu
 from SwissArmyTransformer.mpu import LayerNorm
+
+from SwissArmyTransformer import update_args_with_file
+from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
+
 
 """
 CLIP model follows Siamese architecture.
@@ -140,3 +145,20 @@ class CLIP(nn.Module):
         group.add_argument("--text-hidden-size-per-attention-head", type=int, default=None)
         group.add_argument("--logit-scale-init-value", type=float, default=None)
         return parser
+
+    @classmethod
+    def from_pretrained(cls, py_parser):
+        args = update_args_with_file(py_parser)
+        model = cls(args)
+        load_checkpoint(model.image_encoder, args, 'image_encoder.')
+        dec_args = argparse.Namespace(**vars(args))
+        # dec_args.enc_hidden_size = dec_args.hidden_size  # used for cross attn
+        override_attrs = ['num_layers', 'hidden_size', 'num_attention_heads',
+                            'max_sequence_length', 'inner_hidden_size', 'hidden_size_per_attention_head']
+        for name in override_attrs:
+            dec_attr = getattr(dec_args, 'text_' + name, None)
+            if dec_attr is not None:  # else use encoder-config
+                setattr(dec_args, name, dec_attr)
+        load_checkpoint(model.text_encoder, dec_args, 'text_encoder.')
+        load_checkpoint(model.logit_scale, args, 'logit_scale')
+        return model
