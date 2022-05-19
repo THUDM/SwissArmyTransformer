@@ -5,7 +5,7 @@ import torch
 import argparse
 import numpy as np
 
-from SwissArmyTransformer import mpu, get_args
+from SwissArmyTransformer import mpu, update_args_with_file
 from SwissArmyTransformer.training.deepspeed_training import training_main
 from bert_model import BertModel
 from SwissArmyTransformer.model.mixins import MLPHeadMixin
@@ -72,11 +72,11 @@ def forward_step(data_iterator, model, args, timers):
     acc = ((pred > 0.).long() == labels).sum() / labels.numel()
     return loss, {'acc': acc}
 
-pretrain_path = ''
-from transformers import BertTokenizer
-tokenizer = BertTokenizer.from_pretrained(os.path.join(pretrain_path, 'bert-base-uncased'))
 
-def _encode(text, text_pair):
+def _encode(text, text_pair, args):
+    pretrain_path = args.pretrain_path
+    from transformers import BertTokenizer
+    tokenizer = BertTokenizer.from_pretrained(os.path.join(pretrain_path, 'bert-base-uncased'))
     encoded_input = tokenizer(text, text_pair, max_length=args.sample_length, padding='max_length', truncation='only_first')
     seq_len = len(encoded_input['input_ids'])
     position_ids = torch.arange(seq_len)
@@ -85,7 +85,7 @@ def _encode(text, text_pair):
 from SwissArmyTransformer.data_utils import load_hf_dataset
 def create_dataset_function(path, args):
     def process_fn(row):
-        pack, label = _encode(row['passage'], row['question']), int(row['label'])
+        pack, label = _encode(row['passage'], row['question'], args), int(row['label'])
         return {
             'input_ids': np.array(pack['input_ids'], dtype=np.int64),
             'position_ids': np.array(pack['position_ids'], dtype=np.int64),
@@ -93,16 +93,25 @@ def create_dataset_function(path, args):
             'token_type_ids': np.array(pack['token_type_ids'], dtype=np.int64),
             'label': label
         }
-    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "token_type_ids", "attention_mask", "label"], cache_dir='/data/qingsong/dataset', offline=False, transformer_name="boolq_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "token_type_ids", "attention_mask", "label"], cache_dir=args.data_root, offline=False, transformer_name="boolq_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--sample_length', type=int, default=512-16)
     py_parser.add_argument('--old_checkpoint', action="store_true")
+    py_parser.add_argument('--data_root', type=str)
+    py_parser.add_argument('--pretrain_path', type=str)
     py_parser = ClassificationModel.add_model_specific_args(py_parser)
-    known, args_list = py_parser.parse_known_args()
-    args = get_args(args_list)
-    args = argparse.Namespace(**vars(args), **vars(known))
+    args = update_args_with_file(py_parser)
+    from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
+    initialize_distributed(args)
+    set_random_seed(args.seed)
+    model = ClassificationModel.from_pretrained(args)
+    if args.fp16:
+        model.half()
+    elif args.bf16:
+        model.bfloat16()
+    model = model.cuda(torch.cuda.current_device())
     # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
     # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
-    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
+    training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function)

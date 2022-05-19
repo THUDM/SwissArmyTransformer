@@ -1,13 +1,12 @@
 import os
 import argparse
-from SwissArmyTransformer import get_args
+from bert_model import BertModel
+from SwissArmyTransformer import update_args_with_file
 py_parser = argparse.ArgumentParser(add_help=False)
-py_parser.add_argument('--pretrain_path', type=str, default=None)
+py_parser.add_argument('--pretrain_path', type=str)
 py_parser.add_argument('--old_checkpoint', action="store_true")
-py_parser.add_argument('--num-types', type=int)
-known, args_list = py_parser.parse_known_args()
-args = get_args(args_list)
-args = argparse.Namespace(**vars(args), **vars(known))
+py_parser = BertModel.add_model_specific_args(py_parser)
+args = update_args_with_file(py_parser)
 pretrain_path = args.pretrain_path
 model_type = '-'.join(args.load.split('/')[-1].split('-')[1:])
 print(model_type)
@@ -25,10 +24,7 @@ torch.distributed.init_process_group(
 import SwissArmyTransformer.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
-from bert_model import BertModel
-from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
-model = BertModel(args)
-load_checkpoint(model, args)
+model = BertModel.from_pretrained(args)
 
 from transformers import BertTokenizer, BertForMaskedLM
 tokenizer = BertTokenizer.from_pretrained(os.path.join(pretrain_path, model_type))

@@ -73,4 +73,4 @@ class BertModel(BaseModel):
     def add_model_specific_args(cls, parser):
         group = parser.add_argument_group('BERT', 'BERT Configurations')
         group.add_argument('--num-types', type=int)
-        return parser
+        return super().add_model_specific_args(parser)

@@ -16,6 +16,7 @@ import torch
 
 from SwissArmyTransformer.mpu import BaseTransformer
 from SwissArmyTransformer.mpu.transformer import standard_attention
+from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
 
 def non_conflict(func):
     func.non_conflict = True
@@ -136,3 +137,15 @@ class BaseModel(torch.nn.Module):
 
     def disable_untrainable_params(self):
         pass
+
+    @classmethod
+    def from_pretrained(cls, args):
+        model = cls(args)
+        load_checkpoint(model, args)
+        return model
+        
+    @classmethod
+    def add_model_specific_args(cls, parser):
+        group = parser.add_argument_group('BaseModel', 'BaseModel Configurations')
+        group.add_argument('--root', type=str, default=None)
+        return parser
