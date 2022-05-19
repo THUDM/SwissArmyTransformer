@@ -10,7 +10,7 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 import torch.nn.functional as F
-from SwissArmyTransformer import mpu, get_args
+from SwissArmyTransformer import mpu, update_args_with_file
 from vit_ft_model import ViTFinetuneModel
 from SwissArmyTransformer.training.deepspeed_training import training_main
 
@@ -82,7 +82,14 @@ if __name__ == '__main__':
     py_parser.add_argument('--old_checkpoint', action="store_true")
     # py_parser.add_argument('--prefix_len', type=int, default=16)
     py_parser = ViTFinetuneModel.add_model_specific_args(py_parser)
-    known, args_list = py_parser.parse_known_args()
-    args = get_args(args_list)
-    args = argparse.Namespace(**vars(args), **vars(known))
-    training_main(args, model_cls=ViTFinetuneModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, init_function=init_function)
+    args = update_args_with_file(py_parser)
+    from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
+    initialize_distributed(args)
+    set_random_seed(args.seed)
+    model = ViTFinetuneModel.from_pretrained(args)
+    if args.fp16:
+        model.half()
+    elif args.bf16:
+        model.bfloat16()
+    model = model.cuda(torch.cuda.current_device())
+    training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function, init_function=init_function)

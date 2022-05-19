@@ -166,6 +166,6 @@ class ViTModel(BaseModel):
         group.add_argument('--old-image-size', nargs='+', type=int, default=None)
         group.add_argument('--old-pre-len', type=int, default=None)
         group.add_argument('--old-post-len', type=int, default=None)
-        return parser
+        return super().add_model_specific_args(parser)
 
 

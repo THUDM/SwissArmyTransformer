@@ -1,7 +1,11 @@
 #! /bin/bash
 
-# Change for multinode config
-CHECKPOINT_PATH=/data/qingsong/pretrain/
+CHECKPOINT_PATH=$1
+if [[ "$1" == "" ]];
+then
+    echo "Please pass in root folder to save model!"
+    exit
+fi
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=6
@@ -41,6 +45,7 @@ gpt_options=" \
        --strict-eval \
        --eval-batch-size 8 \
        --lr 0.01 \
+       --do-train
 "
 
 
@@ -51,7 +56,7 @@ gpt_options="${gpt_options}
 "
               
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:0,1,2,7,8,9 --master_port 16666 --hostfile ${HOST_FILE_PATH} finetune_vit_imagenet.py $@ ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:0,1,2,7,8,9 --master_port 16666 --hostfile ${HOST_FILE_PATH} finetune_vit_imagenet.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

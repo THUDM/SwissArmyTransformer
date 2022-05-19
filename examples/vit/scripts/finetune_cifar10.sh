@@ -1,7 +1,11 @@
 #! /bin/bash
 
-# Change for multinode config
-CHECKPOINT_PATH=/data/qingsong/pretrain/
+CHECKPOINT_PATH=$1
+if [[ "$1" == "" ]] || [[ "$2" == "" ]];
+then
+    echo "Please pass in two root folders to save model and data!"
+    exit
+fi
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=8
@@ -16,8 +20,8 @@ OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
-en_data="/data/qingsong/dataset/train"
-eval_data="/data/qingsong/dataset/test"
+en_data="$2/train"
+eval_data="$2/test"
 
 
 config_json="$script_dir/ds_config_ft.json"
@@ -41,6 +45,7 @@ gpt_options=" \
        --strict-eval \
        --eval-batch-size 8 \
        --lr 0.01 \
+       --do-train
 "
 
 
@@ -51,7 +56,7 @@ gpt_options="${gpt_options}
 "
               
 
-run_cmd="${OPTIONS_NCCL} deepspeed --master_port 16666 --num_nodes ${NUM_WORKERS} --num_gpus ${NUM_GPUS_PER_WORKER} --hostfile ${HOST_FILE_PATH} finetune_vit_cifar10.py $@ ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --master_port 16666 --include localhost:1,2,7,9 --hostfile ${HOST_FILE_PATH} finetune_vit_cifar10.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

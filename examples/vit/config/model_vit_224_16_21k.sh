@@ -1,18 +1,12 @@
-MODEL_TYPE="vit-base-224-16-21k"
-MODEL_ARGS="--image-size 384 384 \
-            --patch-size 16 \
-            --vocab-size 1 \
-            --num-layers 12 \
-            --hidden-size 768 \
-            --num-attention-heads 12 \
-            --in-channels 3 \
-            --num-classes 21843 \
+MODEL_TYPE="swiss-vit-base-patch16-224-in21k"
+if [ ! -d "${CHECKPOINT_PATH}/$MODEL_TYPE" ]
+then
+    if [ ! -f "${CHECKPOINT_PATH}/$MODEL_TYPE.zip" ]
+    then
+        wget "https://cloud.tsinghua.edu.cn/f/1381d0995d5e4634856e/?dl=1" -O "${CHECKPOINT_PATH}/$MODEL_TYPE.zip"
+    fi
+    unzip "${CHECKPOINT_PATH}/$MODEL_TYPE.zip" -d "${CHECKPOINT_PATH}"
+fi
+MODEL_ARGS="--load ${CHECKPOINT_PATH}/$MODEL_TYPE \
             --num-finetune-classes 10 \
-            --tokenizer-model-type roberta \
-            --tokenizer-type Fake \
-            --attention-dropout 0. \
-            --hidden-dropout 0. \
-            --load ${CHECKPOINT_PATH}/swiss-vit-base-patch16-224-in21k \
-            --old-image-size 224 224 \
-            --old-pre-len 1 \
-            --old-post-len 0"
+            --image-size 384 384"
