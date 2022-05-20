@@ -40,7 +40,7 @@ gpt_options=" \
        --checkpoint-activations \
        --save-interval 6000 \
        --eval-interval 100 \
-       --save /data/qingsong/checkpoints \
+       --save "$CHECKPOINT_PATH/checkpoints" \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8 \

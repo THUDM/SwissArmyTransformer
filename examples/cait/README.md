@@ -19,3 +19,9 @@ python transform_param.py
 ## Usage
 
 You can use the model similar to [ViTModel](../vit).
+
+```bash
+bash scripts/finetune_cifar10.sh /data/qingsong/pretrain /data/qingsong/dataset
+```
+
+val acc at iter 1000: 0.9834
