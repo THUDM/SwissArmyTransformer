@@ -11,7 +11,8 @@ import torchvision
 import torchvision.transforms as transforms
 import torch.nn.functional as F
 from SwissArmyTransformer import mpu, update_args_with_file
-from cait_ft_model import CaiTFinetuneModel, CaiTEncoder
+from cait_ft_model import CaiTFinetuneModel
+from cait_model import CaiTEncoder
 from SwissArmyTransformer.training.deepspeed_training import training_main
 
 

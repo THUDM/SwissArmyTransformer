@@ -99,14 +99,5 @@ class EncoderDecoderModel(torch.nn.Module):
     @classmethod
     def from_pretrained(cls, args):
         model = cls(args)
-        load_checkpoint(model.encoder, args, 'encoder.')
-        dec_args = argparse.Namespace(**vars(args))
-        # dec_args.enc_hidden_size = dec_args.hidden_size  # used for cross attn
-        override_attrs = ['num_layers', 'hidden_size', 'num_attention_heads',
-                            'max_sequence_length', 'inner_hidden_size', 'hidden_size_per_attention_head']
-        for name in override_attrs:
-            dec_attr = getattr(dec_args, 'dec_' + name, None)
-            if dec_attr is not None:  # else use encoder-config
-                setattr(dec_args, name, dec_attr)
-        load_checkpoint(model.decoder, dec_args, 'decoder.')
+        load_checkpoint(model, args)
         return model

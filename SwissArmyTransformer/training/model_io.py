@@ -16,6 +16,7 @@ import numpy as np
 
 from SwissArmyTransformer import mpu
 from .utils import print_rank_0
+import torch.nn as nn
 
 
 def get_checkpoint_name(checkpoints_path, iteration, release=False, zero=False):
@@ -111,7 +112,7 @@ def get_checkpoint_iteration(args):
     return iteration, release, True
 
 
-def load_checkpoint(model, args, subset=''):
+def load_checkpoint(model, args):
     """Load a model checkpoint."""
 
     iteration, release, success = get_checkpoint_iteration(args)
@@ -123,12 +124,6 @@ def load_checkpoint(model, args, subset=''):
             print('global rank {} is loading checkpoint {}'.format(
                 torch.distributed.get_rank(), checkpoint_name))
     sd = torch.load(checkpoint_name, map_location='cpu')
-    if subset:
-        nsd = {'module':{}}
-        for k in sd['module']:
-            if k.startswith(subset):
-                nsd['module'][k[len(subset):]] = sd['module'][k]
-        sd = nsd
     
     assert not hasattr(args, 'do_train') or not args.do_train or args.deepspeed
     if hasattr(model, 'module'):

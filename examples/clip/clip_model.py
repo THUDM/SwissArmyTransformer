@@ -9,6 +9,9 @@ from SwissArmyTransformer.model.mixins import BaseMixin
 from SwissArmyTransformer import mpu
 from SwissArmyTransformer.mpu import LayerNorm
 
+from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
+
+
 """
 CLIP model follows Siamese architecture.
 For image encoder, it is a ViTModel with 32x32 patch.
@@ -140,3 +143,9 @@ class CLIP(nn.Module):
         group.add_argument("--text-hidden-size-per-attention-head", type=int, default=None)
         group.add_argument("--logit-scale-init-value", type=float, default=None)
         return parser
+    
+    @classmethod
+    def from_pretrained(cls, args):
+        model = cls(args)
+        load_checkpoint(model, args)
+        return model

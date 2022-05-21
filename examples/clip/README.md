@@ -14,6 +14,12 @@ python transform_param.py
 
 `inference_clip.ipynb`
 
+or
+
+```bash
+bash scripts/inference_clip.sh /data/qingsong/pretrain
+```
+
 ## Fine-tune
 
 Here is an example of fine-tuning image encoder for CIFAR-10.
