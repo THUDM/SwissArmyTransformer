@@ -13,6 +13,11 @@ class CLIP_finetune(torch.nn.Module):
         return x
     def disable_untrainable_params(self):
         self.encoder.transformer.position_embeddings.requires_grad_(False)
+    @classmethod
+    def add_model_specific_args(cls, parser):
+        group = parser.add_argument_group('CLIP-finetune', 'CLIP finetune Configurations')
+        group.add_argument('--num-finetune-classes', type=int)
+        return parser
 
 class CLIP_wp(CLIP):
     def disable_untrainable_params(self):
