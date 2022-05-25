@@ -1,7 +1,11 @@
 #! /bin/bash
 
-# Change for multinode config
-CHECKPOINT_PATH=/data/qingsong/pretrain/
+CHECKPOINT_PATH=$1
+if [[ "$1" == "" ]] || [[ "$2" == "" ]];
+then
+    echo "Please pass in two root folders to save model and data!"
+    exit
+fi
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=4
@@ -41,7 +45,8 @@ gpt_options=" \
        --save checkpoints/ \
        --split 1 \
        --strict-eval \
-       --eval-batch-size 8
+       --eval-batch-size 8 \
+       --do-train
 "
 
 
@@ -52,7 +57,7 @@ gpt_options="${gpt_options}
 "
 
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:1,2,7,9 --hostfile ${HOST_FILE_PATH} finetune_bert_adapter_boolq.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:0,6,8,9 --hostfile ${HOST_FILE_PATH} finetune_bert_adapter_boolq.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

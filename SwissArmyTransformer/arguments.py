@@ -135,6 +135,7 @@ def add_training_args(parser):
                        help='Run model in fp16 mode')
     group.add_argument('--bf16', action='store_true',
                        help='Run model in bf16 mode')
+    group.add_argument('--do-train', action='store_true')
     
     return parser
 
@@ -291,3 +292,12 @@ def get_args(args_list=None):
     return args
 
 
+def update_args_with_file(args, path='model_config.json'):
+    with open(os.path.join(args.load, path), 'r', encoding='utf-8') as f:
+        config = json.load(f)
+    args = vars(args)
+    for k in list(args.keys()):
+        if k in config:
+            del args[k]
+    args = argparse.Namespace(**config, **args)
+    return args
