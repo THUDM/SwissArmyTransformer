@@ -27,3 +27,11 @@ bash scripts/finetune_adapter_boolq.sh /data/qingsong/pretrain /data/qingsong/da
 ```
 
 * iter 1000 val acc: 0.6216
+
+Finetune bert with mixout:
+
+```bash
+bash scripts/finetune_mixout_boolq.sh /data/qingsong/pretrain /data/qingsong/dataset
+```
+
+* iter 1000 val acc: 0.6632
