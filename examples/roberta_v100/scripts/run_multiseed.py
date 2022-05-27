@@ -61,8 +61,8 @@ def run(gpu, seed_per_gpu, dataset, log_dir, lr, batch_size, epochs, step1_epoch
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu-s', type=int, default=0)
-    parser.add_argument('--number-gpu', type=int, default=4)
-    parser.add_argument('--seed-per-gpu', type=int, default=1)
+    parser.add_argument('--number-gpu', type=int, default=4) #4 ge seed
+    parser.add_argument('--seed-per-gpu', type=int, default=1) #
     parser.add_argument('--dataset', type=str, required=True)
     parser.add_argument('--node', type=int, default=3)
     parser.add_argument('--lr-search', action='store_true')
@@ -93,7 +93,7 @@ if __name__ == "__main__":
         epochs=40  #测试用，需要改成40
         step1_epochs = 4
     elif args.dataset in ["wnli", "cb", "copa"]:
-        epochs=400
+        epochs = 400
         step1_epochs = 40
     elif args.dataset in ["qqp", "qnli"]:
         epochs = 10
