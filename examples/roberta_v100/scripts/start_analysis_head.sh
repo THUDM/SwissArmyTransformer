@@ -27,7 +27,7 @@ eval_data="hf://super_glue/${dataset_name}/validation"
 
 config_json="$script_dir/ds_config_ft.json"
 gpt_options=" \
-       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-\
+       --experiment-name ana_head-$MODEL_TYPE-${dataset_name}-\
        --dataset-name ${dataset_name} \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \

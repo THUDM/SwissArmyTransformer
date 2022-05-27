@@ -77,14 +77,14 @@ if __name__ == "__main__":
         assert len(lr_search) == args.number_gpu
     else:
         lr_search = [1.5e-5] * args.number_gpu
-#单层 all 1e-4
-#lora 1e-3
+    #单层 all 1e-4
+    #lora 1e-3 cola mrpc qnli wic cb copa boolq rte
     finetune_type = 'all'
-    batch_size = 32
+    batch_size = 48
     epochs = 20
     step1_epochs = 2
     if args.dataset in ["squad", "squad_v2"]:
-        epochs = 10
+        epochs = 4
         step1_epochs = 1
     elif args.dataset in ["rte", "mrpc", 'emotion']:
         epochs=60
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     elif args.dataset in ["wnli", "cb", "copa"]:
         epochs=400
         step1_epochs = 40
-    elif args.dataset in ["qqp", "qnli"]:
+    elif args.dataset in ["qqp"]:
         epochs = 10
         step1_epochs = 1
     for i in range(args.number_gpu):
@@ -105,12 +105,11 @@ if __name__ == "__main__":
     for i in range(args.number_gpu):
         Plist[i].join()
     print("*****************************all seed finished!!*****************************")
-
 '''
 finetune 1e-5
 bitfit 1e-3
 ptv2 5e-3
 lora 5e-4
-
+rlaunch --cpu 40 --gpu 4 --memory 106400 --private-machine=project --enable-sshd -- python scripts/run_multiseed.py --dataset wic --number-gpu 4
 python scripts/run_multissed.py --gpu-s 6 --number-gpu 4 --dataset rte
 '''

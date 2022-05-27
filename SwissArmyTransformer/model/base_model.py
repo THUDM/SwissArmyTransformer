@@ -66,6 +66,7 @@ class BaseModel(torch.nn.Module):
                 output_dropout_prob=args.hidden_dropout,
                 inner_hidden_size=args.inner_hidden_size,
                 hidden_size_per_attention_head=args.hidden_size_per_attention_head,
+                layernorm_epsilon=args.layernorm_epsilon,
                 checkpoint_activations=args.checkpoint_activations,
                 checkpoint_num_layers=args.checkpoint_num_layers,
                 sandwich_ln=args.sandwich_ln,

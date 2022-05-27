@@ -10,16 +10,18 @@ import numpy as np
 import copy
 from SwissArmyTransformer import mpu, get_args
 from SwissArmyTransformer.training.deepspeed_training import training_main, initialize_distributed, load_checkpoint
-from roberta_model import RobertaModel, LoRAMixin, CLSMixin, CollectorMixin, PrefixTuningMixin, FFADDMixin
+from SwissArmyTransformer.model.finetune import *
 from SwissArmyTransformer.model.mixins import BaseMixin
 from functools import partial
 from utils import create_dataset_function, ChildTuningAdamW, set_optimizer_mask
 import os
+from roberta_model import RobertaModel
 from utils import *
+from tqdm import tqdm
 
 from transformers import RobertaTokenizer
 pretrain_path = ''
-tokenizer =  RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-large'))
+tokenizer =  RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-large'), local_files_only=True)
 
 class MLPHeadMixin(BaseMixin):
     def __init__(self, hidden_size, *output_sizes, bias=True, activation_func=torch.nn.functional.relu):
@@ -92,18 +94,57 @@ def solve(model, args):
 
     data_num = len(val_data)
     val_data = iter(val_data)
+    ffadd_r = 32
     sentences = []
-    for i in enumerate(range(data_num)):
+    words = []
+    positive = [[] for i in range(24)]
+    thre = 2
+    for i in range(24):
+        for j in range(ffadd_r):
+            positive[i].append([])
+    for i in tqdm(range(data_num)):
         tokens, labels, attention_mask, position_ids, loss_mask = get_batch(val_data, args, timers)
         attention_output = []
         output_good = model(tokens, position_ids, attention_mask, attention_output = attention_output)
         for k in range(24):
-            attention_output[k] = attention_output[k].data.cpu().numpy()
-            breakpoint()
-        for j in range(len(tokens.shape[0])):
+            attention_output.append(output_good[k+1]["0"])
+        now_pos = len(sentences)
+        now_word_pos = len(words)
+        for j in range(tokens.shape[0]):
             sentences.append(tokenizer.decode(tokens[j]))
-            for k in range(24):
-                now_value = 1
+            for k in range(len(tokens[j])):
+                words.append(tokenizer.decode(tokens[j][k]))
+        # for j in range(24):
+        #     for k in range(attention_output[j].shape[1]):
+        #         for l in range(ffadd_r):
+        #             value = attention_output[j][0,k,l]
+        #             if value > thre:
+        #                 #pos is j,l, sentence is now_pos, k
+        #                 positive[j][l].append((now_pos, now_word_pos+k))
+    import json
+    with open(f"rte_thr{thre}.json", "r") as f:
+        positive = json.load(f)
+
+    # with open(f"rte_thr{thre}.json", "w") as f:
+    #     json.dump(positive, f)
+
+    lens = []
+    ll = 5
+    rr = 20
+    answers = []
+    for i in range(24):
+        for j in range(32):
+            if len(positive[i][j])>5 and len(positive[i][j])<20:
+                answers.append(positive[i][j])
+
+    for array in answers:
+        print("let!!!!!")
+        concat = ""
+        for pos_s, pos_w in array:
+            concat += words[pos_w]
+        print(concat)
+        breakpoint()
+
 
 
 
@@ -127,7 +168,7 @@ if __name__ == '__main__':
 
     args.do_train = False
 
-    args.load = '/workspace/yzy/ST_deve/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-ffadd-lr0.0005-seed728671853-04-15-07-46'
+    args.load = '/thudm/workspace/yzy/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-ffadd-lr0.0005-seed944257842-05-16-14-17'
     _ = load_checkpoint(model, args)
     model.to('cuda:0')
     solve(model, args)

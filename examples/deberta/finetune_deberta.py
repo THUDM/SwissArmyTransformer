@@ -8,14 +8,14 @@ import copy
 from SwissArmyTransformer import mpu, get_args
 from SwissArmyTransformer.training.deepspeed_training import training_main, initialize_distributed, load_checkpoint
 from SwissArmyTransformer.model.finetune import *
-from roberta_model import RobertaModel
+from deberta_model import DebertaModel
 from SwissArmyTransformer.model.mixins import BaseMixin
 from functools import partial
 
-class ClassificationModel(RobertaModel):
+class ClassificationModel(DebertaModel):
     def __init__(self, args, transformer=None, parallel_output=True):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)
-        self.del_mixin('roberta-final')
+        self.del_mixin('deberta-final')
         num_input = args.final_input
         num_output = 1 if args.class_num == 2 else args.class_num
         layer_range = None
@@ -62,6 +62,7 @@ class ClassificationModel(RobertaModel):
         if not 'all' in self.finetune_type:
             print('froze model parameter')
             self.transformer.requires_grad_(False)
+            self.mixins["deberta-attention"].requires_grad_(False)
 
         if 'all' in self.finetune_type and self.layer_range is not None:
             print('froze part parameter')
@@ -85,6 +86,8 @@ class ClassificationModel(RobertaModel):
                     self.transformer.layers[layer_id].attention.dense.bias.requires_grad_(True)
                     self.transformer.layers[layer_id].input_layernorm.bias.requires_grad_(True)
                     self.transformer.layers[layer_id].post_attention_layernorm.bias.requires_grad_(True)
+                    #debert
+                    self.mixins["deberta-attention"].para.requires_grad_(True)
         if 'Wqkv' in self.finetune_type:
             print('Use Wqkv and bias')
             for layer_id in range(len(self.transformer.layers)):
@@ -134,6 +137,7 @@ def forward_step(data_iterator, model, args, timers):
 #模型并行会有问题！！
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
+    py_parser.add_argument('--max-relative-positions', type=int, default=-1)
     py_parser.add_argument('--new_hyperparam', type=str, default=None)
     py_parser.add_argument('--name-model', type=str, default=None)
     py_parser.add_argument('--sample_length', type=int, default=512)

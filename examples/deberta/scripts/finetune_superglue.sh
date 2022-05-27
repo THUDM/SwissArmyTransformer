@@ -3,9 +3,9 @@
 # Change for multinode config
 
 if [[ "$PLATFORM" ==  "wudao" ]]; then
-  CHECKPOINT_PATH=/sharefs/cogview-new/yzy/roberta
+  CHECKPOINT_PATH=/sharefs/cogview-new/yzy/deberta
 else
-  CHECKPOINT_PATH=/thudm/workspace/yzy/roberta
+  CHECKPOINT_PATH=/thudm/workspace/yzy/deberta
 fi
 
 NUM_WORKERS=1
@@ -15,7 +15,7 @@ MP_SIZE=1
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
-source $main_dir/config/model_roberta_large.sh
+source $main_dir/config/model_deberta_large.sh
 echo $MODEL_TYPE
 
 task_name=$1
@@ -64,7 +64,7 @@ finetune_type="$type"
 gpt_options=" \
        --finetune-type ${finetune_type} \
        --name-model $MODEL_TYPE \
-       --experiment-name finetune-$MODEL_TYPE-${task_name}-${finetune_type}-lr${lr}-seed${seed}-new2- \
+       --experiment-name finetune-$MODEL_TYPE-${task_name}-${finetune_type}-lr${lr}-seed${seed}-new3- \
        --summary-dir runs/finetune-$MODEL_TYPE-${task_name}-${finetune_type} \
        --cls-number 1 \
        --collect-len 2 \
@@ -142,7 +142,7 @@ gpt_options="${gpt_options}
 #  echo "use gpu $FINETUNE_GPU"
 #fi
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include=localhost:${gpu} --master_port ${port} --hostfile ${HOST_FILE_PATH} finetune_roberta.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include=localhost:${gpu} --master_port ${port} --hostfile ${HOST_FILE_PATH} finetune_deberta.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 set +x
