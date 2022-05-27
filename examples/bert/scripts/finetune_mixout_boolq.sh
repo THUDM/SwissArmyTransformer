@@ -57,7 +57,7 @@ gpt_options="${gpt_options}
 "
 
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:0,6,8,9 --hostfile ${HOST_FILE_PATH} finetune_bert_adapter_boolq.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:1,3,6,7 --hostfile ${HOST_FILE_PATH} finetune_bert_mixout_boolq.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

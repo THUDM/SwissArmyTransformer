@@ -503,7 +503,7 @@ def evaluate(data_iterator, model, eval_iters, args, timers, split, verbose=Fals
                     gathered_len = len(metrics_gathered) if not is_last else len(metrics_gathered) - drop_number
                     for i in range(gathered_len):
                         if is_scalar[name] or not is_last:
-                             metrics_total[name].append(metrics_gathered[i].data.cpu())
+                            metrics_total[name].append(metrics_gathered[i].data.cpu())
                         else:
                             metrics_total[name].append(metrics_gathered[i][:last_shape[i]].data.cpu())
     # Move model back to the train mode.

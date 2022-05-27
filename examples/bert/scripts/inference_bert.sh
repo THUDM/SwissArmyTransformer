@@ -1,7 +1,11 @@
 #! /bin/bash
 
-# Change for multinode config
-CHECKPOINT_PATH=/data/qingsong/pretrain
+CHECKPOINT_PATH=$1
+if [[ "$1" == "" ]];
+then
+    echo "Please pass in root folder to save model!"
+    exit
+fi
 
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
