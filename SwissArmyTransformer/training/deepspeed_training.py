@@ -40,12 +40,13 @@ from SwissArmyTransformer.data_utils import make_loaders
 from SwissArmyTransformer.tokenization import get_tokenizer
 
 
-def training_main(args, model_cls, forward_step_function, create_dataset_function, init_function=None):
+def training_main(args, model_cls, forward_step_function, create_dataset_function, handle_metrics=None, init_function=None):
     """Main training program."""
     hooks = {
         'forward_step': forward_step_function,
         'init_function': init_function,
-        'create_dataset_function': create_dataset_function
+        'create_dataset_function': create_dataset_function,
+        'handle_metrics': handle_metrics,
     }
 
     torch.backends.cuda.matmul.allow_tf32 = False
@@ -66,6 +67,12 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     get_tokenizer(args)  # set args.vocab_size.
     # Data stuff.
     train_data, val_data, test_data = make_loaders(args, hooks['create_dataset_function'])
+    if args.epochs:
+        args.train_iters = len(train_data)
+        if args.eval_interval is None:
+            args.eval_interval = len(train_data)//args.epochs
+        if args.save_interval is None:
+            args.save_interval = len(train_data)//args.epochs
 
     # Build model
     if isinstance(model_cls, type):
@@ -135,7 +142,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     if args.do_test and test_data is not None:
         prefix = 'the end of training for test data'
         evaluate_and_print_results(prefix, iter(test_data),
-            model, len(test_data) if args.strict_eval else args.eval_iters, args, timers, True, hooks=hooks)
+            model, len(test_data) if args.strict_eval else args.eval_iters, args, timers, True, split='test', hooks=hooks)
 
 
 def get_model(args, model_cls):
@@ -290,7 +297,9 @@ def train(model, optimizer, lr_scheduler,
         # Update losses.
         total_lm_loss += lm_loss.data.detach().float()
         for name in metrics:
-            total_metrics[name] += metrics[name].data.detach().float().item()
+            if not 'eval' in name:
+                assert len(metrics[name].shape)==0, 'metrics without eval must be scalar'
+                total_metrics[name] += metrics[name].data.detach().float().item()
 
         # Logging.
         if args.iteration % args.log_interval == 0:
@@ -327,7 +336,7 @@ def train(model, optimizer, lr_scheduler,
                 eval_iters = args.eval_iters
             prefix = 'iteration {}'.format(args.iteration)
             evaluate_and_print_results(
-                prefix, val_data_iterator, model, eval_iters, args, timers, False, step=args.iteration, summary_writer=summary_writer, hooks=hooks)
+                prefix, val_data_iterator, model, eval_iters, args, timers, False, step=args.iteration, split='val', summary_writer=summary_writer, hooks=hooks)
 
         if args.exit_interval and args.iteration % args.exit_interval == 0:
             torch.distributed.barrier()
@@ -420,20 +429,29 @@ def backward_step(optimizer, model, loss, args, timers):
 
     return
 
-def evaluate(data_iterator, model, eval_iters, args, timers, verbose=False, hooks={}):
+def evaluate(data_iterator, model, eval_iters, args, timers, split, verbose=False, has_last=True, hooks={}):
     """Evaluation."""
     forward_step = hooks['forward_step']
     # Turn on evaluation mode which disables dropout.
     model.eval()
-
+    rank = torch.distributed.get_rank(group=mpu.get_data_parallel_group())
     total_lm_loss, metrics_total = 0, {}
+    if split=='val':
+        last_shape = args.val_last_shape
+        drop_number = args.val_drop_number
+    else:
+        assert split=='test'
+        last_shape = args.test_last_shape
+        drop_number = args.test_drop_number
+    is_scalar = {}
     with torch.no_grad():
         iteration = 0
         while iteration < eval_iters:
-            iteration += 1 
+            iteration += 1
             if verbose and iteration % args.log_interval == 0:
                 print_rank_0('Evaluating iter {}/{}'.format(iteration, eval_iters))
             # Forward evaluation.
+            # try:
             lm_loss, metrics = forward_step(data_iterator, model, args, timers)
             '''when contiguous memory optimizations are enabled, the buffers
             allocated by the optimizations are deallocated during backward pass
@@ -442,28 +460,55 @@ def evaluate(data_iterator, model, eval_iters, args, timers, verbose=False, hook
             if args.deepspeed and args.deepspeed_activation_checkpointing:
                 deepspeed.checkpointing.reset()
             total_lm_loss += lm_loss.data.detach().float().item()
+            is_last = True if iteration == eval_iters and args.strict_eval else False
             for name in metrics:
                 if name not in metrics_total:
-                    metrics_total[name] = 0.0
-                metrics_total[name] += metrics[name]
-
+                    metrics_total[name] = []
+                is_scalar[name] = True if len(metrics[name].shape)==0 else False
+                shape = list(metrics[name].shape)
+                if rank==0:
+                    metrics_gathered = [torch.zeros_like(metrics[name], dtype=metrics[name].dtype, device=metrics[name].device) for _ in range(args.world_size)]
+                else:
+                    metrics_gathered = None
+                if not is_scalar[name] and is_last and metrics[name].shape[0] != last_shape[0]:
+                    # pad tensor's first dim to args.batch_size
+                    metrics[name] = torch.concat([metrics[name], torch.zeros([last_shape[0]-metrics[name].shape[0]] + shape[1:], dtype=metrics[name].dtype, device=metrics[name].device)])
+                torch.distributed.gather(metrics[name], metrics_gathered, 0)
+                if rank==0:
+                    gathered_len = len(metrics_gathered) if not is_last else len(metrics_gathered) - drop_number
+                    for i in range(gathered_len):
+                        if is_scalar[name] or not is_last:
+                             metrics_total[name].append(metrics_gathered[i].data.cpu())
+                        else:
+                            metrics_total[name].append(metrics_gathered[i][:last_shape[i]].data.cpu())
     # Move model back to the train mode.
     model.train()
 
     total_lm_loss /= eval_iters
-    metrics_avg = {key: value / eval_iters for key, value in metrics_total.items()}
-    for name in metrics_avg:
-        torch.distributed.all_reduce(metrics_avg[name].data)
-        metrics_avg[name].data /= args.world_size # model parallel will also reduce
-    return total_lm_loss, metrics_avg
+    # metrics_avg = {key: value / eval_iters for key, value in metrics_total.items()}
+    if rank==0:
+        for name in metrics_total:
+            if is_scalar[name]:
+                metrics_total[name] = torch.stack(metrics_total[name], dim=0)
+            else:
+                metrics_total[name] = torch.concat(metrics_total[name], dim=0)
+        if hooks['handle_metrics'] is not None:
+            metrics = hooks['handle_metrics'](metrics_total)
+        else:
+            for name in metrics_total:
+                assert is_scalar[name], 'you must return scalar metrics or implement handle_metrics hooks'
+            metrics = {key: sum(value.split(1,0))/len(value) for key, value in metrics_total.items()}
+    else:
+        metrics = None
+    return total_lm_loss, metrics
 
 def evaluate_and_print_results(prefix, data_iterator, model, eval_iters,
-                            args, timers, verbose=False, step=None, summary_writer=None, hooks={}):
+                            args, timers, has_last, split, verbose=False, step=None, summary_writer=None, hooks={}):
     """Helper function to evaluate and dump results on screen."""
-    lm_loss, metrics = evaluate(data_iterator, model, eval_iters, args, timers, verbose, hooks=hooks)
+    lm_loss, metrics = evaluate(data_iterator, model, eval_iters, args, timers, split, verbose, has_last, hooks=hooks)
     lm_ppl = math.exp(min(20, lm_loss))
-    report_evaluate_metrics(summary_writer, prefix, lm_loss, lm_ppl, step, metrics)
-
+    if torch.distributed.get_rank(group=mpu.get_data_parallel_group())==0:
+        report_evaluate_metrics(summary_writer, prefix, lm_loss, lm_ppl, step, metrics)
     return lm_loss
 
 
@@ -491,7 +536,7 @@ def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step, avg_metrics
     string += 'loss: {:.6E} | '.format(loss)
     string += 'PPL: {:.6E}'.format(ppl)
     for key in avg_metrics:
-        string += ' {} {:.6E} |'.format(key, avg_metrics[key])
+        string += ' {} {:.6E} |'.format(key, avg_metrics[key].item())
     length = len(string) + 1
     print_rank_0('-' * 100)
     print_rank_0('-' * length)
