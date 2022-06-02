@@ -542,7 +542,10 @@ def get_loss_metrics(logits, labels, dataset_name, **extra_data):
         return loss, {'acc':acc, 'loss1':loss1.data, 'em':em, 'f1':f1, 'eval_em': eval_em, 'eval_f1':eval_f1}
 
 from datasets import load_metric
+
+metric_max = {'acc':torch.tensor([0]), 'f1':torch.tensor([0]), 'mc':torch.tensor([0])}
 def handle_metrics(metrics):
+    global metric_max
     if 'eval_pred' in metrics.keys():
         pred = metrics['eval_pred']
         labels = metrics['eval_labels']
@@ -560,11 +563,14 @@ def handle_metrics(metrics):
             true_labels.append(label)
         metric = load_metric('seqeval')
         results = metric.compute(predictions=true_predictions, references=true_labels)
-        return {"f1": torch.tensor(results["overall_f1"])}
+        metric_max['f1'] = torch.max(metric_max['f1'], torch.tensor(results["overall_f1"]))
+        return {"f1": torch.tensor(results["overall_f1"]), 'max_f1': metric_max['f1']}
     elif 'em' in metrics.keys():
         eval_em = sum(metrics['eval_em'].split(1,0))/len(metrics['eval_em'])
         eval_f1 = sum(metrics['eval_f1'].split(1,0))/len(metrics['eval_f1'])
-        return {'em': eval_em, 'f1': eval_f1}
+        metric_max['f1'] = torch.max(metric_max['f1'], eval_f1)
+        metric_max['mc'] = torch.max(metric_max['mc'], eval_em)
+        return {'em': eval_em, 'f1': eval_f1, 'em_max': metric_max['mc'], 'f1_max': metric_max['f1']}
     elif 'tp' in metrics.keys():
         acc = sum(metrics['eval_acc'].split(1,0))/len(metrics['eval_acc'])
         TP = sum(metrics['tp'].split(1,0))
@@ -575,10 +581,16 @@ def handle_metrics(metrics):
         Recall = TP/(TP+FN)
         F1 = 2*(Precision*Recall)/(Precision+Recall)
         MC = (TP*TN-FP*FN)/torch.sqrt((TP+FP)*(FN+TP)*(FN+TN)*(FP+TN))
-        return {'acc': acc, 'f1': F1, 'mc':MC}
+        metric_max['acc'] = torch.max(metric_max['acc'], acc)
+        metric_max['f1'] = torch.max(metric_max['f1'], F1)
+        metric_max['mc'] = torch.max(metric_max['mc'], MC)
+        # print(metric_max)
+        # input()
+        return {'acc': acc, 'f1': F1, 'mc':MC, 'acc_max': metric_max['acc'], 'f1_max': metric_max['f1'], 'mc_max': metric_max['mc']}
     else:
         acc = sum(metrics['eval_acc'].split(1,0))/len(metrics['eval_acc'])
-        return {'acc': acc}
+        metric_max['acc'] = torch.max(metric_max['acc'], acc)
+        return {'acc': acc, 'acc_max': metric_max['acc']}
 
 class ChildTuningAdamW(Optimizer):
     def __init__(
