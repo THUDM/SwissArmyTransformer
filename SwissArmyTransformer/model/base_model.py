@@ -19,11 +19,14 @@ from SwissArmyTransformer.mpu.transformer import standard_attention
 from SwissArmyTransformer import update_args_with_file
 from SwissArmyTransformer.training.deepspeed_training import load_checkpoint, get_model
 
+from SwissArmyTransformer.mpu.transformer_defaults import HOOKS_DEFAULT
+
 def non_conflict(func):
     func.non_conflict = True
     return func
 
 class BaseMixin(torch.nn.Module):
+    non_conflict = non_conflict
     def __init__(self):
         super(BaseMixin, self).__init__()
         # define new params
@@ -115,23 +118,28 @@ class BaseModel(torch.nn.Module):
         hooks = {}
         hook_origins = {}
         for name in names:
+            if hasattr(self, name):
+                hooks[name] = getattr(self, name)
+                hook_origins[name] = 'model'
+
             for mixin_name, m in self.mixins.items():
                 if hasattr(m, name):
-                    if name in hooks: # if this hook name is already registered
-                        if hasattr(getattr(m, name), 'non_conflict'):
-                            hooks[name] = partial(getattr(m, name), old_impl=hooks[name])
-                            hook_origins[name] = mixin_name + ' -> ' + hook_origins[name]
-                        else: # conflict
-                            raise ValueError(f'Hook {name} conflicts at {mixin_name} and {hook_origins[name]}.')
+                    if hasattr(getattr(m, name), 'non_conflict'):
+                        if name in hooks:
+                            old_impl = hooks[name]
+                        elif name == 'attention_fn': # the only hook without self
+                            old_impl = HOOKS_DEFAULT[name]
+                        else:
+                            old_impl = partial(HOOKS_DEFAULT[name], self)
+                        old_origin = hook_origins.get(name, 'default')
+                        hooks[name] = partial(getattr(m, name), old_impl=old_impl)
+                        hook_origins[name] = mixin_name + ' -> ' + old_origin
+                    elif name in hooks: # if this hook name is already registered
+                        raise ValueError(f'Hook {name} conflicts at {mixin_name} and {hook_origins[name]}.')
                     else: # new hook
                         hooks[name] = getattr(m, name)
                         hook_origins[name] = mixin_name
 
-            if hasattr(self, name):
-                # if name in hooks: # defined in mixins, can override
-                #     print(f'Override {name} in {hook_origins[name]}...')
-                hooks[name] = getattr(self, name)
-                hook_origins[name] = 'model'
         self.hooks = hooks
         self.hook_origins = hook_origins
         return hooks

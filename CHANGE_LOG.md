@@ -62,3 +62,7 @@ This will let the key `'last_attention_map'` appear in the next layer's `kw_args
 # 2022.1.13 v0.1.9
 1. Add Vit
 2. Fix evaluation all_reduce bug
+
+# 2022.6.3 v.2.0
+1. split all the default hooks out
+2. change the order, model hooks will not override all the things. They now are the same as mixin hooks added in the **front** of all the mixins.
