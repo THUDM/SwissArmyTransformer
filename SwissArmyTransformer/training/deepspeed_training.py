@@ -175,7 +175,7 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
                 args=args,
                 mpu=mpu,
                 dist_init_required=False,
-                config_params=config_params
+                config_params=args.deepspeed_config
             )
         else:
             raise ValueError('Currently, we only support training with deepspeed.')
