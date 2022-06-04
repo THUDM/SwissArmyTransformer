@@ -22,28 +22,17 @@ import torch
 import torch.nn.functional as F
 
 from SwissArmyTransformer import mpu
-from .initialize import get_model_parallel_world_size
-from .layers import ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding
-from .mappings import gather_from_model_parallel_region, copy_to_model_parallel_region
+from SwissArmyTransformer.mpu.initialize import get_model_parallel_world_size
+from SwissArmyTransformer.mpu.layers import ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding
+from SwissArmyTransformer.mpu.mappings import gather_from_model_parallel_region, copy_to_model_parallel_region
 
 from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint
 
-from .utils import divide, sqrt, scaled_init_method, unscaled_init_method, gelu
-from .utils import split_tensor_along_last_dim
+from SwissArmyTransformer.mpu.utils import divide, sqrt, scaled_init_method, unscaled_init_method, gelu
+from SwissArmyTransformer.mpu.utils import split_tensor_along_last_dim
+from SwissArmyTransformer.ops import LayerNorm
 
-from apex.normalization.fused_layer_norm import FusedLayerNorm
-class LayerNorm(FusedLayerNorm):
-    def __init__(self, *args, pb_relax=False, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.pb_relax = pb_relax
-
-    def forward(self, x):
-        if not self.pb_relax:
-            return super().forward(x)
-        return super().forward(x / (x.abs().max().detach() / 8))
-# from  torch.nn import LayerNorm
-
-from .transformer_defaults import HOOKS_DEFAULT, standard_attention
+from SwissArmyTransformer.transformer_defaults import HOOKS_DEFAULT, standard_attention
 
 
 class SelfAttention(torch.nn.Module):

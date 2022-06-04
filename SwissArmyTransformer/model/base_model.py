@@ -14,12 +14,11 @@ import math
 import random
 import torch
 
-from SwissArmyTransformer.mpu import BaseTransformer
-from SwissArmyTransformer.mpu.transformer import standard_attention
+from SwissArmyTransformer.model.transformer import BaseTransformer, standard_attention
 from SwissArmyTransformer import update_args_with_file
 from SwissArmyTransformer.training.deepspeed_training import load_checkpoint, get_model
 
-from SwissArmyTransformer.mpu.transformer_defaults import HOOKS_DEFAULT
+from SwissArmyTransformer.transformer_defaults import HOOKS_DEFAULT
 
 def non_conflict(func):
     func.non_conflict = True
@@ -111,10 +110,7 @@ class BaseModel(torch.nn.Module):
         return self.transformer(*args, **kwargs)
 
     def collect_hooks_(self):
-        names = ['word_embedding_forward', 'position_embedding_forward',
-                 'attention_forward', 'cross_attention_forward', 'mlp_forward', 'final_forward', 'layer_forward',
-                 'attention_fn'
-                 ]
+        names = list(HOOKS_DEFAULT.keys())
         hooks = {}
         hook_origins = {}
         for name in names:

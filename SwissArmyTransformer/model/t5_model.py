@@ -5,7 +5,7 @@ from .mixins import BaseMixin
 from .encoder_decoder_model import EncoderDecoderModel
 from .base_model import non_conflict
 from SwissArmyTransformer.mpu import get_model_parallel_world_size
-from SwissArmyTransformer.mpu.transformer import standard_attention, SelfAttention, CrossAttention, MLP
+from SwissArmyTransformer.model.transformer import standard_attention, SelfAttention, CrossAttention, MLP
 from SwissArmyTransformer.mpu.mappings import copy_to_model_parallel_region
 from SwissArmyTransformer.mpu.utils import divide, split_tensor_along_last_dim, unscaled_init_method
 from SwissArmyTransformer.mpu.layers import ColumnParallelLinear, VocabParallelEmbedding

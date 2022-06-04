@@ -40,9 +40,6 @@ from .mappings import gather_from_model_parallel_region
 from .mappings import reduce_from_model_parallel_region
 from .mappings import scatter_to_model_parallel_region
 
-from .transformer import BaseTransformer
-from .transformer import LayerNorm
-
 # get_cuda_rng_tracker is used for gradient checkpointing with mpu.
 # training_main will overwrite it, but this is for other training_framework.
 get_cuda_rng_tracker = None

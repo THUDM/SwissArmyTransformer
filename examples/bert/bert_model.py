@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from SwissArmyTransformer.mpu.transformer import LayerNorm
+from SwissArmyTransformer.model.transformer import LayerNorm
 from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel
 
 gelu = nn.functional.gelu
@@ -60,7 +60,8 @@ class ForwardMixin(BaseMixin):
         # Second residual connection.
         output = layernorm_output + mlp_output
 
-        return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
+        return output#, kw_args['output_this_layer'], kw_args['output_cross_layer']
+
 
 class BertModel(BaseModel):
     def __init__(self, args, transformer=None, **kwargs):
@@ -68,6 +69,7 @@ class BertModel(BaseModel):
         self.add_mixin("bert-final", BertFinalMixin(args.vocab_size, args.hidden_size))
         self.add_mixin("bert-type", BertTypeMixin(args.num_types, args.hidden_size))
         self.add_mixin("bert-forward", ForwardMixin())
+        
 
     @classmethod
     def add_model_specific_args(cls, parser):

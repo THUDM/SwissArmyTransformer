@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from SwissArmyTransformer.mpu.transformer import LayerNorm
+from SwissArmyTransformer.model.transformer import LayerNorm
 from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel
 
 roberta_gelu = nn.functional.gelu

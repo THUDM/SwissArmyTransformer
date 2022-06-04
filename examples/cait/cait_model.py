@@ -84,7 +84,7 @@ class EncForward(BaseMixin):
 
         return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
 
-from SwissArmyTransformer.mpu.transformer import standard_attention
+from SwissArmyTransformer.model.transformer import standard_attention
 from SwissArmyTransformer.mpu.utils import split_tensor_along_last_dim
 
 class DecForward(BaseMixin):

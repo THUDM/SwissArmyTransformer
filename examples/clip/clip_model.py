@@ -7,7 +7,7 @@ from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel, non_conf
 from SwissArmyTransformer.model.vit_model import ViTModel, ImagePatchEmbeddingMixin
 from SwissArmyTransformer.model.mixins import BaseMixin
 from SwissArmyTransformer import mpu
-from SwissArmyTransformer.mpu import LayerNorm
+from SwissArmyTransformer.model.transformer import LayerNorm
 
 """
 CLIP model follows Siamese architecture.

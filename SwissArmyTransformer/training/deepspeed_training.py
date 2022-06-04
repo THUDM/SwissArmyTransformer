@@ -38,7 +38,7 @@ from .utils import get_sample_writer
 from SwissArmyTransformer import mpu
 from SwissArmyTransformer.data_utils import make_loaders
 from SwissArmyTransformer.tokenization import get_tokenizer
-
+from SwissArmyTransformer.ops import LayerNorm
 
 def training_main(args, model_cls, forward_step_function, create_dataset_function, init_function=None):
     """Main training program."""
@@ -161,7 +161,8 @@ def get_model(args, model_cls):
 def setup_model_untrainable_params_and_optimizer(args, model, config_params=None):
     """Setup model and optimizer."""
 
-    model.disable_untrainable_params() # mark trainable params
+    if hasattr(model, 'disable_untrainable_params'):
+        model.disable_untrainable_params() # mark trainable params
 
     param_groups = get_optimizer_param_groups(model)
 
@@ -188,7 +189,7 @@ def get_params_for_weight_decay_optimization(module):
     weight_decay_params = {'params': []}
     no_weight_decay_params = {'params': [], 'weight_decay': 0.0}
     for module_ in module.modules():
-        if isinstance(module_, (mpu.LayerNorm, torch.nn.LayerNorm)):
+        if isinstance(module_, (LayerNorm, torch.nn.LayerNorm)):
             no_weight_decay_params['params'].extend(
                 [p for p in list(module_._parameters.values())
                  if p is not None and p.requires_grad])
