@@ -11,8 +11,10 @@ import torchvision
 import torchvision.transforms as transforms
 import torch.nn.functional as F
 from SwissArmyTransformer import mpu, get_args
-from vit_ft_model import ViTFinetuneModel
+from cait_ft_model import CaiTFinetuneModel
+from cait_model import CaiTEncoder
 from SwissArmyTransformer.training.deepspeed_training import training_main
+
 
 def get_batch(data_iterator, args, timers):
     # Items and their type.
@@ -59,33 +61,35 @@ def forward_step(data_iterator, model, args, timers):
 
     timers('batch generator').stop()
 
-    logits, *mems = model(tokens, position_ids, attention_mask, image=images, offline=True) #, offline=False, height=384//16, width=384//16)
-    loss = F.cross_entropy(logits, labels)
-    acc = (torch.argmax(logits, dim=-1) == labels).sum() / labels.numel()
+    encoder_outputs, decoder_outputs, *mems = model(tokens, position_ids, attention_mask, image=images, offline=True) #, offline=False, height=384//16, width=384//16)
+    loss = F.cross_entropy(decoder_outputs, labels)
+    acc = (torch.argmax(decoder_outputs, dim=-1) == labels).sum() / labels.numel()
     return loss, {'acc': acc}
 
 #/dataset/fd5061f6/SwissArmyTransformerDatasets/
 def create_dataset_function(path, args):
     transform = transforms.Compose(
         [transforms.ToTensor(),
-         transforms.Resize((384, 384)),
+         transforms.Resize(384),
          transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-    trainset = torchvision.datasets.ImageFolder(root=path, transform=transform)
+    trainset = torchvision.datasets.CIFAR10(root='/'.join(path.split('/')[:-1]), train=(path.split('/')[-1]=='train'),
+                                            download=True, transform=transform)
     return trainset
 
 def init_function(args, model):
-    model.get_mixin("pos_embedding").reinit()
+    model.encoder.get_mixin("pos_embedding").reinit()
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--old_checkpoint', action="store_true")
     # py_parser.add_argument('--prefix_len', type=int, default=16)
-    py_parser = ViTFinetuneModel.add_model_specific_args(py_parser)
+    py_parser = CaiTFinetuneModel.add_model_specific_args(py_parser)
+    py_parser = CaiTEncoder.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
     from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
     initialize_distributed(args)
     set_random_seed(args.seed)
-    model, args = ViTFinetuneModel.from_pretrained(args)
+    model, args = CaiTFinetuneModel.from_pretrained(args)
     training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function, init_function=init_function)

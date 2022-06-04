@@ -1,7 +1,11 @@
 #! /bin/bash
 
-# Change for multinode config
-CHECKPOINT_PATH=/data/qingsong/pretrain/
+CHECKPOINT_PATH=$1
+if [[ "$1" == "" ]] || [[ "$2" == "" ]];
+then
+    echo "Please pass in two root folders to save model and data!"
+    exit
+fi
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=6
@@ -16,8 +20,8 @@ OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
-en_data="/data/qingsong/dataset/imagenet1k/ILSVRC/Data/CLS-LOC/train"
-eval_data="/data/qingsong/dataset/imagenet1k/ILSVRC/Data/CLS-LOC/val"
+en_data="$2/imagenet1k/ILSVRC/Data/CLS-LOC/train"
+eval_data="$2/imagenet1k/ILSVRC/Data/CLS-LOC/val"
 
 
 config_json="$script_dir/ds_config_ft.json"
@@ -36,11 +40,12 @@ gpt_options=" \
        --checkpoint-activations \
        --save-interval 6000 \
        --eval-interval 100 \
-       --save /data/qingsong/checkpoints \
+       --save "$CHECKPOINT_PATH/checkpoints" \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8 \
        --lr 0.01 \
+       --do-train
 "
 
 
@@ -51,7 +56,7 @@ gpt_options="${gpt_options}
 "
               
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:0,1,2,7,8,9 --master_port 16666 --hostfile ${HOST_FILE_PATH} finetune_vit_imagenet.py $@ ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:2,3,6,7 --master_port 16666 --hostfile ${HOST_FILE_PATH} finetune_vit_imagenet.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

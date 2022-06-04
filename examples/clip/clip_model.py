@@ -8,6 +8,8 @@ from SwissArmyTransformer.model.vit_model import ViTModel, ImagePatchEmbeddingMi
 from SwissArmyTransformer.model.mixins import BaseMixin
 from SwissArmyTransformer import mpu
 from SwissArmyTransformer.model.transformer import LayerNorm
+from SwissArmyTransformer import update_args_with_file
+from SwissArmyTransformer.training.deepspeed_training import load_checkpoint, get_model
 
 """
 CLIP model follows Siamese architecture.
@@ -37,9 +39,8 @@ class ImageMixin(BaseMixin):
         layer = self.transformer.layers[kw_args['layer_id']]
         if kw_args['layer_id'] == 0:
             hidden_states = self.pre_layernorm(hidden_states)
-        output, *mem = layer(hidden_states, mask, *args, **kw_args)
-
-        return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
+        output = layer(hidden_states, mask, *args, **kw_args)
+        return output
 
     def final_forward(self, logits, **kw_args):
         return self.visual_projection(logits[:, 0])
@@ -77,8 +78,8 @@ class TextMixin(BaseMixin):
         # causal mask
         mask = mask - mask.triu(1)
         layer = self.transformer.layers[kw_args['layer_id']]
-        output, *mem = layer(hidden_states, mask, *args, **kw_args)
-        return output, *mem
+        output = layer(hidden_states, mask, *args, **kw_args)
+        return output
 
 class TextEncoder(BaseModel):
     def __init__(self, args, layernorm_epsilon=1e-5, activation_func=QuickGELUActivation()):
@@ -140,3 +141,11 @@ class CLIP(nn.Module):
         group.add_argument("--text-hidden-size-per-attention-head", type=int, default=None)
         group.add_argument("--logit-scale-init-value", type=float, default=None)
         return parser
+
+    @classmethod
+    def from_pretrained(cls, args):
+        args = update_args_with_file(args)
+        model = get_model(args, cls)
+        if args.load:
+            load_checkpoint(model, args)
+        return model, args

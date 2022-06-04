@@ -42,7 +42,7 @@ gpt_options=" \
        --fp16 \
        --save-interval 1000 \
        --eval-interval 100 \
-       --save checkpoints/ \
+       --save "$CHECKPOINT_PATH/checkpoints" \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8 \
@@ -57,7 +57,7 @@ gpt_options="${gpt_options}
 "
 
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:0,6,8,9 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:2,3,6,7 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 
