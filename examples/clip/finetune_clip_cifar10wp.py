@@ -36,7 +36,7 @@ def get_batch(data_iterator, args, timers):
     batch_size = label_data.size()[0]
 
     import os
-    pretrain_path = '/data/qingsong/pretrain'
+    pretrain_path = ''
     from transformers import CLIPProcessor
     processor = CLIPProcessor.from_pretrained(os.path.join(pretrain_path, 'clip-vit-base-patch32'))
     inputs = processor(

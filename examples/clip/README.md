@@ -29,3 +29,14 @@ bash scripts/finetune_cifar10.sh /data/qingsong/pretrain /data/qingsong/dataset
 ```
 
 * iteration 1000 validation acc: 0.9402
+
+Here is an example of fine-tuning CIFAR-10 by prompt.
+
+```bash
+bash scripts/finetune_cifar10wp.sh /data/qingsong/pretrain /data/qingsong/dataset
+```
+
+* iteration 100 validation acc: 0.9568
+* iteration 1000 validation acc: 0.9478
+
+It's interesting that the accuracy going upward first, then dropping down, then going upward again.

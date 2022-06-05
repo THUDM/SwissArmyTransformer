@@ -1,9 +1,9 @@
-MODEL_TYPE="swiss-clip"
+MODEL_TYPE="clip"
 if [ ! -d "${CHECKPOINT_PATH}/$MODEL_TYPE" ]
 then
     if [ ! -f "${CHECKPOINT_PATH}/$MODEL_TYPE.zip" ]
     then
-        wget "https://cloud.tsinghua.edu.cn/f/8f9336ec0fa84a81bc14/?dl=1" -O "${CHECKPOINT_PATH}/$MODEL_TYPE.zip"
+        wget "https://cloud.tsinghua.edu.cn/f/bd29f0537f9949e6a4fb/?dl=1" -O "${CHECKPOINT_PATH}/$MODEL_TYPE.zip"
     fi
     unzip "${CHECKPOINT_PATH}/$MODEL_TYPE.zip" -d "${CHECKPOINT_PATH}"
 fi
