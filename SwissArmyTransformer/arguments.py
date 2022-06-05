@@ -157,8 +157,6 @@ def add_training_args(parser):
     # exit, for testing the first period of a long training
     group.add_argument('--exit-interval', type=int, default=None,
                        help='Exit the program after this many new iterations.')
-    # TODO
-    group.add_argument('--do-train', action='store_true')
     
     return parser
 

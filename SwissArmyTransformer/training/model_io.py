@@ -84,9 +84,9 @@ def save_ds_checkpoint_no_optim(model, save_dir, tag=None, client_state={}, save
     return True
 
 
-def get_checkpoint_iteration(args):
+def get_checkpoint_iteration(load_path):
     # Read the tracker file and set the iteration.
-    tracker_filename = get_checkpoint_tracker_filename(args.load)
+    tracker_filename = get_checkpoint_tracker_filename(load_path)
     if not os.path.isfile(tracker_filename):
         print_rank_0('could not find the metadata file {} '.format(
             tracker_filename))
@@ -111,20 +111,21 @@ def get_checkpoint_iteration(args):
     return iteration, release, True
 
 
-def load_checkpoint(model, args):
+def load_checkpoint(model, args, load_path=None):
     """Load a model checkpoint."""
+    if load_path is None:
+        load_path = args.load
 
-    iteration, release, success = get_checkpoint_iteration(args)
+    iteration, release, success = get_checkpoint_iteration(load_path)
     if not success:
         return 0
     
-    checkpoint_name = get_checkpoint_name(args.load, iteration, release)
+    checkpoint_name = get_checkpoint_name(load_path, iteration, release)
     if mpu.get_data_parallel_rank() == 0:
             print('global rank {} is loading checkpoint {}'.format(
                 torch.distributed.get_rank(), checkpoint_name))
     sd = torch.load(checkpoint_name, map_location='cpu')
     
-    assert not hasattr(args, 'do_train') or not args.do_train or args.deepspeed
     if hasattr(model, 'module'):
         module = model.module
     else: # inference without deepspeed
@@ -136,7 +137,7 @@ def load_checkpoint(model, args):
         print_rank_0(
             f'Will continue but found unexpected_keys! Check whether you are loading correct checkpoints: {unexpected_keys}.')
     if len(missing_keys) > 0:
-        if not args.do_train:
+        if args.mode == 'inference':
             raise ValueError(f'Missing keys for inference: {missing_keys}.')
         else: # new params
             assert all(name.find('mixins')>=0 for name in missing_keys)

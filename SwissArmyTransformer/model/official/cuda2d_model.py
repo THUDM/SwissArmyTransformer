@@ -15,7 +15,7 @@ import torch
 import torch.nn.functional as F
 
 
-from .base_model import BaseModel, BaseMixin
+from SwissArmyTransformer.model.base_model import BaseModel, BaseMixin
 
 from SwissArmyTransformer.model.transformer import split_tensor_along_last_dim
 from SwissArmyTransformer.mpu.utils import sqrt

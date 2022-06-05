@@ -1,9 +1,9 @@
 import math
 import torch
 import torch.nn.functional as F
-from .mixins import BaseMixin
-from .encoder_decoder_model import EncoderDecoderModel
-from .base_model import non_conflict
+from SwissArmyTransformer.model.mixins import BaseMixin
+from SwissArmyTransformer.model.encoder_decoder_model import EncoderDecoderModel
+from SwissArmyTransformer.model.base_model import non_conflict
 from SwissArmyTransformer.mpu import get_model_parallel_world_size
 from SwissArmyTransformer.model.transformer import standard_attention, SelfAttention, CrossAttention, MLP
 from SwissArmyTransformer.mpu.mappings import copy_to_model_parallel_region

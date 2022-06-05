@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 
-from .base_model import BaseModel
-from .mixins import BaseMixin
+from SwissArmyTransformer.model.base_model import BaseModel, BaseMixin
 
 class BlockPositionEmbeddingMixin(BaseMixin):
     def __init__(self, max_sequence_length, hidden_size, init_method_std=0.02):
