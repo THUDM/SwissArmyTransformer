@@ -82,7 +82,7 @@ class EncForward(BaseMixin):
         # Second residual connection.
         output = layernorm_input + self.gamma_2[kw_args['layer_id']] * mlp_output
 
-        return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
+        return output
 
 from SwissArmyTransformer.model.transformer import standard_attention
 from SwissArmyTransformer.mpu.utils import split_tensor_along_last_dim
@@ -128,7 +128,7 @@ class DecForward(BaseMixin):
         # Second residual connection.
         output = layernorm_input + self.gamma_2[kw_args['layer_id']] * mlp_output
 
-        return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
+        return output
 
     def cross_attention_forward(self, hidden_states, cross_attention_mask, encoder_outputs, **kw_args):
         # adapted from https://github.com/THUDM/SwissArmyTransformer/blob/d8c9d1e0a9bb2af1e1d26a68b35f16d84aafcc2f/SwissArmyTransformer/mpu/transformer.py#L216

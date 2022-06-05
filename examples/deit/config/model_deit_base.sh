@@ -1,9 +1,9 @@
-MODEL_TYPE="swiss-deit-base"
+MODEL_TYPE="deit-base"
 if [ ! -d "${CHECKPOINT_PATH}/$MODEL_TYPE" ]
 then
     if [ ! -f "${CHECKPOINT_PATH}/$MODEL_TYPE.zip" ]
     then
-        wget "https://cloud.tsinghua.edu.cn/f/eac58c838baa4a61902c/?dl=1" -O "${CHECKPOINT_PATH}/$MODEL_TYPE.zip"
+        wget "https://cloud.tsinghua.edu.cn/f/9a26fd1aee7146e1a848/?dl=1" -O "${CHECKPOINT_PATH}/$MODEL_TYPE.zip"
     fi
     unzip "${CHECKPOINT_PATH}/$MODEL_TYPE.zip" -d "${CHECKPOINT_PATH}"
 fi

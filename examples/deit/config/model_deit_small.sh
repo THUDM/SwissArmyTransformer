@@ -1,9 +1,9 @@
-MODEL_TYPE="swiss-deit-small"
+MODEL_TYPE="deit-small"
 if [ ! -d "${CHECKPOINT_PATH}/$MODEL_TYPE" ]
 then
     if [ ! -f "${CHECKPOINT_PATH}/$MODEL_TYPE.zip" ]
     then
-        wget "https://cloud.tsinghua.edu.cn/f/c2eb2097634a462e99f0/?dl=1" -O "${CHECKPOINT_PATH}/$MODEL_TYPE.zip"
+        wget "https://cloud.tsinghua.edu.cn/f/51498210e2c943dbbef1/?dl=1" -O "${CHECKPOINT_PATH}/$MODEL_TYPE.zip"
     fi
     unzip "${CHECKPOINT_PATH}/$MODEL_TYPE.zip" -d "${CHECKPOINT_PATH}"
 fi
