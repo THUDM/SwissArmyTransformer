@@ -41,7 +41,7 @@ gpt_options=" \
        --fp16 \
        --save-interval 1000 \
        --eval-interval 100 \
-       --save checkpoints/ \
+       --save "$CHECKPOINT_PATH/checkpoints" \
        --split 1 \
        --strict-eval \
        --eval-batch-size 32 \

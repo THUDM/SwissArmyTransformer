@@ -15,7 +15,8 @@ import torch
 import argparse
 from .base_model import BaseModel, BaseMixin
 from SwissArmyTransformer.mpu.mappings import copy_to_model_parallel_region
-
+from SwissArmyTransformer import update_args_with_file
+from SwissArmyTransformer.training.deepspeed_training import load_checkpoint, get_model
 
 class EncoderFinalMixin(BaseMixin):
     def final_forward(self, logits, **kwargs):
@@ -94,3 +95,11 @@ class EncoderDecoderModel(torch.nn.Module):
         group.add_argument("--dec-inner-hidden-size", type=int, default=None)
         group.add_argument("--dec-hidden-size-per-attention-head", type=int, default=None)
         return parser
+
+    @classmethod
+    def from_pretrained(cls, args):
+        args = update_args_with_file(args)
+        model = get_model(args, cls)
+        if args.load:
+            load_checkpoint(model, args)
+        return model, args

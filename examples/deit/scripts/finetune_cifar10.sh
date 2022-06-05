@@ -1,9 +1,10 @@
 #! /bin/bash
 
 CHECKPOINT_PATH=$1
-if [[ "$1" == "" ]] || [[ "$2" == "" ]];
+if [[ "$1" == "" ]] || [[ "$2" == "" ]] || [[ "$3" == "" ]];
 then
     echo "Please pass in two root folders to save model and data!"
+    echo "Please pass in deit type you want to run in [tiny, small, base]!"
     exit
 fi
 
@@ -14,7 +15,7 @@ MP_SIZE=1
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
-source $main_dir/config/model_vit_224_16_21k.sh
+source $main_dir/config/model_deit_$3.sh
 
 OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
