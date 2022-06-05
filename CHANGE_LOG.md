@@ -63,6 +63,11 @@ This will let the key `'last_attention_map'` appear in the next layer's `kw_args
 1. Add Vit
 2. Fix evaluation all_reduce bug
 
-# 2022.6.3 v.2.0
+# 2022.6.3 v2.0
 1. split all the default hooks out
 2. change the order, model hooks will not override all the things. They now are the same as mixin hooks added in the **front** of all the mixins.
+
+# 2022.6.6 v2.0
+1. `from_pretrained` now auto downloads models. There are two kinds of usages: `SomeModel.from_pretrained(args, name)` will load the weights of `name` model to a `SomeModel` with the same model arch hyper-params with `name`; `AutoModel.from_pretrained(args, name)` will return an official model (`model_class` Class) with the pretrained weights.
+2. ENV `SAT_HOME` is where we put the models in. Set it in your shell file.
+3. don't necessarily need `deepspeed_config`, or pass model arch hyper-params for `from_pretrained`. Use `zero-stage 0/1/2`.  
