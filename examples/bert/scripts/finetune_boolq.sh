@@ -8,7 +8,7 @@ then
 fi
 
 NUM_WORKERS=1
-NUM_GPUS_PER_WORKER=4
+NUM_GPUS_PER_WORKER=1
 MP_SIZE=1
 
 script_path=$(realpath $0)
@@ -17,7 +17,7 @@ main_dir=$(dirname $script_dir)
 source $main_dir/config/model_bert_base.sh
 echo $MODEL_TYPE
 
-OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
+OPTIONS_NCCL="NCCL_DEBUG=warning NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
@@ -38,26 +38,28 @@ gpt_options=" \
        --distributed-backend nccl \
        --lr-decay-style cosine \
        --warmup .02 \
-       --checkpoint-activations \
        --fp16 \
        --save-interval 1000 \
        --eval-interval 100 \
        --save checkpoints/ \
        --split 1 \
        --strict-eval \
-       --eval-batch-size 8 \
-       --do-train
+       --eval-batch-size 32 \
+       --do-train \
+       --zero-stage 2 \
+       --lr 0.00002 \
+       --batch-size 64
 "
+# --checkpoint-activations \
 
 
+# gpt_options="${gpt_options}
+#        --deepspeed \
+#        --deepspeed_config ${config_json} \
+# "
 
-gpt_options="${gpt_options}
-       --deepspeed \
-       --deepspeed_config ${config_json} \
-"
 
-
-run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:0,6,8,9 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:2 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 
