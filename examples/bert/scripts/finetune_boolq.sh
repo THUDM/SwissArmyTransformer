@@ -8,15 +8,17 @@ then
 fi
 
 NUM_WORKERS=1
-NUM_GPUS_PER_WORKER=1
+NUM_GPUS_PER_WORKER=2
 MP_SIZE=1
 
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
-source $main_dir/config/model_bert_base.sh
-echo $MODEL_TYPE
+# source $main_dir/config/model_bert_base.sh
+# echo $MODEL_TYPE
+MODEL_TYPE="bert-base-uncased"
 
+OPTIONS_SAT="SAT_HOME=/raid/dm/sat_models"
 OPTIONS_NCCL="NCCL_DEBUG=warning NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
@@ -32,25 +34,24 @@ gpt_options=" \
        --mode finetune \
        --train-iters 1000 \
        --resume-dataloader \
-       $MODEL_ARGS \
        --train-data ${en_data} \
        --valid-data ${eval_data} \
        --distributed-backend nccl \
        --lr-decay-style cosine \
        --warmup .02 \
+       --checkpoint-activations \
        --fp16 \
        --save-interval 1000 \
        --eval-interval 100 \
        --save "$CHECKPOINT_PATH/checkpoints" \
        --split 1 \
        --strict-eval \
-       --eval-batch-size 32 \
-       --do-train \
-       --zero-stage 2 \
+       --eval-batch-size 8 \
+       --zero-stage 1 \
        --lr 0.00002 \
-       --batch-size 64
+       --batch-size 4
 "
-# --checkpoint-activations \
+#
 
 
 # gpt_options="${gpt_options}
@@ -59,7 +60,7 @@ gpt_options=" \
 # "
 
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:2 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} deepspeed --include localhost:2,7 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

@@ -341,8 +341,8 @@ def get_args(args_list=None):
     return args
 
 
-def update_args_with_file(args, path='model_config.json'):
-    with open(os.path.join(args.load, path), 'r', encoding='utf-8') as f:
+def update_args_with_file(args, path):
+    with open(path, 'r', encoding='utf-8') as f:
         config = json.load(f)
     args = vars(args)
     for k in list(args.keys()):

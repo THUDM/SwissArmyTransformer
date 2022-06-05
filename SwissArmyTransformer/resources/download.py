@@ -29,6 +29,7 @@ def download_with_progress_bar(save_path, url):
 def auto_create(name, *, path=None, url=None):
     if path is None:
         path = os.getenv('SAT_HOME', '~/.sat_models') # TODO Rename
+    path = os.path.expanduser(path)
     file_path = os.path.join(path, name + '.zip')
     model_path = os.path.join(path, name)
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -39,7 +40,7 @@ def auto_create(name, *, path=None, url=None):
         else:
             if url is None:
                 url = MODEL_ULRS[name]
-            print(f'Downloading tokenizer models {url} into {file_path} ...')
+            print(f'Downloading models {url} into {file_path} ...')
             download_with_progress_bar(file_path, url)
         # unzip
         if not os.path.isdir(model_path):
@@ -47,9 +48,8 @@ def auto_create(name, *, path=None, url=None):
             f = zipfile.ZipFile(file_path, 'r')
             f.extractall(path=path) # TODO check hierarcy of folders and name consistency
             assert os.path.isdir(model_path), f'Unzip failed, or the first-level folder in zip is not {name}.'
-        return model_path
+    return model_path # must return outside the `with lock` block
 
 MODEL_ULRS = {
-    'bert-base-uncased': 'https://cloud.tsinghua.edu.cn/f/9b4ab7c17ce842ea9c9d/?dl=1',
-    
+    'bert-base-uncased': 'https://cloud.tsinghua.edu.cn/f/f45fff1a308846cfa63a/?dl=1',
 }
