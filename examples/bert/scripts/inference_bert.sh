@@ -10,9 +10,9 @@ fi
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
-source $main_dir/config/model_bert_base.sh
+OPTIONS_SAT="SAT_HOME=$1" #"SAT_HOME=/raid/dm/sat_models"
 
-run_cmd="python inference_bert.py --pretrain_path $CHECKPOINT_PATH --mode inference $MODEL_ARGS"
+run_cmd="${OPTIONS_SAT} python inference_bert.py --mode inference $MODEL_ARGS"
 echo ${run_cmd}
 eval ${run_cmd}
 

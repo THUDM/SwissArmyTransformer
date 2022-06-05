@@ -1,17 +1,14 @@
 import os
 import argparse
 from SwissArmyTransformer import get_args
-from bert_model import BertModel
+from SwissArmyTransformer.model.official.bert_model import BertModel
 py_parser = argparse.ArgumentParser(add_help=False)
-py_parser.add_argument('--pretrain_path', type=str, default=None)
 py_parser.add_argument('--old_checkpoint', action="store_true")
 py_parser = BertModel.add_model_specific_args(py_parser)
 known, args_list = py_parser.parse_known_args()
 args = get_args(args_list)
 args = argparse.Namespace(**vars(args), **vars(known))
-pretrain_path = args.pretrain_path
-model_type = '-'.join(args.load.split('/')[-1].split('-')[1:])
-print(model_type)
+model_type = 'bert-base-uncased'
 
 import os
 import torch
@@ -26,12 +23,11 @@ torch.distributed.init_process_group(
 import SwissArmyTransformer.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
-from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
-model, args = BertModel.from_pretrained(args)
+model, args = BertModel.from_pretrained(args, model_type)
 
 from transformers import BertTokenizer, BertForMaskedLM
-tokenizer = BertTokenizer.from_pretrained(os.path.join(pretrain_path, model_type))
-bert = BertForMaskedLM.from_pretrained(os.path.join(pretrain_path, model_type), output_hidden_states=True)
+tokenizer = BertTokenizer.from_pretrained(os.path.join('', model_type))
+bert = BertForMaskedLM.from_pretrained(os.path.join('', model_type), output_hidden_states=True)
 
 model.eval()
 with torch.no_grad():
