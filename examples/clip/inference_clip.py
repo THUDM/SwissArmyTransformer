@@ -1,18 +1,16 @@
 import os
 import argparse
-from clip_model import CLIP, ImageEncoder
+from SwissArmyTransformer.model.official.clip_model import CLIP, ImageEncoder
 from SwissArmyTransformer import get_args
 py_parser = argparse.ArgumentParser(add_help=False)
-py_parser.add_argument('--pretrain_path', type=str)
 py_parser.add_argument('--old_checkpoint', action="store_true")
+py_parser.add_argument('--md_type', type=str)
 py_parser = CLIP.add_model_specific_args(py_parser)
 py_parser = ImageEncoder.add_model_specific_args(py_parser)
 known, args_list = py_parser.parse_known_args()
 args = get_args(args_list)
 args = argparse.Namespace(**vars(args), **vars(known))
-pretrain_path = args.pretrain_path
-model_type = '-'.join(args.load.split('/')[-1].split('-')[1:])
-print(model_type)
+model_type = args.md_type
 
 import os
 import torch
@@ -27,7 +25,7 @@ torch.distributed.init_process_group(
 import SwissArmyTransformer.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
-model, args = CLIP.from_pretrained(args)
+model, args = CLIP.from_pretrained(args, model_type)
 # from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
 
 # model = CLIP(args)
@@ -35,7 +33,7 @@ model, args = CLIP.from_pretrained(args)
 # model = model.cuda()
 
 from transformers import CLIPProcessor
-processor = CLIPProcessor.from_pretrained(os.path.join(pretrain_path, 'clip-vit-base-patch32'))
+processor = CLIPProcessor.from_pretrained(os.path.join('', 'openai/clip-vit-base-patch32'))
 
 model.eval()
 with torch.no_grad():

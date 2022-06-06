@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from SwissArmyTransformer import mpu, get_args
 from clip_finetune_model import CLIP_wp
 from SwissArmyTransformer.training.deepspeed_training import training_main
-from examples.clip.clip_model import ImageEncoder
+from SwissArmyTransformer.model.official.clip_model import ImageEncoder
 
 def get_batch(data_iterator, args, timers):
     # Items and their type.
@@ -38,7 +38,7 @@ def get_batch(data_iterator, args, timers):
     import os
     pretrain_path = ''
     from transformers import CLIPProcessor
-    processor = CLIPProcessor.from_pretrained(os.path.join(pretrain_path, 'clip-vit-base-patch32'))
+    processor = CLIPProcessor.from_pretrained(os.path.join(pretrain_path, 'openai/clip-vit-base-patch32'))
     inputs = processor(
         text=["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"], images=image_data, return_tensors="pt", padding=True
     )
@@ -92,6 +92,7 @@ def create_dataset_function(path, args):
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--old_checkpoint', action="store_true")
+    py_parser.add_argument('--md_type', type=str)
     # py_parser.add_argument('--prefix_len', type=int, default=16)
     py_parser = CLIP_wp.add_model_specific_args(py_parser)
     py_parser = ImageEncoder.add_model_specific_args(py_parser)
@@ -101,5 +102,5 @@ if __name__ == '__main__':
     from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
     initialize_distributed(args)
     set_random_seed(args.seed)
-    model, args = CLIP_wp.from_pretrained(args)
+    model, args = CLIP_wp.from_pretrained(args, args.md_type)
     training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function, init_function=None)

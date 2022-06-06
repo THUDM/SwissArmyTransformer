@@ -8,7 +8,7 @@ import torchvision
 import torchvision.transforms as transforms
 import torch.nn.functional as F
 from SwissArmyTransformer import mpu, get_args
-from clip_model import CLIP, ImageEncoder
+from SwissArmyTransformer.model.official.clip_model import CLIP, ImageEncoder
 from clip_finetune_model import CLIP_finetune
 from SwissArmyTransformer.training.deepspeed_training import training_main
 
@@ -78,6 +78,7 @@ def init_function(args, model):
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--old_checkpoint', action="store_true")
+    py_parser.add_argument('--md_type', type=str)
     # py_parser.add_argument('--prefix_len', type=int, default=16)
     py_parser = CLIP.add_model_specific_args(py_parser)
     py_parser = ImageEncoder.add_model_specific_args(py_parser)
@@ -88,9 +89,9 @@ if __name__ == '__main__':
     from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
     initialize_distributed(args)
     set_random_seed(args.seed)
-    swiss_model, args = CLIP.from_pretrained(args)
+    swiss_model, args = CLIP.from_pretrained(args, args.md_type)
     swiss_model = swiss_model.image_encoder
-    swiss_model = CLIP_finetune(swiss_model, args.projection_dim, 10)
+    swiss_model = CLIP_finetune(swiss_model, args.projection_dim, args.num_finetune_classes)
     if args.fp16:
         swiss_model.half()
     elif args.bf16:

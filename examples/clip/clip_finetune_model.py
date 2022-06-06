@@ -1,5 +1,5 @@
 import torch
-from clip_model import CLIP
+from SwissArmyTransformer.model.official.clip_model import CLIP
 
 class CLIP_finetune(torch.nn.Module):
     def __init__(self, encoder, hidden_size, num_classes):

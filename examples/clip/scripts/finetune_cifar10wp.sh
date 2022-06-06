@@ -14,8 +14,11 @@ MP_SIZE=1
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
-source $main_dir/config/model_clip_ftwp.sh
+MODEL_TYPE="clip"
+MODEL_ARGS="--num-finetune-classes 10 \
+            --image-size 224 224"
 
+OPTIONS_SAT="SAT_HOME=$1" #"SAT_HOME=/raid/dm/sat_models"
 OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
@@ -26,7 +29,7 @@ eval_data="$2/test"
 
 config_json="$script_dir/ds_config_ft.json"
 gpt_options=" \
-       --experiment-name finetune-clip-cifar10 \
+       --experiment-name finetune-$MODEL_TYPE-wp-cifar10 \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
        --train-iters 1000 \
@@ -44,19 +47,14 @@ gpt_options=" \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8 \
-       --lr 0.01 \
-       --do-train
-"
-
-
-
-gpt_options="${gpt_options}
-       --deepspeed \
-       --deepspeed_config ${config_json} \
+       --zero-stage 1 \
+       --lr 0.00002 \
+       --batch-size 4 \
+       --md_type $MODEL_TYPE
 "
               
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:2,3,6,7 --master_port 16666 --hostfile ${HOST_FILE_PATH} finetune_clip_cifar10wp.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} deepspeed --include localhost:1 --master_port 16666 --hostfile ${HOST_FILE_PATH} finetune_clip_cifar10wp.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 
