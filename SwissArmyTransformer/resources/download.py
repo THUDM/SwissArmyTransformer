@@ -52,4 +52,5 @@ def auto_create(name, *, path=None, url=None):
 
 MODEL_ULRS = {
     'bert-base-uncased': 'https://cloud.tsinghua.edu.cn/f/f45fff1a308846cfa63a/?dl=1',
+    'vit-base-patch16-224-in21k': 'https://cloud.tsinghua.edu.cn/f/fdf40233d9034b6a8bdc/?dl=1'
 }

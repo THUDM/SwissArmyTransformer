@@ -1,6 +1,6 @@
 import torch
 from SwissArmyTransformer.model.base_model import BaseMixin, non_conflict
-from SwissArmyTransformer.model.vit_model import ViTModel, ClsMixin
+from SwissArmyTransformer.model.official.vit_model import ViTModel, ClsMixin
 from SwissArmyTransformer.model.mixins import PrefixTuningMixin
 
 class ViTFinetuneModel(ViTModel):

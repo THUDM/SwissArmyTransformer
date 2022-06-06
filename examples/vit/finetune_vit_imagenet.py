@@ -79,6 +79,7 @@ def init_function(args, model):
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--old_checkpoint', action="store_true")
+    py_parser.add_argument('--md_type', type=str)
     # py_parser.add_argument('--prefix_len', type=int, default=16)
     py_parser = ViTFinetuneModel.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
@@ -87,5 +88,5 @@ if __name__ == '__main__':
     from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
     initialize_distributed(args)
     set_random_seed(args.seed)
-    model, args = ViTFinetuneModel.from_pretrained(args)
+    model, args = ViTFinetuneModel.from_pretrained(args, args.md_type)
     training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function, init_function=init_function)
