@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel, non_conflict
-from SwissArmyTransformer.model.vit_model import ViTModel, ClsMixin
+from SwissArmyTransformer.model.official.vit_model import ViTModel, ClsMixin
 from SwissArmyTransformer.model.mixins import BaseMixin
 from SwissArmyTransformer import mpu
 

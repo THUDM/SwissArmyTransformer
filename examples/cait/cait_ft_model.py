@@ -1,8 +1,8 @@
 import torch
 from SwissArmyTransformer.model.base_model import BaseMixin, non_conflict
-from SwissArmyTransformer.model.vit_model import ClsMixin
+from SwissArmyTransformer.model.official.vit_model import ClsMixin
 from SwissArmyTransformer.model.mixins import PrefixTuningMixin
-from cait_model import CaiT
+from SwissArmyTransformer.model.official.cait_model import CaiT
 
 class CaiTFinetuneModel(CaiT):
     def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-6):

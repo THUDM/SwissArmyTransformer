@@ -17,6 +17,7 @@ from .base_model import BaseModel, BaseMixin
 from SwissArmyTransformer.mpu.mappings import copy_to_model_parallel_region
 from SwissArmyTransformer import update_args_with_file
 from SwissArmyTransformer.training.deepspeed_training import load_checkpoint, get_model
+from SwissArmyTransformer.resources import auto_create
 
 class EncoderFinalMixin(BaseMixin):
     def final_forward(self, logits, **kwargs):

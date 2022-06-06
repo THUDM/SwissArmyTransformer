@@ -12,7 +12,7 @@ import torchvision.transforms as transforms
 import torch.nn.functional as F
 from SwissArmyTransformer import mpu, get_args
 from cait_ft_model import CaiTFinetuneModel
-from cait_model import CaiTEncoder
+from SwissArmyTransformer.model.official.cait_model import CaiTEncoder
 from SwissArmyTransformer.training.deepspeed_training import training_main
 
 
@@ -82,6 +82,7 @@ def init_function(args, model):
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--old_checkpoint', action="store_true")
+    py_parser.add_argument('--md_type', type=str)
     # py_parser.add_argument('--prefix_len', type=int, default=16)
     py_parser = CaiTFinetuneModel.add_model_specific_args(py_parser)
     py_parser = CaiTEncoder.add_model_specific_args(py_parser)
@@ -91,5 +92,5 @@ if __name__ == '__main__':
     from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
     initialize_distributed(args)
     set_random_seed(args.seed)
-    model, args = CaiTFinetuneModel.from_pretrained(args)
+    model, args = CaiTFinetuneModel.from_pretrained(args, args.md_type)
     training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function, init_function=init_function)
