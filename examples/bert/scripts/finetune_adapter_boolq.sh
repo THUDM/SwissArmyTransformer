@@ -47,7 +47,8 @@ gpt_options=" \
        --zero-stage 1 \
        --lr 0.00002 \
        --batch-size 4 \
-       --data_root $2
+       --data_root $2 \
+       --md_type $MODEL_TYPE
 "
 
 

@@ -1,4 +1,3 @@
-from lib2to3.pgen2 import token
 import os
 
 import torch
@@ -100,6 +99,7 @@ if __name__ == '__main__':
     py_parser.add_argument('--sample_length', type=int, default=512-16)
     py_parser.add_argument('--old_checkpoint', action="store_true")
     py_parser.add_argument('--data_root', type=str)
+    py_parser.add_argument('--md_type', type=str)
     py_parser = ClassificationModel.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
@@ -107,7 +107,7 @@ if __name__ == '__main__':
     from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
     initialize_distributed(args)
     set_random_seed(args.seed)
-    model, args = ClassificationModel.from_pretrained(args, 'bert-base-uncased')
+    model, args = ClassificationModel.from_pretrained(args, args.md_type)
     # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
     # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
     training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
