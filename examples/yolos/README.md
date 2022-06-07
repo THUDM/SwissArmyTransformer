@@ -12,12 +12,14 @@ python transform_param.py
 
 ## Inference
 
-We adapt [VisualizeAttention.ipynb](https://github.com/hustvl/YOLOS/blob/main/VisualizeAttention.ipynb) here as `inference_yolos.ipynb`.
+We adapt [VisualizeAttention.ipynb](https://github.com/hustvl/YOLOS/blob/main/VisualizeAttention.ipynb) here as `inference_yolos.py`.
 
 ## Training
 
 ```bash
-bash scripts/finetune_coco.sh
+bash scripts/finetune_coco.sh /data/qingsong/pretrain
 ```
 
 For now, we haven't support customized evaluator. Therefore, I just report loss as metric.
+
+Moreover, you may need to change coco_path in the train_yolos_coco.py to your own data path.

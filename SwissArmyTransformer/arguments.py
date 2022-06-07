@@ -315,6 +315,8 @@ def get_args(args_list=None):
         if override_deepspeed_config: # not specify deepspeed_config, use args
             if args.fp16:
                 deepspeed_config["fp16"]["enabled"] = True
+            else:
+                deepspeed_config["fp16"]["enabled"] = False
             deepspeed_config["train_micro_batch_size_per_gpu"] = args.batch_size
             deepspeed_config["gradient_accumulation_steps"] = args.gradient_accumulation_steps
             optimizer_params_config = deepspeed_config["optimizer"]["params"]
