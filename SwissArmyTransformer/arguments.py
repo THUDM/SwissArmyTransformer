@@ -20,6 +20,9 @@ import os
 import torch
 import deepspeed
 import json
+import random
+import numpy as np
+from SwissArmyTransformer import mpu
 
 
 def add_model_config_args(parser):
@@ -338,6 +341,10 @@ def get_args(args_list=None):
                 args.lr = optimizer_params_config.get("lr", args.lr)
                 args.weight_decay = optimizer_params_config.get("weight_decay", args.weight_decay)
         args.deepspeed_config = deepspeed_config
+
+    # initialize distributed and random seed because it always seems to be necessary.
+    initialize_distributed(args)
+    set_random_seed(args.seed)
     return args
 
 
@@ -350,3 +357,43 @@ def update_args_with_file(args, path):
             del args[k]
     args = argparse.Namespace(**config, **args)
     return args
+
+
+def initialize_distributed(args):
+    """Initialize torch.distributed."""
+    if torch.distributed.is_initialized():
+        return 
+    # the automatic assignment of devices has been moved to arguments.py 
+    torch.cuda.set_device(args.device)
+    # Call the init process
+    init_method = 'tcp://'
+    args.master_ip = os.getenv('MASTER_ADDR', 'localhost')
+    args.master_port = os.getenv('MASTER_PORT', '6000')
+    init_method += args.master_ip + ':' + args.master_port
+    torch.distributed.init_process_group(
+        backend=args.distributed_backend,
+        world_size=args.world_size, rank=args.rank,
+        init_method=init_method)
+
+    # Set the model-parallel / data-parallel communicators.
+    mpu.initialize_model_parallel(args.model_parallel_size)
+
+    # Optional DeepSpeed Activation Checkpointing Features
+    if args.deepspeed: 
+        # It seems that it has no negative influence to configure it even without using checkpointing.  
+        deepspeed.checkpointing.configure(mpu, deepspeed_config=args.deepspeed_config, num_checkpoints=args.num_layers)
+
+def set_random_seed(seed):
+    """Set random seed for reproducability."""
+    if seed is not None and seed > 0:
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.enabled = False
+        torch.backends.cuda.matmul.allow_tf32 = False # if set it to True will be much faster but not accurate
+        if deepspeed.checkpointing.is_configured():
+            mpu.model_parallel_cuda_manual_seed(seed)

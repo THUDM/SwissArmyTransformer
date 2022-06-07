@@ -39,6 +39,7 @@ from SwissArmyTransformer import mpu
 from SwissArmyTransformer.data_utils import make_loaders
 from SwissArmyTransformer.tokenization import get_tokenizer
 from SwissArmyTransformer.ops import LayerNorm
+from SwissArmyTransformer.arguments import set_random_seed, initialize_distributed
 
 def training_main(args, model_cls, forward_step_function, create_dataset_function, init_function=None):
     """Main training program."""
@@ -48,8 +49,6 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         'create_dataset_function': create_dataset_function
     }
 
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.enabled = False  # Disable CuDNN.
     timers = Timers()  # Timer.
 
     # Experiment Name
@@ -58,10 +57,11 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     else:
         args.experiment_name = args.experiment_name + datetime.now().strftime("%m-%d-%H-%M")
 
-    # Pytorch distributed. must before seed
-    if isinstance(model_cls, type):
-        initialize_distributed(args)
-        set_random_seed(args.seed)  # Random seeds for reproducability.
+    # Pytorch distributed. must before seed. ALREADY MOVED TO arguments.py!
+    # if isinstance(model_cls, type):
+    #     initialize_distributed(args)
+    #     set_random_seed(args.seed)  # Random seeds for reproducability.
+
     # init tokenizer
     get_tokenizer(args)  # set args.vocab_size.
     # Data stuff.
@@ -504,63 +504,3 @@ def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step, avg_metrics
         for key in avg_metrics:
             summary_writer.add_scalar('Train/valid_'+key, avg_metrics[key], step)
         
-
-'''
-    Optional DeepSpeed Activation Checkpointing features
-    Gives access to partition activations, contiguous memory optimizations
-    and cpu checkpointing.
-
-    Activation checkpoint requires keep track of the random states
-    and setting the random seed for each MP process. Megatron uses
-    mpu.get_cuda_rng_tracker and mpu.model_parallel_cuda_manual_seed
-    for keeping track of the random states and setting the random seeds.
-    Since they are used in places outside of activation checkpointing,
-    we overwrite them to maintain consistency.
-
-    This must be done before all the calls to mpu.model_parallel_cuda_manual_seed
-    '''
-
-
-def set_deepspeed_activation_checkpointing(args):
-    deepspeed.checkpointing.configure(mpu, deepspeed_config=args.deepspeed_config, num_checkpoints=args.num_layers)
-    mpu.checkpoint = deepspeed.checkpointing.checkpoint
-    mpu.get_cuda_rng_tracker = deepspeed.checkpointing.get_cuda_rng_tracker
-    mpu.model_parallel_cuda_manual_seed = deepspeed.checkpointing.model_parallel_cuda_manual_seed
-
-
-def initialize_distributed(args):
-    """Initialize torch.distributed."""
-
-    # the automatic assignment of devices has been moved to arguments.py 
-    torch.cuda.set_device(args.device)
-    # Call the init process
-    init_method = 'tcp://'
-    args.master_ip = os.getenv('MASTER_ADDR', 'localhost')
-    args.master_port = os.getenv('MASTER_PORT', '6000')
-    init_method += args.master_ip + ':' + args.master_port
-    torch.distributed.init_process_group(
-        backend=args.distributed_backend,
-        world_size=args.world_size, rank=args.rank,
-        init_method=init_method)
-
-    # Set the model-parallel / data-parallel communicators.
-    mpu.initialize_model_parallel(args.model_parallel_size)
-
-    # Optional DeepSpeed Activation Checkpointing Features
-    if hasattr(args, "deepspeed") and args.deepspeed and args.deepspeed_activation_checkpointing:
-        set_deepspeed_activation_checkpointing(args)  # TODO manual model-parallel seed
-
-def set_random_seed(seed):
-    """Set random seed for reproducability."""
-    if seed is not None and seed > 0:
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
-        torch.backends.cudnn.benchmark = False
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.enabled = False
-        torch.backends.cuda.matmul.allow_tf32 = False
-        if hasattr(mpu, 'model_parallel_cuda_manual_seed'):
-            mpu.model_parallel_cuda_manual_seed(seed)

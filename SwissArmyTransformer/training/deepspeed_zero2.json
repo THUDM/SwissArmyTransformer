@@ -35,7 +35,8 @@
     },
     "activation_checkpointing": {
       "partition_activations": false,
-      "contiguous_memory_optimization": false
+      "contiguous_memory_optimization": false,
+      "cpu_checkpointing": false
     },
     "wall_clock_breakdown": false
   }
