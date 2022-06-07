@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from SwissArmyTransformer.model import ViTModel
-from SwissArmyTransformer.model.vit_model import ImagePatchEmbeddingMixin
+from SwissArmyTransformer.model.official.vit_model import ImagePatchEmbeddingMixin
 from SwissArmyTransformer.model.mixins import BaseMixin
 
 
