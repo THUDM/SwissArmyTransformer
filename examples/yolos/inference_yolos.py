@@ -43,6 +43,7 @@ swiss_args = argparse.Namespace(
     world_size=1,
     rank=0,
     old_checkpoint=None,
+    layernorm_order='pre',
     mode='inference',
     fp16=False,
     bf16=False

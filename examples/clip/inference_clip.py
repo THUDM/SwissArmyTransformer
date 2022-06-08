@@ -14,17 +14,6 @@ model_type = args.md_type
 
 import os
 import torch
-init_method = 'tcp://'
-master_ip = os.getenv('MASTER_ADDR', '127.0.0.1')
-master_port = os.getenv('MASTER_PORT', '16666')
-init_method += master_ip + ':' + master_port
-torch.distributed.init_process_group(
-        backend='nccl',
-        world_size=args.world_size, rank=args.rank, init_method=init_method)
-
-import SwissArmyTransformer.mpu as mpu
-mpu.initialize_model_parallel(args.model_parallel_size)
-
 model, args = CLIP.from_pretrained(args, model_type)
 # from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
 

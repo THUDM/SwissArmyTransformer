@@ -63,10 +63,6 @@ class EncForward(BaseMixin):
         # Self attention.
         attention_output = layer.attention(layernorm_output1, mask, **kw_args)
 
-        # Third LayerNorm
-        if layer.sandwich_ln:
-            attention_output = layer.third_layernorm(attention_output)
-
         # Residual connection.
         layernorm_input = hidden_states + self.gamma_1[kw_args['layer_id']] * attention_output
         # Layer norm post the self attention.
@@ -74,10 +70,6 @@ class EncForward(BaseMixin):
 
         # MLP.
         mlp_output = layer.mlp(layernorm_output, **kw_args)
-
-        # Fourth LayerNorm
-        if layer.sandwich_ln:
-            mlp_output = layer.fourth_layernorm(mlp_output)
 
         # Second residual connection.
         output = layernorm_input + self.gamma_2[kw_args['layer_id']] * mlp_output
@@ -110,9 +102,6 @@ class DecForward(BaseMixin):
         assert 'cross_attention_mask' in kw_args
         # Cross attention
         attention_output = layer.cross_attention(layernorm_output1, **kw_args)
-        # Third LayerNorm
-        if layer.sandwich_ln:
-            attention_output = layer.third_layernorm(attention_output)
         # Residual connection.
         layernorm_input = hidden_states + self.gamma_1[kw_args['layer_id']] * attention_output
         # Layer norm post the cross attention
@@ -120,10 +109,6 @@ class DecForward(BaseMixin):
 
         # MLP.
         mlp_output = layer.mlp(layernorm_output, **kw_args)
-
-        # Fourth LayerNorm
-        if layer.sandwich_ln:
-            mlp_output = layer.fourth_layernorm(mlp_output)
 
         # Second residual connection.
         output = layernorm_input + self.gamma_2[kw_args['layer_id']] * mlp_output

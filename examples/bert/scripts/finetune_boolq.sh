@@ -48,8 +48,7 @@ gpt_options=" \
        --lr 0.00002 \
        --batch-size 64 \
        --data_root $2 \
-       --md_type $MODEL_TYPE \
-       --layernorm-order post
+       --md_type $MODEL_TYPE
 "
 
 

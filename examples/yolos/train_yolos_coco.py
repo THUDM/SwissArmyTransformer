@@ -153,8 +153,8 @@ if __name__ == '__main__':
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
-    from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
-    initialize_distributed(args)
-    set_random_seed(args.seed)
+    # from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
+    # initialize_distributed(args)
+    # set_random_seed(args.seed)
     model, args = YOLOS.from_pretrained(args, args.md_type)
     training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function, init_function=init_function)

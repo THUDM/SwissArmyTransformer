@@ -86,9 +86,9 @@ if __name__ == '__main__':
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
-    from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
-    initialize_distributed(args)
-    set_random_seed(args.seed)
+    # from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
+    # initialize_distributed(args)
+    # set_random_seed(args.seed)
     swiss_model, args = CLIP.from_pretrained(args, args.md_type)
     swiss_model = swiss_model.image_encoder
     swiss_model = CLIP_finetune(swiss_model, args.projection_dim, args.num_finetune_classes)
