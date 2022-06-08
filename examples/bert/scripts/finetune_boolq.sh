@@ -8,7 +8,7 @@ then
 fi
 
 NUM_WORKERS=1
-NUM_GPUS_PER_WORKER=2
+NUM_GPUS_PER_WORKER=1
 MP_SIZE=1
 
 script_path=$(realpath $0)
@@ -46,13 +46,14 @@ gpt_options=" \
        --eval-batch-size 8 \
        --zero-stage 1 \
        --lr 0.00002 \
-       --batch-size 4 \
+       --batch-size 64 \
        --data_root $2 \
-       --md_type $MODEL_TYPE
+       --md_type $MODEL_TYPE \
+       --layernorm-order post
 "
 
 
-run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} deepspeed --include localhost:0,1 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} deepspeed --include localhost:4 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

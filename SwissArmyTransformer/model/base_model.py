@@ -73,7 +73,7 @@ class BaseModel(torch.nn.Module):
                 hidden_size_per_attention_head=args.hidden_size_per_attention_head,
                 checkpoint_activations=args.checkpoint_activations,
                 checkpoint_num_layers=args.checkpoint_num_layers,
-                sandwich_ln=args.sandwich_ln,
+                layernorm_order=args.layernorm_order,
                 hooks=self.hooks,
                 **kwargs
             )

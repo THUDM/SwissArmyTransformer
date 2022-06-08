@@ -129,39 +129,46 @@ def layer_forward_default(self, hidden_states, mask, *args, **kw_args):
     '''
     self = self.transformer.layers[kw_args['layer_id']]
     # Layer norm at the begining of the transformer layer.
-    layernorm_output1 = self.input_layernorm(hidden_states)
+    attention_input = self.input_layernorm(hidden_states)
     # Self attention.
-    attention_output = self.attention(layernorm_output1, mask, **kw_args)
+    attention_output = self.attention(attention_input, mask, **kw_args)
 
     # Third LayerNorm
-    if self.sandwich_ln:
+    if self.layernorm_order == 'sandwich':
         attention_output = self.third_layernorm(attention_output)
-
+    
     # Residual connection.
-    layernorm_input = hidden_states + attention_output
-    # Layer norm post the self attention.
-    layernorm_output = self.post_attention_layernorm(layernorm_input)
+    if self.layernorm_order == 'post':
+        hidden_states = attention_input + attention_output
+    else:
+        hidden_states = hidden_states + attention_output
+
+    
+    mlp_input = self.post_attention_layernorm(hidden_states)
 
     if self.is_decoder:
         encoder_outputs = kw_args['encoder_outputs']
         if encoder_outputs is not None:
             assert 'cross_attention_mask' in kw_args
             # Cross attention
-            attention_output = self.cross_attention(layernorm_output, **kw_args)
+            attention_output = self.cross_attention(mlp_input, **kw_args)
             # Residual connection.
-            layernorm_input = layernorm_input + attention_output
+            hidden_states = hidden_states + attention_output
             # Layer norm post the cross attention
-            layernorm_output = self.post_cross_attention_layernorm(layernorm_input)
+            mlp_input = self.post_cross_attention_layernorm(hidden_states)
 
     # MLP.
-    mlp_output = self.mlp(layernorm_output, **kw_args)
+    mlp_output = self.mlp(mlp_input, **kw_args)
 
     # Fourth LayerNorm
-    if self.sandwich_ln:
+    if self.layernorm_order == 'sandwich':
         mlp_output = self.fourth_layernorm(mlp_output)
 
     # Second residual connection.
-    output = layernorm_input + mlp_output
+    if self.layernorm_order == 'post':
+        output = mlp_input + mlp_output
+    else:
+        output = hidden_states + mlp_output
 
     return output
 

@@ -227,7 +227,7 @@ class BaseTransformerLayer(torch.nn.Module):
             inner_hidden_size=None,
             hidden_size_per_attention_head=None,
             output_layer_init_method=None,
-            sandwich_ln=True,
+            layernorm_order='pre',
             layernorm=LayerNorm,
             is_decoder=False,
             use_bias=True,
@@ -241,6 +241,7 @@ class BaseTransformerLayer(torch.nn.Module):
             output_layer_init_method = init_method
         self.layer_id = layer_id
         self.is_decoder = is_decoder
+        self.layernorm_order = layernorm_order
         self.hooks = hooks
         object.__setattr__(self, 'transformer', transformer_pointer)
         assert transformer_pointer is not None
@@ -265,8 +266,7 @@ class BaseTransformerLayer(torch.nn.Module):
 
         # Layernorm on the input data.
         self.post_attention_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
-        self.sandwich_ln = sandwich_ln
-        if sandwich_ln:
+        if self.layernorm_order == 'sandwich':
             self.third_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
             self.fourth_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
 
@@ -321,7 +321,7 @@ class BaseTransformer(torch.nn.Module):
                  init_method_std=0.02,
                  inner_hidden_size=None,
                  hidden_size_per_attention_head=None,
-                 sandwich_ln=True,
+                 layernorm_order='pre',
                  parallel_output=True,
                  is_decoder=False,
                  use_bias=True,
@@ -339,6 +339,7 @@ class BaseTransformer(torch.nn.Module):
         self.checkpoint_activations = checkpoint_activations
         self.checkpoint_num_layers = checkpoint_num_layers
         self.max_sequence_length = max_sequence_length
+        self.layernorm_order = layernorm_order
         self.hooks = copy.copy(hooks)  # hooks will be updated each forward
         object.__setattr__(self, 'transformer', self) # to give the default hooks the same api as outer hooks
 
@@ -372,7 +373,7 @@ class BaseTransformer(torch.nn.Module):
                 hidden_size_per_attention_head=hidden_size_per_attention_head,
                 output_layer_init_method=self.output_layer_init_method,
                 is_decoder=self.is_decoder,
-                sandwich_ln=sandwich_ln,
+                layernorm_order=layernorm_order,
                 layernorm=layernorm,
                 use_bias=use_bias,
                 activation_func=activation_func,

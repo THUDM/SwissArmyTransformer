@@ -50,9 +50,9 @@ class PosMixin(InterpolatedPositionEmbeddingMixin):
             hidden_states, dic_buffer = self.after_position_forward(hidden_states, **kw_args)
             for k in dic_buffer:
                 kw_args['output_this_layer'][k] = dic_buffer[k]
-        output, *mem = layer(hidden_states, mask, *args, **kw_args)
+        output = layer(hidden_states, mask, *args, **kw_args)
 
-        return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
+        return output
 
     def random_masking(self, x, mask_ratio):
         """

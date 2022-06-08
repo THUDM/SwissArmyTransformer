@@ -44,14 +44,16 @@ def add_model_config_args(parser):
     
     # ---------------  Optional hyper-parameters --------------- 
 
+    group.add_argument('--layernorm-order', type=str, default='pre',
+                       choices=['post', # In the original Transformer.
+                                'pre', # Used by most current frameworks.
+                                'sandwich' # More stable.
+                                ])
     # The inner-hidden-size in MLP, default "None" means 4*hidden-size
     group.add_argument('--inner-hidden-size', type=int, default=None)
     # The hidden-size-per-attention-head in Self and Cross Attention, 
     # default "None" means hidden-size/num-attention-heads.
     group.add_argument('--hidden-size-per-attention-head', type=int, default=None)
-    # TODO: upgrade it to pre-ln/post-ln/sandwich-ln, remember final layernorm.
-    group.add_argument('--sandwich-ln', action='store_true',
-                       help='add sandwich ln in cogview.')
     # TODO: fully test it, support the generation.
     group.add_argument('--model-parallel-size', type=int, default=1,
                        help='size of the model parallel.')
@@ -68,6 +70,9 @@ def add_model_config_args(parser):
     group.add_argument('--make-vocab-size-divisible-by', type=int, default=128,
                        help='Pad the vocab size to be divisible by this value.'
                             'This is added for computational efficieny reasons.')
+    # Deprecated. Please use `--layernorm-order sandwich`.
+    group.add_argument('--sandwich-ln', action='store_true',
+                        help='add sandwich ln in cogview.')
     
     return parser
 
@@ -343,7 +348,9 @@ def get_args(args_list=None):
                 args.lr = optimizer_params_config.get("lr", args.lr)
                 args.weight_decay = optimizer_params_config.get("weight_decay", args.weight_decay)
         args.deepspeed_config = deepspeed_config
-
+    
+    if args.sandwich_ln:
+        args.layernorm_order = 'sandwich'
     # initialize distributed and random seed because it always seems to be necessary.
     initialize_distributed(args)
     set_random_seed(args.seed)
