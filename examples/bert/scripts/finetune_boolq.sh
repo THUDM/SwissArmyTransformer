@@ -48,11 +48,14 @@ gpt_options=" \
        --lr 0.00002 \
        --batch-size 64 \
        --data_root $2 \
-       --md_type $MODEL_TYPE
+       --md_type $MODEL_TYPE \
+       --tokenizer-type bert-base-uncased \
+       --layernorm-order post \
+       --save-args
 "
 
 
-run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} deepspeed --include localhost:4 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} deepspeed --include localhost:0 --hostfile ${HOST_FILE_PATH} finetune_bert_boolq.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

@@ -37,7 +37,6 @@ from .utils import get_sample_writer
 
 from SwissArmyTransformer import mpu
 from SwissArmyTransformer.data_utils import make_loaders
-from SwissArmyTransformer.tokenization import get_tokenizer
 from SwissArmyTransformer.ops import LayerNorm
 from SwissArmyTransformer.arguments import set_random_seed, initialize_distributed
 
@@ -62,14 +61,13 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     #     initialize_distributed(args)
     #     set_random_seed(args.seed)  # Random seeds for reproducability.
 
-    # init tokenizer
-    get_tokenizer(args)  # set args.vocab_size.
     # Data stuff.
     train_data, val_data, test_data = make_loaders(args, hooks['create_dataset_function'])
 
     # Build model
     if isinstance(model_cls, type):
         model = get_model(args, model_cls)
+        
     else:
         model = model_cls
 

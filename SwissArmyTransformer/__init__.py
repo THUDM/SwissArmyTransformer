@@ -1,4 +1,4 @@
 from .arguments import get_args, update_args_with_file
-from .training import load_checkpoint, set_random_seed, initialize_distributed
+from .training.deepspeed_training import training_main
 from .tokenization import get_tokenizer
-
+from .model import AutoModel

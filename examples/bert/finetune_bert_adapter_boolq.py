@@ -4,7 +4,7 @@ import torch
 import argparse
 import numpy as np
 
-from SwissArmyTransformer import mpu, get_args
+from SwissArmyTransformer import mpu, get_args, get_tokenizer
 from SwissArmyTransformer.training.deepspeed_training import training_main
 from SwissArmyTransformer.model.official.bert_model import BertModel
 from SwissArmyTransformer.model.mixins import MLPHeadMixin
@@ -74,7 +74,6 @@ class AdapterModel(BertModel):
     def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-12, **kwargs):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon, **kwargs)
         self.del_mixin('bert-final')
-        self.del_mixin('bert-forward')
         self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
         self.add_mixin('adapter', AdapterMixin(args.num_layers, args.hidden_size, args.adapter_hidden))
         # self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
@@ -143,11 +142,8 @@ def forward_step(data_iterator, model, args, timers):
     acc = ((pred > 0.).long() == labels).sum() / labels.numel()
     return loss, {'acc': acc}
 
-pretrain_path = ''
-from transformers import BertTokenizer
-tokenizer = BertTokenizer.from_pretrained(os.path.join(pretrain_path, 'bert-base-uncased'))
-
 def _encode(text, text_pair):
+    tokenizer = get_tokenizer()
     encoded_input = tokenizer(text, text_pair, max_length=args.sample_length, padding='max_length', truncation='only_first')
     seq_len = len(encoded_input['input_ids'])
     position_ids = torch.arange(seq_len)
@@ -176,10 +172,8 @@ if __name__ == '__main__':
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
-    from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
-    initialize_distributed(args)
-    set_random_seed(args.seed)
+    
     model, args = AdapterModel.from_pretrained(args, args.md_type)
-    # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
-    # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
+    
+    get_tokenizer(args)
     training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function)

@@ -1,23 +1,20 @@
 import os
 import torch
 import argparse
-from SwissArmyTransformer import get_args
-from SwissArmyTransformer.model.official.bert_model import BertModel
-py_parser = argparse.ArgumentParser(add_help=False)
-py_parser.add_argument('--old_checkpoint', action="store_true")
-py_parser = BertModel.add_model_specific_args(py_parser)
-known, args_list = py_parser.parse_known_args()
-args = get_args(args_list)
-args = argparse.Namespace(**vars(args), **vars(known))
-model_type = 'bert-base-uncased'
+from SwissArmyTransformer import get_args, AutoModel
+# from SwissArmyTransformer.model.official.bert_model import BertModel
 
-model, args = BertModel.from_pretrained(args, model_type)
+args = get_args()
+
+model_type = 'bert-base-uncased'
+model, args = AutoModel.from_pretrained(args, model_type)
 
 from transformers import BertTokenizer, BertForMaskedLM
 tokenizer = BertTokenizer.from_pretrained(os.path.join('', model_type))
 bert = BertForMaskedLM.from_pretrained(os.path.join('', model_type), output_hidden_states=True)
 
 model.eval()
+bert.eval()
 with torch.no_grad():
     text = [["This is a piece of text.", "Another piece of text."]]
     encoded_input = tokenizer(text, return_tensors='pt', padding=True)

@@ -8,7 +8,7 @@ then
 fi
 
 NUM_WORKERS=1
-NUM_GPUS_PER_WORKER=4
+NUM_GPUS_PER_WORKER=1
 MP_SIZE=1
 
 script_path=$(realpath $0)
@@ -17,7 +17,7 @@ main_dir=$(dirname $script_dir)
 MODEL_TYPE="bert-base-uncased"
 
 OPTIONS_SAT="SAT_HOME=$1" #"SAT_HOME=/raid/dm/sat_models"
-OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
+OPTIONS_NCCL="NCCL_DEBUG=warning NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
@@ -46,13 +46,16 @@ gpt_options=" \
        --eval-batch-size 8 \
        --zero-stage 1 \
        --lr 0.00002 \
-       --batch-size 4 \
+       --batch-size 64 \
        --data_root $2 \
-       --md_type $MODEL_TYPE
+       --md_type $MODEL_TYPE \
+       --tokenizer-type bert-base-uncased \
+       --layernorm-order post \
+       --save-args
 "
 
 
-run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} deepspeed --include localhost:0,1 --hostfile ${HOST_FILE_PATH} finetune_bert_adapter_boolq.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} deepspeed --include localhost:0 --hostfile ${HOST_FILE_PATH} finetune_bert_adapter_boolq.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

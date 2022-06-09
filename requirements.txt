@@ -4,3 +4,4 @@ lmdb
 sentencepiece
 tensorboardX==1.8
 datasets
+transformers

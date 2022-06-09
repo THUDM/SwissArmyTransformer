@@ -250,15 +250,23 @@ def add_tokenization_args(parser):
 
     group = parser.add_argument_group('Tokenization', 'tokenization configurations')
     group.add_argument('--tokenizer-type', type=str, default='fake', help='type name of tokenizer')
-    group.add_argument('--tokenizer-model-type', type=str,
-                       default=None,
-                       help="Model type to use for sentencepiece tokenization \
-                           (one of ['bpe', 'char', 'unigram', 'word']) or \
-                           bert vocab to use for BertWordPieceTokenizer (one of \
-                           ['bert-large-uncased', 'bert-large-cased', etc.])")
-    group.add_argument('--img-tokenizer-path', type=str, default=None,
-                       help='The checkpoint file path of image tokenizer.')
+    
+    # group.add_argument('--img-tokenizer-path', type=str, default=None,
+    #                    help='The checkpoint file path of image tokenizer.')
     return parser
+
+def _adjust_vocab_size(args):
+    before = args.vocab_size
+    after = before
+    multiple = args.make_vocab_size_divisible_by
+    # you should control args to let it divided by 
+    # mpu.get_model_parallel_world_size()
+    while (after % multiple) != 0:
+        after += 1
+    if args.rank == 0:
+        print('> padded vocab (size: {}) with {} dummy '
+                 'tokens (new size: {})'.format(
+        before, after - before, after))
 
 
 def get_args(args_list=None):
@@ -294,6 +302,8 @@ def get_args(args_list=None):
     if args.rank == 0:
         print('using world size: {} and model-parallel size: {} '.format(
             args.world_size, args.model_parallel_size))
+    if args.vocab_size > 0:
+        _adjust_vocab_size(args)
     
     if args.train_data_weights is not None:
         assert len(args.train_data_weights) == len(args.train_data)
