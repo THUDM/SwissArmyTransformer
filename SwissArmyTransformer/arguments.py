@@ -119,7 +119,8 @@ def add_training_args(parser):
     group.add_argument('--gradient-accumulation-steps', type=int, default=1, 
                        help='run optimizer after every gradient-accumulation-steps backwards.')
 
-    # Log.
+    group.add_argument('--epochs', type=int, default=None,
+                       help='number of train epochs')
     group.add_argument('--log-interval', type=int, default=50,
                        help='report interval')
     group.add_argument('--summary-dir', type=str, default="", help="The directory to store the summary")
@@ -180,7 +181,7 @@ def add_evaluation_args(parser):
     group.add_argument('--eval-iters', type=int, default=100,
                        help='number of iterations to run for evaluation'
                             'validation/test for')
-    group.add_argument('--eval-interval', type=int, default=1000,
+    group.add_argument('--eval-interval', type=int, default=None,
                        help='interval between running evaluation on validation set')
     group.add_argument('--strict-eval', action='store_true',
                        help='won\'t enlarge or randomly map eval-data, and eval full eval-data.')
@@ -279,6 +280,8 @@ def get_args(args_list=None):
 
     if not args.train_data:
         print('WARNING: No training data specified')
+
+    assert (args.train_iters is None)^(args.epochs is None)
 
     args.cuda = torch.cuda.is_available()
 

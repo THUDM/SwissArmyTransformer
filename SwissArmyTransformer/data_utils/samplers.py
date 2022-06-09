@@ -165,4 +165,7 @@ class DistributedBatchSampler(data.sampler.BatchSampler):
         """extracts samples only pertaining to this worker's batch"""
         start = self.rank*self.batch_size//self.world_size
         end = (self.rank+1)*self.batch_size//self.world_size
-        return batch[start:end]
+        if start >= len(batch):
+            return batch[0:1]
+        else:
+            return batch[start:end]
