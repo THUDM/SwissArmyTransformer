@@ -23,8 +23,8 @@ from .samplers import DistributedBatchSampler
 
 from SwissArmyTransformer import mpu
 
-
-def make_data_loader(dataset, batch_size, args):
+# class ExDataLoader(torch.utils.data.DataLoader)
+def make_data_loader(dataset, batch_size, args, split):
     world_size = torch.distributed.get_world_size(
         group=mpu.get_data_parallel_group())
     rank = torch.distributed.get_rank(group=mpu.get_data_parallel_group())
@@ -32,26 +32,44 @@ def make_data_loader(dataset, batch_size, args):
 
     sampler = torch.utils.data.SequentialSampler(dataset)
     # drop_last = distributed
-    drop_last = True # TODO will always drop last to keep the consistency. 
+    drop_last = False # TODO will always drop last to keep the consistency.
     # or, how to avg in eval last batch?
-    
+
     # the GPUs in the same model parallel group receive the same data
     if distributed: # TODO reformat this, but it is not urgent
+        # args.has_last = True if rank * batch_per_worker < last_len else False
         gradient_accumulation_steps = getattr(args, 'gradient_accumulation_steps', 1)
         batch_sampler = DistributedBatchSampler(sampler,
-            batch_size,
-            drop_last,
-            rank,
-            world_size,
-            gradient_accumulation_steps=gradient_accumulation_steps)
+                                                batch_size,
+                                                drop_last,
+                                                rank,
+                                                world_size,
+                                                gradient_accumulation_steps=gradient_accumulation_steps)
     else:
         batch_sampler = torch.utils.data.BatchSampler(sampler,
-                                                        batch_size,
-                                                        drop_last)
+                                                      batch_size,
+                                                      drop_last)
+    last_len = len(dataset) % batch_size
+    batch_per_worker = batch_size // world_size
+    last_shape = [batch_per_worker] * (last_len//batch_per_worker)
+    if last_len != 0 :
+        if last_len % batch_per_worker != 0:
+            last_shape.append(last_len % batch_per_worker)
+        drop_number = world_size - ((last_len-1)//batch_per_worker + 1)
+        for j in range(drop_number):
+            last_shape.append(1)
+    else:
+        drop_number = 0
+    if split=='val':
+        args.val_last_shape = last_shape
+        args.val_drop_number = drop_number
+    elif split=='test':
+        args.test_last_shape = last_shape
+        args.test_drop_number = drop_number
     data_loader = torch.utils.data.DataLoader(dataset,
-                                            batch_sampler=batch_sampler,
-                                            num_workers=args.num_workers,
-                                            pin_memory=True)
+                                              batch_sampler=batch_sampler,
+                                              num_workers=args.num_workers,
+                                              pin_memory=True)
     return data_loader
 
 
@@ -71,15 +89,18 @@ def make_dataset_full(path, split, args, create_dataset_function,
             ds.append(d)
         ds = ConcatDataset(ds, weights=dataset_weights)
         if random_mapping:
-            if is_train_data:
-                # only train-dataset will set this to True, 
-                # so we enlarge it to make sure that the data is sufficient.
+            if args.epochs is not None:
+                ds = RandomDataset(ds, scale=args.epochs)
+            else:
                 world_size = torch.distributed.get_world_size(
                     group=mpu.get_data_parallel_group())
-                scale = max(200, 1 + (args.train_iters * args.batch_size * world_size) // len(ds))
-            else:
-                scale = 200
-            ds = RandomMappingDataset(ds, scale=scale)
+                if is_train_data:
+                # only train-dataset will set this to True,
+                # so we enlarge it to make sure that the data is sufficient.
+                    scale = max(200, 1 + (args.train_iters * args.batch_size * world_size) // len(ds))
+                else:
+                    scale = max(200, 1 + ((1 + args.train_iters // args.eval_interval) * args.eval_iters * args.eval_batch_size * world_size) // len(ds))
+                ds = RandomMappingDataset(ds, scale=scale)
         return ds 
     else:
         # must first split datasets, then reweight/concat, finally random-mapping.
@@ -151,18 +172,18 @@ def make_loaders(args, create_dataset_function):
 
     # wrap datasets with data loader
     if train is not None and args.batch_size > 0:
-        train = make_data_loader(train, batch_size, args)
+        train = make_data_loader(train, batch_size, args, split='train')
         args.do_train = True
     else:
         args.do_train = False
     eval_batch_size = eval_batch_size if eval_batch_size != 0 else batch_size
     if valid is not None:
-        valid = make_data_loader(valid, eval_batch_size, args)
+        valid = make_data_loader(valid, eval_batch_size, args, split='val')
         args.do_valid = True
     else:
         args.do_valid = False
     if test is not None:
-        test = make_data_loader(test, eval_batch_size, args)
+        test = make_data_loader(test, eval_batch_size, args, split='test')
         args.do_test = True
     else:
         args.do_test = False
@@ -296,6 +317,23 @@ class RandomMappingDataset(data.Dataset):
         rng = np.random.RandomState(seed=[rng.randint(0, 2**32-1) for _ in range(16)])
         index = rng.randint(len(self.wrapped_data))
         return self.wrapped_data[index]
+
+class RandomDataset(data.Dataset):
+    '''
+    Dataset wrapper to randomly mapping indices to original order.
+    The indices are pre-processed.
+    Will also enlarge the length
+    '''
+    def __init__(self, ds, scale=200, **kwargs):
+        self.wrapped_data = ds
+        self.scale = scale
+        self.indices = np.random.permutation(np.array(range(len(ds))))
+
+    def __len__(self):
+        return len(self.wrapped_data) * self.scale
+
+    def __getitem__(self, index):
+        return self.wrapped_data[int(self.indices[index % len(self.wrapped_data)])]
 
 class BlockedRandomSplitDataset(data.Dataset):
     '''
