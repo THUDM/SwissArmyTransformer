@@ -176,7 +176,7 @@ class CaiT(EncoderDecoderModel):
         encoder = CaiTEncoder(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon)
         dec_args = argparse.Namespace(**vars(args))
         # dec_args.enc_hidden_size = dec_args.hidden_size  # used for cross attn
-        override_attrs = ['num_layers', 'hidden_size', 'num_attention_heads',
+        override_attrs = ['num_layers', 'hidden_size', 'num_attention_heads', 'layernorm_order'
                             'max_sequence_length', 'inner_hidden_size', 'hidden_size_per_attention_head']
         for name in override_attrs:
             dec_attr = getattr(dec_args, 'dec_' + name, None)

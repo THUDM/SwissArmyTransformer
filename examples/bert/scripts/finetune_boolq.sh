@@ -49,7 +49,6 @@ gpt_options=" \
        --batch-size 64 \
        --data_root $2 \
        --md_type $MODEL_TYPE \
-       --tokenizer-type bert-base-uncased \
        --layernorm-order post \
        --save-args
 "

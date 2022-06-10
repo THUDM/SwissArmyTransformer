@@ -99,7 +99,7 @@ class CLIP(nn.Module):
         super().__init__()
         self.image_encoder = ImageEncoder(args, layernorm_epsilon=layernorm_epsilon)
         text_args = argparse.Namespace(**vars(args))
-        override_attrs = ['vocab_size', 'num_layers', 'hidden_size', 'num_attention_heads',
+        override_attrs = ['vocab_size', 'num_layers', 'hidden_size', 'num_attention_heads', 'layernorm_order'
                             'max_sequence_length', 'inner_hidden_size', 'hidden_size_per_attention_head']
         for name in override_attrs:
             text_attr = getattr(text_args, 'text_' + name, None)
@@ -135,6 +135,7 @@ class CLIP(nn.Module):
     @classmethod
     def add_model_specific_args(cls, parser):
         group = parser.add_argument_group('SiameseModel', 'CLIP')
+        group.add_argument("--text-layernorm-order", type=str, default=None)
         group.add_argument("--text-num-layers", type=int, default=None)
         group.add_argument("--text-hidden-size", type=int, default=None)
         group.add_argument("--text-num-attention-heads", type=int, default=None)

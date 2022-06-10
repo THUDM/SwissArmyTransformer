@@ -41,7 +41,7 @@ class EncoderDecoderModel(torch.nn.Module):
         else:
             dec_args = argparse.Namespace(**vars(args))
             dec_args.enc_hidden_size = dec_args.hidden_size  # used for cross attn
-            override_attrs = ['num_layers', 'hidden_size', 'num_attention_heads',
+            override_attrs = ['num_layers', 'hidden_size', 'num_attention_heads', 'layernorm_order'
                               'max_sequence_length', 'inner_hidden_size', 'hidden_size_per_attention_head']
             for name in override_attrs:
                 dec_attr = getattr(dec_args, 'dec_' + name, None)
@@ -95,6 +95,7 @@ class EncoderDecoderModel(torch.nn.Module):
         group.add_argument("--dec-max-sequence-length", type=int, default=None)
         group.add_argument("--dec-inner-hidden-size", type=int, default=None)
         group.add_argument("--dec-hidden-size-per-attention-head", type=int, default=None)
+        group.add_argument("--dec-layernorm-order", type=str, default=None)
         return parser
 
     @classmethod
