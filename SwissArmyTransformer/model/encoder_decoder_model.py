@@ -99,8 +99,8 @@ class EncoderDecoderModel(torch.nn.Module):
         return parser
 
     @classmethod
-    def from_pretrained(cls, args, name, *, path=None, url=None):
-        model_path = auto_create(name, path=path, url=url)
+    def from_pretrained(cls, args, name, *, home_path=None, url=None):
+        model_path = auto_create(name, path=home_path, url=url)
         args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
         model = get_model(args, cls)
         load_checkpoint(model, args, load_path=model_path)

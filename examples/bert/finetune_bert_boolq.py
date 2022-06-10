@@ -104,6 +104,9 @@ if __name__ == '__main__':
     args = argparse.Namespace(**vars(args), **vars(known))
     
     model, args = ClassificationModel.from_pretrained(args, args.md_type)
+    
+    # Example: from_pretrained() for a recently trained model.
+    # model, args = ClassificationModel.from_pretrained(args, 'finetune-bert-base-uncased-boolq06-10-16-14', home_path='/raid/dm/sat_models/checkpoints')
 
     get_tokenizer(args)
     training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function)

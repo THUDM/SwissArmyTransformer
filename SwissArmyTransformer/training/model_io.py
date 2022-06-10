@@ -13,10 +13,11 @@ import math
 import random
 import torch
 import numpy as np
+import json
+import argparse
 
 from SwissArmyTransformer import mpu
 from .utils import print_rank_0
-
 
 def get_checkpoint_name(checkpoints_path, iteration, release=False, zero=False):
     if release:
@@ -32,6 +33,20 @@ def get_checkpoint_name(checkpoints_path, iteration, release=False, zero=False):
 def get_checkpoint_tracker_filename(checkpoints_path, old_checkpoint=False):
     return os.path.join(checkpoints_path, 'latest')
 
+def extract_model_specific_args_from_model(args, model):
+    parser = argparse.ArgumentParser()
+    
+    if hasattr(model, 'module'):
+        model = model.module
+    if isinstance(model, torch.nn.Module):
+        for md in model.modules(): # search 
+            if hasattr(md, 'add_model_specific_args'):
+                md.add_model_specific_args(parser)
+    ret = {}
+    for k in vars(parser.parse_args([])).keys():
+        if hasattr(args, k):
+            ret[k] = getattr(args, k)
+    return ret
 
 def save_checkpoint(iteration, model, optimizer,
                     lr_scheduler, args):
@@ -49,6 +64,26 @@ def save_checkpoint(iteration, model, optimizer,
         tracker_filename = get_checkpoint_tracker_filename(args.save)
         with open(tracker_filename, 'w') as f:
             f.write(str(iteration))
+        # save model_config.json for from_pretrained().
+        with open(os.path.join(args.save, 'model_config.json'), 'w') as f:
+            module = model.module if hasattr(model, 'module') else model
+            # model_class
+            to_dump = {'model_class': type(module).__name__} 
+            # tokenizer_type
+            if args.tokenizer_type != 'fake':
+                to_dump['tokenizer_type'] = args.tokenizer_type 
+            # architecture related args
+            arch_args_list = ['num_layers', 'hidden_size', 'num_attention_heads', 'vocab_size',
+             'layernorm_order', 'inner_hidden_size', 'hidden_size_per_attention_head', 'model_parallel_size']
+            for name in arch_args_list: 
+                if hasattr(args, name) and getattr(args, name) is not None:
+                    to_dump[name] = getattr(args, name)
+            # model specific args
+            model_specific_args = extract_model_specific_args_from_model(args, module)
+            to_dump.update(model_specific_args)
+
+            json.dump(to_dump, f, indent=4)
+
     # Wait so everyone is done (not necessary)
     torch.distributed.barrier()
 

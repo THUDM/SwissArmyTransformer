@@ -108,6 +108,8 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
             print('Finetuning Model...')
         print_args(args)
         summary_writer = get_sample_writer(base=args.summary_dir, name=args.experiment_name, iteration=args.iteration)
+        if hasattr(summary_writer, 'add_hparams'): # old version does not have this api
+            summary_writer.add_hparams(vars(args), {'_dump':0}, name=args.experiment_name, global_step=0)
 
     # Resume data loader if necessary.
     if args.resume_dataloader:
@@ -139,9 +141,8 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     # final testing
     if args.do_test and test_data is not None:
         prefix = 'the end of training for test data'
-        evaluate_and_print_results(prefix, iter(test_data),
+        test_loss = evaluate_and_print_results(prefix, iter(test_data),
             model, len(test_data) if args.strict_eval else args.eval_iters, args, timers, True, split='test', hooks=hooks)
-
 
 def get_model(args, model_cls):
     """Build the model."""

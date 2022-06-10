@@ -1,7 +1,6 @@
 torch
 deepspeed
-lmdb
 sentencepiece
-tensorboardX==1.8
+tensorboardX
 datasets
 transformers
