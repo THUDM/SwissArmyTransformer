@@ -17,7 +17,7 @@ def parse_huggingface_path(path):
     split = names[2] if len(names) >= 3 else 'train'
     return first_name, second_name, split
 
-def load_hf_dataset(path, process_fn, columns=None, cache_dir='~/.cache/huggingface/datasets', offline=False, transformer_name = None):
+def load_hf_dataset(path, process_fn, columns=None, cache_dir='~/.cache/huggingface/datasets', offline=False, transformer_name = None, rebuild=False):
     dataset_name, sub_name, split = parse_huggingface_path(path)
     datasets.config.HF_DATASETS_OFFLINE = int(offline)
     if transformer_name:
@@ -25,12 +25,13 @@ def load_hf_dataset(path, process_fn, columns=None, cache_dir='~/.cache/huggingf
     else:
         dataset_path = None
 
-    if dataset_path and os.path.exists(dataset_path):
+    if dataset_path and os.path.exists(dataset_path) and not rebuild:
         dataset = datasets.load_from_disk(dataset_path)
     else:
         dataset = load_dataset(dataset_name, sub_name, cache_dir=cache_dir, split=split,
         download_config=datasets.utils.DownloadConfig(max_retries=20)) # TODO
         # dataset = dataset.filter(lambda example, indice: indice % 100 == 0, with_indices=True)
+        print(f'> Preprocessing the {dataset_name} by process_fn... Next time will return cached files.\n> Pass "rebuild=True" to load_hf_dataset if change process_fn. Change "transformer_name" for different tokenizers or models.')
         dataset = dataset.map(process_fn, batched=False, load_from_cache_file=True)
         if dataset_path:
             dataset.save_to_disk(dataset_path)

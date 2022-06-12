@@ -74,12 +74,11 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     # Build model
     if isinstance(model_cls, type):
         model = get_model(args, model_cls)
-        
     else:
         model = model_cls
 
     # Config model IO
-    if args.load is not None and isinstance(model_cls, type): # If you pass a model by yourself, you need to load it by youself as well.
+    if args.load is not None:
         args.iteration = load_checkpoint(model, args)
         # if we don't load optim_states, filelock is no more needed.
         # with FileLock("/root/checkpoint_lock", timeout=-1):
@@ -360,7 +359,11 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
     while True:
         # Forward model for one step.
         timers('forward').start()
-        lm_loss, metrics = forward_step(data_iterator, model, args, timers, **kwargs)
+        forward_ret = forward_step(data_iterator, model, args, timers, **kwargs)
+        if isinstance(forward_ret, tuple):
+            lm_loss, metrics = forward_ret
+        else:
+            lm_loss, metrics = forward_ret, {}
         timers('forward').stop()
 
         # Check nan or inf in forward, preventing it from interfering loss scaler,

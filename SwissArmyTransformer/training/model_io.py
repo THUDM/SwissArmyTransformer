@@ -206,6 +206,8 @@ def load_checkpoint(model, args, load_path=None):
                          'attempting to load the random '
                          'state.'.format(checkpoint_name))
             exit()
+    elif args.mode == 'inference':
+        module.eval()
 
     if mpu.get_data_parallel_rank() == 0:
         print('  successfully loaded {}'.format(checkpoint_name))
