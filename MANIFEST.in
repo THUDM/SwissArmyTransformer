@@ -1,4 +1,4 @@
 include requirements.txt
 global-exclude __pycache__/*
 graft SwissArmyTransformer/tokenization/embed_assets
-recursive-include deepspeed_zero*.json
+global-include deepspeed_zero*.json
