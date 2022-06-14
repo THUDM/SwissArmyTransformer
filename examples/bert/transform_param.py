@@ -1,31 +1,54 @@
 import os
 pretrain_path = '/data/qingsong/pretrain'
+model_type = 'bert-large-uncased'
 
 from transformers import BertTokenizer, BertForMaskedLM
-tokenizer = BertTokenizer.from_pretrained(os.path.join(pretrain_path, 'bert-base-uncased'))
-bert = BertForMaskedLM.from_pretrained(os.path.join(pretrain_path, 'bert-base-uncased'), output_hidden_states=True)
+tokenizer = BertTokenizer.from_pretrained(os.path.join(pretrain_path, model_type))
+bert = BertForMaskedLM.from_pretrained(os.path.join(pretrain_path, model_type), output_hidden_states=True)
 lm_head = bert.cls
 bert = bert.bert
 
 import argparse
-args = argparse.Namespace(
-    num_layers=12,
-    vocab_size=30522,
-    hidden_size=768,
-    num_attention_heads=12,
-    max_sequence_length=512,
-    num_types=2,
-    hidden_dropout=0.1,
-    attention_dropout=0.1,
-    inner_hidden_size=None,
-    hidden_size_per_attention_head=None,
-    checkpoint_activations=True,
-    checkpoint_num_layers=1,
-    sandwich_ln=False,
-    model_parallel_size=1,
-    world_size=1,
-    rank=0
-    )
+if model_type == 'bert-base-uncased':
+    args = argparse.Namespace(
+        num_layers=12,
+        vocab_size=30522,
+        hidden_size=768,
+        num_attention_heads=12,
+        max_sequence_length=512,
+        num_types=2,
+        hidden_dropout=0.1,
+        attention_dropout=0.1,
+        inner_hidden_size=None,
+        hidden_size_per_attention_head=None,
+        checkpoint_activations=True,
+        checkpoint_num_layers=1,
+        layernorm_order='post',
+        model_parallel_size=1,
+        world_size=1,
+        rank=0
+        )
+elif model_type == 'bert-large-uncased':
+    args = argparse.Namespace(
+        num_layers=24,
+        vocab_size=30522,
+        hidden_size=1024,
+        num_attention_heads=16,
+        max_sequence_length=512,
+        num_types=2,
+        hidden_dropout=0.1,
+        attention_dropout=0.1,
+        inner_hidden_size=None,
+        hidden_size_per_attention_head=None,
+        checkpoint_activations=True,
+        checkpoint_num_layers=1,
+        layernorm_order='post',
+        model_parallel_size=1,
+        world_size=1,
+        rank=0
+        )
+else:
+    raise Exception("model type not recognized!")
 
 import torch
 init_method = 'tcp://'
