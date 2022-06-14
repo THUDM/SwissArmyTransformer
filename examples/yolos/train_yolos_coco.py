@@ -11,7 +11,7 @@ import torchvision
 import torchvision.transforms as transforms
 import torch.nn.functional as F
 from SwissArmyTransformer import mpu, get_args
-from yolos_model import YOLOS
+from SwissArmyTransformer.model.official.yolos_model import YOLOS
 from SwissArmyTransformer.training.deepspeed_training import training_main
 from util.misc import nested_tensor_from_tensor_list
 from torchvision.transforms import ToPILImage
@@ -147,9 +147,14 @@ if __name__ == '__main__':
     py_parser.add_argument('--giou_loss_coef', default=2, type=float)
     py_parser.add_argument('--eos_coef', default=0.1, type=float,
                         help="Relative classification weight of the no-object class")
+    py_parser.add_argument('--md_type', type=str)
 
     py_parser = YOLOS.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
-    training_main(args, model_cls=YOLOS, forward_step_function=forward_step, create_dataset_function=create_dataset_function, init_function=init_function)
+    # from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
+    # initialize_distributed(args)
+    # set_random_seed(args.seed)
+    model, args = YOLOS.from_pretrained(args, args.md_type)
+    training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function, init_function=init_function)

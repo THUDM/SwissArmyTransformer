@@ -1,13 +1,17 @@
+import os
 import math
 from re import L
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel, non_conflict
-from SwissArmyTransformer.model.vit_model import ViTModel, ImagePatchEmbeddingMixin
+from SwissArmyTransformer.model.official.vit_model import ViTModel, ImagePatchEmbeddingMixin
 from SwissArmyTransformer.model.mixins import BaseMixin
 from SwissArmyTransformer import mpu
-from SwissArmyTransformer.mpu import LayerNorm
+from SwissArmyTransformer.model.transformer import LayerNorm
+from SwissArmyTransformer import update_args_with_file
+from SwissArmyTransformer.training.deepspeed_training import load_checkpoint, get_model
+from SwissArmyTransformer.resources import auto_create
 
 """
 CLIP model follows Siamese architecture.
@@ -37,9 +41,8 @@ class ImageMixin(BaseMixin):
         layer = self.transformer.layers[kw_args['layer_id']]
         if kw_args['layer_id'] == 0:
             hidden_states = self.pre_layernorm(hidden_states)
-        output, *mem = layer(hidden_states, mask, *args, **kw_args)
-
-        return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
+        output = layer(hidden_states, mask, *args, **kw_args)
+        return output
 
     def final_forward(self, logits, **kw_args):
         return self.visual_projection(logits[:, 0])
@@ -77,8 +80,8 @@ class TextMixin(BaseMixin):
         # causal mask
         mask = mask - mask.triu(1)
         layer = self.transformer.layers[kw_args['layer_id']]
-        output, *mem = layer(hidden_states, mask, *args, **kw_args)
-        return output, *mem
+        output = layer(hidden_states, mask, *args, **kw_args)
+        return output
 
 class TextEncoder(BaseModel):
     def __init__(self, args, layernorm_epsilon=1e-5, activation_func=QuickGELUActivation()):
@@ -96,7 +99,7 @@ class CLIP(nn.Module):
         super().__init__()
         self.image_encoder = ImageEncoder(args, layernorm_epsilon=layernorm_epsilon)
         text_args = argparse.Namespace(**vars(args))
-        override_attrs = ['vocab_size', 'num_layers', 'hidden_size', 'num_attention_heads',
+        override_attrs = ['vocab_size', 'num_layers', 'hidden_size', 'num_attention_heads', 'layernorm_order'
                             'max_sequence_length', 'inner_hidden_size', 'hidden_size_per_attention_head']
         for name in override_attrs:
             text_attr = getattr(text_args, 'text_' + name, None)
@@ -132,6 +135,7 @@ class CLIP(nn.Module):
     @classmethod
     def add_model_specific_args(cls, parser):
         group = parser.add_argument_group('SiameseModel', 'CLIP')
+        group.add_argument("--text-layernorm-order", type=str, default=None)
         group.add_argument("--text-num-layers", type=int, default=None)
         group.add_argument("--text-hidden-size", type=int, default=None)
         group.add_argument("--text-num-attention-heads", type=int, default=None)
@@ -140,3 +144,11 @@ class CLIP(nn.Module):
         group.add_argument("--text-hidden-size-per-attention-head", type=int, default=None)
         group.add_argument("--logit-scale-init-value", type=float, default=None)
         return parser
+
+    @classmethod
+    def from_pretrained(cls, args, name, *, path=None, url=None):
+        model_path = auto_create(name, path=path, url=url)
+        args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
+        model = get_model(args, cls)
+        load_checkpoint(model, args, load_path=model_path)
+        return model, args

@@ -14,14 +14,19 @@ import math
 import random
 import torch
 
-from SwissArmyTransformer.mpu import BaseTransformer
-from SwissArmyTransformer.mpu.transformer import standard_attention
+from SwissArmyTransformer.model.transformer import BaseTransformer, standard_attention
+from SwissArmyTransformer import update_args_with_file
+from SwissArmyTransformer.training.deepspeed_training import load_checkpoint, get_model
+
+from SwissArmyTransformer.transformer_defaults import HOOKS_DEFAULT
+from SwissArmyTransformer.resources import auto_create
 
 def non_conflict(func):
     func.non_conflict = True
     return func
 
 class BaseMixin(torch.nn.Module):
+    non_conflict = non_conflict
     def __init__(self):
         super(BaseMixin, self).__init__()
         # define new params
@@ -68,7 +73,7 @@ class BaseModel(torch.nn.Module):
                 hidden_size_per_attention_head=args.hidden_size_per_attention_head,
                 checkpoint_activations=args.checkpoint_activations,
                 checkpoint_num_layers=args.checkpoint_num_layers,
-                sandwich_ln=args.sandwich_ln,
+                layernorm_order=args.layernorm_order,
                 hooks=self.hooks,
                 **kwargs
             )
@@ -106,33 +111,69 @@ class BaseModel(torch.nn.Module):
         return self.transformer(*args, **kwargs)
 
     def collect_hooks_(self):
-        names = ['word_embedding_forward', 'position_embedding_forward',
-                 'attention_forward', 'cross_attention_forward', 'mlp_forward', 'final_forward', 'layer_forward',
-                 'attention_fn'
-                 ]
+        names = list(HOOKS_DEFAULT.keys())
         hooks = {}
         hook_origins = {}
         for name in names:
+            if hasattr(self, name):
+                hooks[name] = getattr(self, name)
+                hook_origins[name] = 'model'
+
             for mixin_name, m in self.mixins.items():
                 if hasattr(m, name):
-                    if name in hooks: # if this hook name is already registered
-                        if hasattr(getattr(m, name), 'non_conflict'):
-                            hooks[name] = partial(getattr(m, name), old_impl=hooks[name])
-                            hook_origins[name] = mixin_name + ' -> ' + hook_origins[name]
-                        else: # conflict
-                            raise ValueError(f'Hook {name} conflicts at {mixin_name} and {hook_origins[name]}.')
+                    if hasattr(getattr(m, name), 'non_conflict'):
+                        if name in hooks:
+                            old_impl = hooks[name]
+                        elif name == 'attention_fn': # the only hook without self
+                            old_impl = HOOKS_DEFAULT[name]
+                        else:
+                            old_impl = partial(HOOKS_DEFAULT[name], self)
+                        old_origin = hook_origins.get(name, 'default')
+                        hooks[name] = partial(getattr(m, name), old_impl=old_impl)
+                        hook_origins[name] = mixin_name + ' -> ' + old_origin
+                    elif name in hooks: # if this hook name is already registered
+                        raise ValueError(f'Hook {name} conflicts at {mixin_name} and {hook_origins[name]}.')
                     else: # new hook
                         hooks[name] = getattr(m, name)
                         hook_origins[name] = mixin_name
 
-            if hasattr(self, name):
-                # if name in hooks: # defined in mixins, can override
-                #     print(f'Override {name} in {hook_origins[name]}...')
-                hooks[name] = getattr(self, name)
-                hook_origins[name] = 'model'
         self.hooks = hooks
         self.hook_origins = hook_origins
         return hooks
 
     def disable_untrainable_params(self):
         pass
+
+    @classmethod
+    def from_pretrained(cls, args, name, *, home_path=None, url=None):
+        model_path = auto_create(name, path=home_path, url=url)
+        args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
+        model = get_model(args, cls)
+        load_checkpoint(model, args, load_path=model_path)
+        return model, args
+
+class AutoModel():
+    @classmethod
+    def from_pretrained(cls, args, name, *, home_path=None, url=None):
+        '''Automatically find the class and instantiate it. Auto-download.
+            Args:
+                args: NameSpace. will add the loaded args into it.
+                name: The identifier of the pretrained model.
+                path: the parent folder of existing `name` model. Default: SAT_HOME.
+                url: manually specified url for the `name` model.
+        '''
+        model_path = auto_create(name, path=home_path, url=url)
+        args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
+        if not hasattr(args, 'model_class'):
+            raise ValueError('model_config.json must have key "model_class" for AutoModel.from_pretrained.')
+        import SwissArmyTransformer.model
+        if not hasattr(SwissArmyTransformer.model, args.model_class): 
+            # TODO dynamic loading
+            raise ValueError(f'model_class {args.model_class} not found.')
+        else:
+            model_cls = getattr(SwissArmyTransformer.model, args.model_class)
+        model = get_model(args, model_cls)
+        load_checkpoint(model, args, load_path=model_path)
+        return model, args
+
+

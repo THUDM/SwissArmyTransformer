@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel, non_conflict
-from SwissArmyTransformer.model.vit_model import ViTModel, ClsMixin
+from SwissArmyTransformer.model.official.vit_model import ViTModel, ClsMixin
 from SwissArmyTransformer.model.mixins import BaseMixin
 from SwissArmyTransformer import mpu
 
@@ -63,10 +63,6 @@ class EncForward(BaseMixin):
         # Self attention.
         attention_output = layer.attention(layernorm_output1, mask, **kw_args)
 
-        # Third LayerNorm
-        if layer.sandwich_ln:
-            attention_output = layer.third_layernorm(attention_output)
-
         # Residual connection.
         layernorm_input = hidden_states + self.gamma_1[kw_args['layer_id']] * attention_output
         # Layer norm post the self attention.
@@ -75,16 +71,12 @@ class EncForward(BaseMixin):
         # MLP.
         mlp_output = layer.mlp(layernorm_output, **kw_args)
 
-        # Fourth LayerNorm
-        if layer.sandwich_ln:
-            mlp_output = layer.fourth_layernorm(mlp_output)
-
         # Second residual connection.
         output = layernorm_input + self.gamma_2[kw_args['layer_id']] * mlp_output
 
-        return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
+        return output
 
-from SwissArmyTransformer.mpu.transformer import standard_attention
+from SwissArmyTransformer.model.transformer import standard_attention
 from SwissArmyTransformer.mpu.utils import split_tensor_along_last_dim
 
 class DecForward(BaseMixin):
@@ -110,9 +102,6 @@ class DecForward(BaseMixin):
         assert 'cross_attention_mask' in kw_args
         # Cross attention
         attention_output = layer.cross_attention(layernorm_output1, **kw_args)
-        # Third LayerNorm
-        if layer.sandwich_ln:
-            attention_output = layer.third_layernorm(attention_output)
         # Residual connection.
         layernorm_input = hidden_states + self.gamma_1[kw_args['layer_id']] * attention_output
         # Layer norm post the cross attention
@@ -121,14 +110,10 @@ class DecForward(BaseMixin):
         # MLP.
         mlp_output = layer.mlp(layernorm_output, **kw_args)
 
-        # Fourth LayerNorm
-        if layer.sandwich_ln:
-            mlp_output = layer.fourth_layernorm(mlp_output)
-
         # Second residual connection.
         output = layernorm_input + self.gamma_2[kw_args['layer_id']] * mlp_output
 
-        return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
+        return output
 
     def cross_attention_forward(self, hidden_states, cross_attention_mask, encoder_outputs, **kw_args):
         # adapted from https://github.com/THUDM/SwissArmyTransformer/blob/d8c9d1e0a9bb2af1e1d26a68b35f16d84aafcc2f/SwissArmyTransformer/mpu/transformer.py#L216
@@ -191,7 +176,7 @@ class CaiT(EncoderDecoderModel):
         encoder = CaiTEncoder(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon)
         dec_args = argparse.Namespace(**vars(args))
         # dec_args.enc_hidden_size = dec_args.hidden_size  # used for cross attn
-        override_attrs = ['num_layers', 'hidden_size', 'num_attention_heads',
+        override_attrs = ['num_layers', 'hidden_size', 'num_attention_heads', 'layernorm_order'
                             'max_sequence_length', 'inner_hidden_size', 'hidden_size_per_attention_head']
         for name in override_attrs:
             dec_attr = getattr(dec_args, 'dec_' + name, None)

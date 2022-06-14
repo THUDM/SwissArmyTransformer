@@ -15,13 +15,13 @@ import torch
 import torch.nn.functional as F
 
 
-from .base_model import BaseModel, BaseMixin
+from SwissArmyTransformer.model.base_model import BaseModel, BaseMixin
 
-from SwissArmyTransformer.mpu.transformer import split_tensor_along_last_dim
+from SwissArmyTransformer.model.transformer import split_tensor_along_last_dim
 from SwissArmyTransformer.mpu.utils import sqrt
 from deepspeed.runtime.activation_checkpointing.checkpointing import get_cuda_rng_tracker
 from SwissArmyTransformer.mpu import ColumnParallelLinear, RowParallelLinear
-from SwissArmyTransformer.mpu.transformer import unscaled_init_method
+from SwissArmyTransformer.model.transformer import unscaled_init_method
 
 class PositionEmbeddingMixin(BaseMixin):
     def __init__(self, additional_sequence_length, hidden_size,
@@ -156,7 +156,7 @@ def sparse_attention_2d_light(q0, k0, v0, q1, k1, v1, attention_mask, n_head, te
     n_head: int
     attention_mask: [batch_size, 1088, 1088]
     '''
-    from SwissArmyTransformer.mpu.local_attention_function import f_similar, f_weighting
+    from SwissArmyTransformer.ops.local_attention_function import f_similar, f_weighting
 
     b, s0, h0 = q0.shape
     b, s1, h1 = q1.shape

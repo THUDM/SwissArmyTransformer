@@ -20,64 +20,26 @@ import math
 import copy
 import torch
 import torch.nn.functional as F
-from apex.normalization.fused_layer_norm import FusedLayerNorm
 
 from SwissArmyTransformer import mpu
-from .initialize import get_model_parallel_world_size
-from .layers import ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding
-from .mappings import gather_from_model_parallel_region, copy_to_model_parallel_region
+from SwissArmyTransformer.mpu.initialize import get_model_parallel_world_size
+from SwissArmyTransformer.mpu.layers import ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding
+from SwissArmyTransformer.mpu.mappings import gather_from_model_parallel_region, copy_to_model_parallel_region
 
 from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint
 
-from .utils import divide, sqrt, scaled_init_method, unscaled_init_method, gelu
-from .utils import split_tensor_along_last_dim
+from SwissArmyTransformer.mpu.utils import divide, sqrt, scaled_init_method, unscaled_init_method, gelu
+from SwissArmyTransformer.mpu.utils import split_tensor_along_last_dim
+from SwissArmyTransformer.ops import LayerNorm
 
-
-class LayerNorm(FusedLayerNorm):
-    def __init__(self, *args, pb_relax=False, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.pb_relax = pb_relax
-
-    def forward(self, x):
-        if not self.pb_relax:
-            return super().forward(x)
-        return super().forward(x / (x.abs().max().detach() / 8))
-
-
-def standard_attention(query_layer, key_layer, value_layer, attention_mask,
-                       attention_dropout=None, log_attention_weights=None, scaling_attention_score=True, **kwargs):
-    # We disable the PB-relax-Attention and only changes the order of computation, because it is enough for most of training. 
-    # The implementation in the paper can be done very easily, if you really need it to train very deep transformers. 
-
-    if scaling_attention_score:
-        query_layer = query_layer / math.sqrt(query_layer.shape[-1])
-    attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-    if log_attention_weights is not None:
-        attention_scores += log_attention_weights
-
-    if not (attention_mask.shape[-2] == 1 and (attention_mask > 0).all()):
-        # if auto-regressive, skip
-        attention_scores = torch.mul(attention_scores, attention_mask) - \
-                           10000.0 * (1.0 - attention_mask)
-
-    attention_probs = F.softmax(attention_scores, dim=-1)
-
-    if attention_dropout is not None:
-        if mpu.get_cuda_rng_tracker is not None:
-            with mpu.get_cuda_rng_tracker().fork():
-                attention_probs = attention_dropout(attention_probs)
-        else:
-            attention_probs = attention_dropout(attention_probs)
-
-    context_layer = torch.matmul(attention_probs, value_layer)
-    return context_layer
+from SwissArmyTransformer.transformer_defaults import HOOKS_DEFAULT, standard_attention
 
 
 class SelfAttention(torch.nn.Module):
     def __init__(self, hidden_size, num_attention_heads,
                  attention_dropout_prob, output_dropout_prob,
                  init_method, layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True,
-                 hooks={}):
+                 hooks={}, transformer_pointer=None):
         super(SelfAttention, self).__init__()
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
@@ -118,6 +80,9 @@ class SelfAttention(torch.nn.Module):
             name="dense"
         )
         self.output_dropout = torch.nn.Dropout(output_dropout_prob)
+        
+        object.__setattr__(self, 'transformer', transformer_pointer)
+        assert transformer_pointer is not None
 
     def _transpose_for_scores(self, tensor):
         """Transpose a 3D tensor [b, s, np*hn] into a 4D tensor with
@@ -133,39 +98,14 @@ class SelfAttention(torch.nn.Module):
         if 'attention_forward' in self.hooks:
             return self.hooks['attention_forward'](hidden_states, mask, **kw_args)
         else:
-            attention_fn = standard_attention
-            if 'attention_fn' in self.hooks:
-                attention_fn = self.hooks['attention_fn']
-
-            mixed_raw_layer = self.query_key_value(hidden_states)
-            (mixed_query_layer,
-             mixed_key_layer,
-             mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, 3)
-
-            dropout_fn = self.attention_dropout if self.training else None
-
-            query_layer = self._transpose_for_scores(mixed_query_layer)
-            key_layer = self._transpose_for_scores(mixed_key_layer)
-            value_layer = self._transpose_for_scores(mixed_value_layer)
-
-            context_layer = attention_fn(query_layer, key_layer, value_layer, mask, dropout_fn, **kw_args)
-
-            context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-            new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
-            context_layer = context_layer.view(*new_context_layer_shape)
-            output = self.dense(context_layer)
-
-            if self.training:
-                output = self.output_dropout(output)
-
-            return output
+            return HOOKS_DEFAULT['attention_forward'](self, hidden_states, mask, **kw_args)
 
 
 class CrossAttention(torch.nn.Module):
     """Parallel cross-attention layer for Transformer"""
 
     def __init__(self, hidden_size, num_attention_heads, attention_dropout_prob, output_dropout_prob, init_method,
-                 layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, hooks={}):
+                 layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, hooks={},transformer_pointer=None):
         super().__init__()
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
@@ -203,6 +143,9 @@ class CrossAttention(torch.nn.Module):
             init_method=output_layer_init_method, bias=bias, module=self, name="dense")
         self.output_dropout = torch.nn.Dropout(output_dropout_prob)
 
+        object.__setattr__(self, 'transformer', transformer_pointer)
+        assert transformer_pointer is not None
+
     def _transpose_for_scores(self, tensor):
         """Transpose a 3D tensor [b, s, np*hn] into a 4D tensor with
         size [b, np, s, hn].
@@ -218,38 +161,12 @@ class CrossAttention(torch.nn.Module):
         if 'cross_attention_forward' in self.hooks:
             return self.hooks['cross_attention_forward'](hidden_states, cross_attention_mask, encoder_outputs, **kw_args)
         else:
-            attention_fn = standard_attention
-            if 'attention_fn' in self.hooks:
-                attention_fn = self.hooks['attention_fn']
-
-            mixed_query_layer = self.query(hidden_states)
-            mixed_x_layer = self.key_value(encoder_outputs)
-            (mixed_key_layer, mixed_value_layer) = split_tensor_along_last_dim(mixed_x_layer, 2)
-
-            dropout_fn = self.attention_dropout if self.training else None
-            # Reshape and transpose [b, np, s, hn]
-            query_layer = self._transpose_for_scores(mixed_query_layer)
-            key_layer = self._transpose_for_scores(mixed_key_layer)
-            value_layer = self._transpose_for_scores(mixed_value_layer)
-
-            context_layer = attention_fn(query_layer, key_layer, value_layer, cross_attention_mask, dropout_fn,
-                                         cross_attention=True, **kw_args)
-            context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-            new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
-            # [b, s, hp]
-            context_layer = context_layer.view(*new_context_layer_shape)
-
-            # Output. [b, s, h]
-            output = self.dense(context_layer)
-            if self.training:
-                output = self.output_dropout(output)
-
-            return output
+            return HOOKS_DEFAULT['cross_attention_forward'](self, hidden_states, cross_attention_mask, encoder_outputs, **kw_args)
 
 
 class MLP(torch.nn.Module):
     def __init__(self, hidden_size, output_dropout_prob, init_method, inner_hidden_size=None,
-                 output_layer_init_method=None, layer_id=None, hooks={}, bias=True, activation_func=gelu):
+                 output_layer_init_method=None, layer_id=None, hooks={}, bias=True, activation_func=gelu, transformer_pointer=None):
         super(MLP, self).__init__()
         self.layer_id = layer_id
         self.activation_func = activation_func
@@ -282,14 +199,15 @@ class MLP(torch.nn.Module):
             name="dense_4h_to_h"
         )
         self.dropout = torch.nn.Dropout(output_dropout_prob)
+        object.__setattr__(self, 'transformer', transformer_pointer)
+        assert transformer_pointer is not None
+        
 
     def forward(self, hidden_states, **kw_args):
         if 'mlp_forward' in self.hooks:
             output = self.hooks['mlp_forward'](hidden_states, **kw_args)
         else:
-            intermediate_parallel = self.dense_h_to_4h(hidden_states)
-            intermediate_parallel = self.activation_func(intermediate_parallel)
-            output = self.dense_4h_to_h(intermediate_parallel)
+            output = HOOKS_DEFAULT['mlp_forward'](self, hidden_states, **kw_args)
 
         if self.training:
             output = self.dropout(output)
@@ -309,12 +227,13 @@ class BaseTransformerLayer(torch.nn.Module):
             inner_hidden_size=None,
             hidden_size_per_attention_head=None,
             output_layer_init_method=None,
-            sandwich_ln=True,
+            layernorm_order='pre',
             layernorm=LayerNorm,
             is_decoder=False,
             use_bias=True,
             activation_func=gelu,
-            hooks={}
+            hooks={},
+            transformer_pointer=None
     ):
         super(BaseTransformerLayer, self).__init__()
         # Set output layer initialization if not provided.
@@ -322,7 +241,10 @@ class BaseTransformerLayer(torch.nn.Module):
             output_layer_init_method = init_method
         self.layer_id = layer_id
         self.is_decoder = is_decoder
+        self.layernorm_order = layernorm_order
         self.hooks = hooks
+        object.__setattr__(self, 'transformer', transformer_pointer)
+        assert transformer_pointer is not None
 
         # Layernorm on the input data.
         self.input_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
@@ -338,13 +260,13 @@ class BaseTransformerLayer(torch.nn.Module):
             hidden_size_per_attention_head=hidden_size_per_attention_head,
             output_layer_init_method=output_layer_init_method,
             bias=use_bias,
-            hooks=hooks
+            hooks=hooks,
+            transformer_pointer=transformer_pointer
         )
 
         # Layernorm on the input data.
         self.post_attention_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
-        self.sandwich_ln = sandwich_ln
-        if sandwich_ln:
+        if self.layernorm_order == 'sandwich':
             self.third_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
             self.fourth_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
 
@@ -360,7 +282,8 @@ class BaseTransformerLayer(torch.nn.Module):
                 hidden_size_per_attention_head=hidden_size_per_attention_head,
                 output_layer_init_method=output_layer_init_method,
                 bias=use_bias,
-                hooks=hooks
+                hooks=hooks,
+                transformer_pointer=transformer_pointer
             )
             self.post_cross_attention_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
 
@@ -374,50 +297,12 @@ class BaseTransformerLayer(torch.nn.Module):
             bias=use_bias,
             layer_id=layer_id,
             activation_func=activation_func,
-            hooks=hooks
+            hooks=hooks,
+            transformer_pointer=transformer_pointer
         )
 
     def forward(self, hidden_states, mask, *args, **kw_args):
-        '''
-            hidden_states: [batch, seq_len, hidden_size]
-            mask: [(1, 1), seq_len, seq_len]
-        '''
-        # Layer norm at the begining of the transformer layer.
-        layernorm_output1 = self.input_layernorm(hidden_states)
-        # Self attention.
-        attention_output = self.attention(layernorm_output1, mask, **kw_args)
-
-        # Third LayerNorm
-        if self.sandwich_ln:
-            attention_output = self.third_layernorm(attention_output)
-
-        # Residual connection.
-        layernorm_input = hidden_states + attention_output
-        # Layer norm post the self attention.
-        layernorm_output = self.post_attention_layernorm(layernorm_input)
-
-        if self.is_decoder:
-            encoder_outputs = kw_args['encoder_outputs']
-            if encoder_outputs is not None:
-                assert 'cross_attention_mask' in kw_args
-                # Cross attention
-                attention_output = self.cross_attention(layernorm_output, **kw_args)
-                # Residual connection.
-                layernorm_input = layernorm_input + attention_output
-                # Layer norm post the cross attention
-                layernorm_output = self.post_cross_attention_layernorm(layernorm_input)
-
-        # MLP.
-        mlp_output = self.mlp(layernorm_output, **kw_args)
-
-        # Fourth LayerNorm
-        if self.sandwich_ln:
-            mlp_output = self.fourth_layernorm(mlp_output)
-
-        # Second residual connection.
-        output = layernorm_input + mlp_output
-
-        return output, kw_args['output_this_layer'], kw_args['output_cross_layer']
+        return HOOKS_DEFAULT['layer_forward'](self, hidden_states, mask, *args, **kw_args)
 
 
 class BaseTransformer(torch.nn.Module):
@@ -436,7 +321,7 @@ class BaseTransformer(torch.nn.Module):
                  init_method_std=0.02,
                  inner_hidden_size=None,
                  hidden_size_per_attention_head=None,
-                 sandwich_ln=True,
+                 layernorm_order='pre',
                  parallel_output=True,
                  is_decoder=False,
                  use_bias=True,
@@ -454,7 +339,9 @@ class BaseTransformer(torch.nn.Module):
         self.checkpoint_activations = checkpoint_activations
         self.checkpoint_num_layers = checkpoint_num_layers
         self.max_sequence_length = max_sequence_length
+        self.layernorm_order = layernorm_order
         self.hooks = copy.copy(hooks)  # hooks will be updated each forward
+        object.__setattr__(self, 'transformer', self) # to give the default hooks the same api as outer hooks
 
         # create embedding parameters
         self.embedding_dropout = torch.nn.Dropout(embedding_dropout_prob)
@@ -486,11 +373,12 @@ class BaseTransformer(torch.nn.Module):
                 hidden_size_per_attention_head=hidden_size_per_attention_head,
                 output_layer_init_method=self.output_layer_init_method,
                 is_decoder=self.is_decoder,
-                sandwich_ln=sandwich_ln,
+                layernorm_order=layernorm_order,
                 layernorm=layernorm,
                 use_bias=use_bias,
                 activation_func=activation_func,
-                hooks=self.hooks
+                hooks=self.hooks,
+                transformer_pointer=self,
             )
 
         self.layers = torch.nn.ModuleList(
@@ -520,14 +408,14 @@ class BaseTransformer(torch.nn.Module):
         if 'word_embedding_forward' in self.hooks:
             hidden_states = self.hooks['word_embedding_forward'](input_ids, output_cross_layer=output_cross_layer, **kw_args)
         else:  # default
-            hidden_states = self.word_embeddings(input_ids)
+            hidden_states = HOOKS_DEFAULT['word_embedding_forward'](self, input_ids, output_cross_layer=output_cross_layer,**kw_args)
 
         if 'position_embedding_forward' in self.hooks:
             position_embeddings = self.hooks['position_embedding_forward'](position_ids, output_cross_layer=output_cross_layer, **kw_args)
         else:
             assert len(position_ids.shape) <= 2
             assert position_ids.shape[-1] == query_length
-            position_embeddings = self.position_embeddings(position_ids)
+            position_embeddings = HOOKS_DEFAULT['position_embedding_forward'](self, position_ids, output_cross_layer=output_cross_layer, **kw_args)
         if position_embeddings is not None:
             hidden_states = hidden_states + position_embeddings
         hidden_states = self.embedding_dropout(hidden_states)
@@ -551,27 +439,24 @@ class BaseTransformer(torch.nn.Module):
 
                     output_per_layers_part = []
                     for i, layer in enumerate(layers_):
+                        output_this_layer_obj, output_cross_layer_obj = {}, {}
                         if 'layer_forward' in self.hooks:
                             layer_ret = self.hooks['layer_forward'](
                                 x_, mask, layer_id=layer.layer_id,
                                 **kw_args, **output_cross_layer,
-                                output_this_layer={}, output_cross_layer={}
+                                output_this_layer=output_this_layer_obj,
+                                output_cross_layer=output_cross_layer_obj
                             )
                         else:
                             layer_ret = layer(
                                 x_, mask, layer_id=layer.layer_id,
                                 **kw_args, **output_cross_layer,
-                                output_this_layer={}, output_cross_layer={}
+                                output_this_layer=output_this_layer_obj,
+                                output_cross_layer=output_cross_layer_obj
                             )
-                        if torch.is_tensor(layer_ret): # only hidden_states
-                            x_, output_this_layer, output_cross_layer = layer_ret, {}, {}
-                        elif len(layer_ret) == 2: # hidden_states & output_this_layer
-                            x_, output_this_layer = layer_ret
-                            output_cross_layer = {}
-                        elif len(layer_ret) == 3:
-                            x_, output_this_layer, output_cross_layer = layer_ret
-                        assert isinstance(output_this_layer, dict)
-                        assert isinstance(output_cross_layer, dict)
+                        if isinstance(layer_ret, tuple):
+                            layer_ret = layer_ret[0] # for legacy API
+                        x_, output_this_layer, output_cross_layer = layer_ret, output_this_layer_obj, output_cross_layer_obj
                         if output_hidden_states:
                             output_this_layer['hidden_states'] = x_
                         output_per_layers_part.append(output_this_layer)
@@ -610,10 +495,9 @@ class BaseTransformer(torch.nn.Module):
                     flat_inputs.append(v)
                     cross_layer_index[k] = len(flat_inputs) - 1
                 # --------------------
-
                 hidden_states, output_per_layers_part, output_cross_layer, flat_outputs = \
                     checkpoint(custom(l, l + chunk_length, kw_args_index, cross_layer_index), *args, *flat_inputs)
-
+                
                 # recover output_per_layers_part, output_cross_layer
                 for output_this_layer in output_per_layers_part:
                     for k in output_this_layer:
@@ -629,22 +513,20 @@ class BaseTransformer(torch.nn.Module):
             for i, layer in enumerate(self.layers):
                 args = [hidden_states, attention_mask]
 
+                output_this_layer_obj, output_cross_layer_obj = {}, {}
+
                 if 'layer_forward' in self.hooks: # customized layer_forward
                     layer_ret = self.hooks['layer_forward'](*args, layer_id=torch.tensor(i),
                         **kw_args,
                         **output_cross_layer,
-                        output_this_layer={}, output_cross_layer={}
+                        output_this_layer=output_this_layer_obj, output_cross_layer=output_cross_layer_obj
                     )
                 else:
                     layer_ret = layer(*args, layer_id=torch.tensor(i), **kw_args, **output_cross_layer,
-                        output_this_layer={}, output_cross_layer={})
-                if torch.is_tensor(layer_ret): # only hidden_states
-                    hidden_states, output_this_layer, output_cross_layer = layer_ret, {}, {}
-                elif len(layer_ret) == 2: # hidden_states & output_this_layer
-                    hidden_states, output_this_layer = layer_ret
-                    output_cross_layer = {}
-                elif len(layer_ret) == 3:
-                    hidden_states, output_this_layer, output_cross_layer = layer_ret
+                        output_this_layer=output_this_layer_obj, output_cross_layer=output_cross_layer_obj)
+                if isinstance(layer_ret, tuple):
+                    layer_ret = layer_ret[0] # for legacy API
+                hidden_states, output_this_layer, output_cross_layer = layer_ret, output_this_layer_obj, output_cross_layer_obj
 
                 if output_hidden_states:
                     output_this_layer['hidden_states'] = hidden_states
@@ -656,11 +538,11 @@ class BaseTransformer(torch.nn.Module):
         else:
             logits = hidden_states
 
+        logits = copy_to_model_parallel_region(logits)
         if 'final_forward' in self.hooks:
             logits_parallel = self.hooks['final_forward'](logits, **kw_args)
         else:
-            logits_parallel = copy_to_model_parallel_region(logits)
-            logits_parallel = F.linear(logits_parallel, self.word_embeddings.weight)
+            logits_parallel = HOOKS_DEFAULT['final_forward'](self, logits, **kw_args)
 
         if not self.parallel_output:
             logits_parallel = gather_from_model_parallel_region(logits_parallel)

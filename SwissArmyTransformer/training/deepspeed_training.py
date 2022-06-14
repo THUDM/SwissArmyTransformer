@@ -37,8 +37,8 @@ from .utils import get_sample_writer
 
 from SwissArmyTransformer import mpu
 from SwissArmyTransformer.data_utils import make_loaders
-from SwissArmyTransformer.tokenization import get_tokenizer
-
+from SwissArmyTransformer.ops import LayerNorm
+from SwissArmyTransformer.arguments import set_random_seed, initialize_distributed
 
 def training_main(args, model_cls, forward_step_function, create_dataset_function, handle_metrics=None, init_function=None):
     """Main training program."""
@@ -49,8 +49,6 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         'handle_metrics': handle_metrics,
     }
 
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.enabled = False  # Disable CuDNN.
     timers = Timers()  # Timer.
 
     # Experiment Name
@@ -59,12 +57,11 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     else:
         args.experiment_name = args.experiment_name + datetime.now().strftime("%m-%d-%H-%M")
 
-    # Pytorch distributed. must before seed
-    if isinstance(model_cls, type):
-        initialize_distributed(args)
-        set_random_seed(args.seed)  # Random seeds for reproducability.
-    # init tokenizer
-    get_tokenizer(args)  # set args.vocab_size.
+    # Pytorch distributed. must before seed. ALREADY MOVED TO arguments.py!
+    # if isinstance(model_cls, type):
+    #     initialize_distributed(args)
+    #     set_random_seed(args.seed)  # Random seeds for reproducability.
+
     # Data stuff.
     train_data, val_data, test_data = make_loaders(args, hooks['create_dataset_function'])
     if args.epochs:
@@ -81,7 +78,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         model = model_cls
 
     # Config model IO
-    if args.load is not None and isinstance(model_cls, type): # If you pass a model by yourself, you need to load it by youself as well.
+    if args.load is not None:
         args.iteration = load_checkpoint(model, args)
         # if we don't load optim_states, filelock is no more needed.
         # with FileLock("/root/checkpoint_lock", timeout=-1):
@@ -110,6 +107,8 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
             print('Finetuning Model...')
         print_args(args)
         summary_writer = get_sample_writer(base=args.summary_dir, name=args.experiment_name, iteration=args.iteration)
+        if hasattr(summary_writer, 'add_hparams'): # old version does not have this api
+            summary_writer.add_hparams(vars(args), {'_dump':0}, name=args.experiment_name, global_step=0)
 
     # Resume data loader if necessary.
     if args.resume_dataloader:
@@ -141,9 +140,8 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     # final testing
     if args.do_test and test_data is not None:
         prefix = 'the end of training for test data'
-        evaluate_and_print_results(prefix, iter(test_data),
+        test_loss = evaluate_and_print_results(prefix, iter(test_data),
             model, len(test_data) if args.strict_eval else args.eval_iters, args, timers, True, split='test', hooks=hooks)
-
 
 def get_model(args, model_cls):
     """Build the model."""
@@ -168,7 +166,8 @@ def get_model(args, model_cls):
 def setup_model_untrainable_params_and_optimizer(args, model, config_params=None):
     """Setup model and optimizer."""
 
-    model.disable_untrainable_params() # mark trainable params
+    if hasattr(model, 'disable_untrainable_params'):
+        model.disable_untrainable_params() # mark trainable params
 
     param_groups = get_optimizer_param_groups(model)
 
@@ -181,7 +180,7 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
                 args=args,
                 mpu=mpu,
                 dist_init_required=False,
-                config_params=config_params
+                config_params=args.deepspeed_config
             )
         else:
             raise ValueError('Currently, we only support training with deepspeed.')
@@ -195,7 +194,7 @@ def get_params_for_weight_decay_optimization(module):
     weight_decay_params = {'params': []}
     no_weight_decay_params = {'params': [], 'weight_decay': 0.0}
     for module_ in module.modules():
-        if isinstance(module_, (mpu.LayerNorm, torch.nn.LayerNorm)):
+        if isinstance(module_, (LayerNorm, torch.nn.LayerNorm)):
             no_weight_decay_params['params'].extend(
                 [p for p in list(module_._parameters.values())
                  if p is not None and p.requires_grad])
@@ -360,7 +359,11 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
     while True:
         # Forward model for one step.
         timers('forward').start()
-        lm_loss, metrics = forward_step(data_iterator, model, args, timers, **kwargs)
+        forward_ret = forward_step(data_iterator, model, args, timers, **kwargs)
+        if isinstance(forward_ret, tuple):
+            lm_loss, metrics = forward_ret
+        else:
+            lm_loss, metrics = forward_ret, {}
         timers('forward').stop()
 
         # Check nan or inf in forward, preventing it from interfering loss scaler,
@@ -552,63 +555,3 @@ def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step, avg_metrics
         for key in avg_metrics:
             summary_writer.add_scalar('Train/valid_'+key, avg_metrics[key], step)
         
-
-'''
-    Optional DeepSpeed Activation Checkpointing features
-    Gives access to partition activations, contiguous memory optimizations
-    and cpu checkpointing.
-
-    Activation checkpoint requires keep track of the random states
-    and setting the random seed for each MP process. Megatron uses
-    mpu.get_cuda_rng_tracker and mpu.model_parallel_cuda_manual_seed
-    for keeping track of the random states and setting the random seeds.
-    Since they are used in places outside of activation checkpointing,
-    we overwrite them to maintain consistency.
-
-    This must be done before all the calls to mpu.model_parallel_cuda_manual_seed
-    '''
-
-
-def set_deepspeed_activation_checkpointing(args):
-    deepspeed.checkpointing.configure(mpu, deepspeed_config=args.deepspeed_config, num_checkpoints=args.num_layers)
-    mpu.checkpoint = deepspeed.checkpointing.checkpoint
-    mpu.get_cuda_rng_tracker = deepspeed.checkpointing.get_cuda_rng_tracker
-    mpu.model_parallel_cuda_manual_seed = deepspeed.checkpointing.model_parallel_cuda_manual_seed
-
-
-def initialize_distributed(args):
-    """Initialize torch.distributed."""
-
-    # the automatic assignment of devices has been moved to arguments.py 
-    torch.cuda.set_device(args.device)
-    # Call the init process
-    init_method = 'tcp://'
-    args.master_ip = os.getenv('MASTER_ADDR', 'localhost')
-    args.master_port = os.getenv('MASTER_PORT', '6000')
-    init_method += args.master_ip + ':' + args.master_port
-    torch.distributed.init_process_group(
-        backend=args.distributed_backend,
-        world_size=args.world_size, rank=args.rank,
-        init_method=init_method)
-
-    # Set the model-parallel / data-parallel communicators.
-    mpu.initialize_model_parallel(args.model_parallel_size)
-
-    # Optional DeepSpeed Activation Checkpointing Features
-    if hasattr(args, "deepspeed") and args.deepspeed and args.deepspeed_activation_checkpointing:
-        set_deepspeed_activation_checkpointing(args)  # TODO manual model-parallel seed
-
-def set_random_seed(seed):
-    """Set random seed for reproducability."""
-    if seed is not None and seed > 0:
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
-        torch.backends.cudnn.benchmark = False
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.enabled = False
-        torch.backends.cuda.matmul.allow_tf32 = False
-        if hasattr(mpu, 'model_parallel_cuda_manual_seed'):
-            mpu.model_parallel_cuda_manual_seed(seed)

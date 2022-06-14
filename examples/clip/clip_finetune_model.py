@@ -1,5 +1,5 @@
 import torch
-from clip_model import CLIP
+from SwissArmyTransformer.model.official.clip_model import CLIP
 
 class CLIP_finetune(torch.nn.Module):
     def __init__(self, encoder, hidden_size, num_classes):
@@ -13,6 +13,11 @@ class CLIP_finetune(torch.nn.Module):
         return x
     def disable_untrainable_params(self):
         self.encoder.transformer.position_embeddings.requires_grad_(False)
+    @classmethod
+    def add_model_specific_args(cls, parser):
+        group = parser.add_argument_group('CLIP-ft', 'CLIP-ft')
+        group.add_argument("--num-finetune-classes", type=int, default=None)
+        return parser
 
 class CLIP_wp(CLIP):
     def disable_untrainable_params(self):
@@ -20,3 +25,9 @@ class CLIP_wp(CLIP):
             param.requires_grad_(False)
         self.logit_scale.requires_grad_(False)
         self.image_encoder.transformer.position_embeddings.requires_grad_(False)
+
+    @classmethod
+    def add_model_specific_args(cls, parser):
+        group = parser.add_argument_group('CLIP-ft', 'CLIP-ft')
+        group.add_argument("--num-finetune-classes", type=int, default=None)
+        return parser

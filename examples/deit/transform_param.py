@@ -31,7 +31,7 @@ torch.distributed.init_process_group(
 import SwissArmyTransformer.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
-from SwissArmyTransformer.model.vit_model import ViTModel
+from SwissArmyTransformer.model.official.vit_model import ViTModel
 model = ViTModel(args, layernorm_epsilon=1e-6)
 
 def copy_layer_param(src, dst):

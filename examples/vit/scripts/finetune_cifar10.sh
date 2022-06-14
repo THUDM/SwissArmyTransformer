@@ -1,7 +1,11 @@
 #! /bin/bash
 
-# Change for multinode config
-CHECKPOINT_PATH=/data/qingsong/pretrain/
+CHECKPOINT_PATH=$1
+if [[ "$1" == "" ]] || [[ "$2" == "" ]];
+then
+    echo "Please pass in two root folders to save model and data!"
+    exit
+fi
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=8
@@ -10,19 +14,21 @@ MP_SIZE=1
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
-source $main_dir/config/model_vit_224_16_21k.sh
+MODEL_TYPE="vit-base-patch16-224-in21k"
+MODEL_ARGS="--num-finetune-classes 10 \
+            --image-size 384 384"
 
+OPTIONS_SAT="SAT_HOME=$1" #"SAT_HOME=/raid/dm/sat_models"
 OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
-en_data="/data/qingsong/dataset/train"
-eval_data="/data/qingsong/dataset/test"
+en_data="$2/train"
+eval_data="$2/test"
 
 
-config_json="$script_dir/ds_config_ft.json"
 gpt_options=" \
-       --experiment-name finetune-vit-cifar10 \
+       --experiment-name finetune-$MODEL_TYPE-cifar10 \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
        --train-iters 1000 \
@@ -36,22 +42,19 @@ gpt_options=" \
        --checkpoint-activations \
        --save-interval 6000 \
        --eval-interval 100 \
-       --save /data/qingsong/checkpoints \
+       --save "$CHECKPOINT_PATH/checkpoints" \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8 \
-       --lr 0.01 \
+       --zero-stage 1 \
+       --lr 0.00002 \
+       --batch-size 4 \
+       --md_type $MODEL_TYPE
 "
 
-
-
-gpt_options="${gpt_options}
-       --deepspeed \
-       --deepspeed_config ${config_json} \
-"
               
 
-run_cmd="${OPTIONS_NCCL} deepspeed --master_port 16666 --num_nodes ${NUM_WORKERS} --num_gpus ${NUM_GPUS_PER_WORKER} --hostfile ${HOST_FILE_PATH} finetune_vit_cifar10.py $@ ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} deepspeed --master_port 16666 --include localhost:0,1 --hostfile ${HOST_FILE_PATH} finetune_vit_cifar10.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

@@ -21,3 +21,4 @@ checkpoints/
 runs
 dist/
 *.egg-info
+args/

@@ -13,7 +13,7 @@ import math
 import random
 import torch
 
-from SwissArmyTransformer.mpu.transformer import standard_attention
+from SwissArmyTransformer.model.transformer import standard_attention
 from SwissArmyTransformer.model.base_model import BaseModel, BaseMixin, non_conflict
 
 

@@ -15,7 +15,9 @@ import torch
 import argparse
 from .base_model import BaseModel, BaseMixin
 from SwissArmyTransformer.mpu.mappings import copy_to_model_parallel_region
-
+from SwissArmyTransformer import update_args_with_file
+from SwissArmyTransformer.training.deepspeed_training import load_checkpoint, get_model
+from SwissArmyTransformer.resources import auto_create
 
 class EncoderFinalMixin(BaseMixin):
     def final_forward(self, logits, **kwargs):
@@ -39,7 +41,7 @@ class EncoderDecoderModel(torch.nn.Module):
         else:
             dec_args = argparse.Namespace(**vars(args))
             dec_args.enc_hidden_size = dec_args.hidden_size  # used for cross attn
-            override_attrs = ['num_layers', 'hidden_size', 'num_attention_heads',
+            override_attrs = ['num_layers', 'hidden_size', 'num_attention_heads', 'layernorm_order'
                               'max_sequence_length', 'inner_hidden_size', 'hidden_size_per_attention_head']
             for name in override_attrs:
                 dec_attr = getattr(dec_args, 'dec_' + name, None)
@@ -93,4 +95,13 @@ class EncoderDecoderModel(torch.nn.Module):
         group.add_argument("--dec-max-sequence-length", type=int, default=None)
         group.add_argument("--dec-inner-hidden-size", type=int, default=None)
         group.add_argument("--dec-hidden-size-per-attention-head", type=int, default=None)
+        group.add_argument("--dec-layernorm-order", type=str, default=None)
         return parser
+
+    @classmethod
+    def from_pretrained(cls, args, name, *, home_path=None, url=None):
+        model_path = auto_create(name, path=home_path, url=url)
+        args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
+        model = get_model(args, cls)
+        load_checkpoint(model, args, load_path=model_path)
+        return model, args

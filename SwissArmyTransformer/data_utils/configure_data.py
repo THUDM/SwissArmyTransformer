@@ -90,7 +90,7 @@ def make_dataset_full(path, split, args, create_dataset_function,
         ds = ConcatDataset(ds, weights=dataset_weights)
         if random_mapping:
             if args.epochs is not None:
-                ds = RandomDataset(ds, scale=args.epochs)
+                ds = RandomDataset(ds, scale=args.epochs, seed=args.seed)
             else:
                 world_size = torch.distributed.get_world_size(
                     group=mpu.get_data_parallel_group())
@@ -109,7 +109,7 @@ def make_dataset_full(path, split, args, create_dataset_function,
         for p in path:
             d = create_dataset_function(p, args)
             if should_split(split):
-                dtrain, dvalid, dtest = split_ds(d, split, block_size=args.block_size)
+                dtrain, dvalid, dtest = split_ds(d, split, block_size=args.block_size, seed=args.seed)
                 train_ds.append(dtrain)
                 valid_ds.append(dvalid)
                 test_ds.append(dtest)
@@ -121,7 +121,7 @@ def make_dataset_full(path, split, args, create_dataset_function,
                 group=mpu.get_data_parallel_group())
             scale = max(200, 1 + (args.train_iters * args.batch_size * world_size) // len(train_ds))
             train_ds = RandomMappingDataset(train_ds, scale=scale)
-            valid_ds = RandomMappingDataset(valid_ds)
+            valid_ds = RandomMappingDataset(valid_ds) # TODO precise scale 
             test_ds = RandomMappingDataset(test_ds)
         return train_ds, valid_ds, test_ds
 
@@ -227,7 +227,7 @@ def should_split(split):
     """
     return max(split) / sum(split) != 1.
 
-def split_ds(ds, split=[.8,.2,.0], block_size = 10000):
+def split_ds(ds, split=[.8,.2,.0], block_size = 10000, seed=131):
     """
     Split a dataset into subsets given proportions of how
     much to allocate per split. If a split is 0% returns None for that split.
@@ -248,7 +248,8 @@ def split_ds(ds, split=[.8,.2,.0], block_size = 10000):
     start_idx = 0
     residual_idx = 0
     rtn_ds = [None]*len(split)
-    indices = np.random.permutation(np.array(range(block_size)))
+    rng = numpy.random.default_rng(seed)
+    indices = rng.permutation(np.array(range(block_size)))
     for i, f in enumerate(split):
         if f != 0:
             proportion = block_size*split[i]
@@ -324,10 +325,10 @@ class RandomDataset(data.Dataset):
     The indices are pre-processed.
     Will also enlarge the length
     '''
-    def __init__(self, ds, scale=200, **kwargs):
+    def __init__(self, ds, scale=200, seed=131, **kwargs):
         self.wrapped_data = ds
         self.scale = scale
-        self.indices = np.random.permutation(np.array(range(len(ds))))
+        self.indices = numpy.random.default_rng(seed).permutation(np.array(range(len(ds))))
 
     def __len__(self):
         return len(self.wrapped_data) * self.scale
@@ -341,7 +342,7 @@ class BlockedRandomSplitDataset(data.Dataset):
     Use block algorithm to reduce memory.
     In each block, using the `indices` items.
     '''
-    def __init__(self, ds, indices, block_size,**kwargs):
+    def __init__(self, ds, indices, block_size, **kwargs):
         if type(indices) is not np.ndarray:
             indices = np.array(indices)
         indices = np.sort(indices)

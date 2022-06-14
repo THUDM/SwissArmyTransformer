@@ -21,7 +21,7 @@ from SwissArmyTransformer.model.base_model import BaseModel, BaseMixin, non_conf
 from SwissArmyTransformer.training.deepspeed_training import training_main
 from SwissArmyTransformer.data_utils import TSVDataset
 from SwissArmyTransformer.model import GLMModel
-from SwissArmyTransformer.mpu.transformer import standard_attention
+from SwissArmyTransformer.model.transformer import standard_attention
 from SwissArmyTransformer.model.mixins import MLPHeadMixin, PrefixTuningMixin
 
 class ClassificationModel(GLMModel):

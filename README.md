@@ -1,4 +1,4 @@
-## Introduction
+# Introduction
 `SwissArmyTransformer` is a flexible and powerful library to develop your own Transformer variants.
 
 `SwissArmyTransformer` is named after "swiss army knife", meaning that all the models (e.g. BERT, GPT, T5, GLM, CogView, ViT...) **share the same backone code** and cater for versatile usages with some extra light-weight mixins. 
@@ -8,14 +8,14 @@
 ```
     pip install SwissArmyTransformer
 ```
-## Features
+# Features
 
-* Add model-agnostic components, e.g. prefix-tuning, in just *ONE* line! 
+* **Add model-agnostic components**, e.g. prefix-tuning, in just *ONE* line! 
 
     - [Prefix-tuning](https://arxiv.org/pdf/2101.00190) (or [P-tuning](https://arxiv.org/abs/2103.10385)) improves finetuning via adding trainable parameters in each attention layer. To apply it to a [GLM](https://arxiv.org/pdf/2103.10360.pdf) classification (or any other) model is easy with our library.
 
     ```python
-        class ClassificationModel(GLMModel):
+        class ClassificationModel(GLMModel): # can also be BertModel, RobertaModel, etc. 
             def __init__(self, args, transformer=None, **kwargs):
                 super().__init__(args, transformer=transformer, **kwargs)
                 self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
@@ -26,7 +26,7 @@
     - GPT and other auto-regressive models act differently during training and inference. During inference, text is generated token-by-token and we need to cache previous states for efficiency. With our lib, you only need to consider the behavior during training (teacher-forcing) and transform it to a cached auto-regressive model via adding a mixin:
 
     ```python
-        model = GLMModel(args)
+        model, args = AutoModel.from_pretrained(args, 'glm-10b-chinese')
         model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
         # Generate a sequence with beam search
         from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence
@@ -37,7 +37,7 @@
     ```     
 
 
-* Build your Transformer-based model with minimal codes. We mentioned [GLM](https://arxiv.org/pdf/2103.10360.pdf), which only differs from standard transformer (called BaseModel) on position embedding (and training losses). We only need to focus on the related part when coding.
+* **Build your Transformer-based model with minimal codes**. We mentioned [GLM](https://arxiv.org/pdf/2103.10360.pdf), which only differs from standard transformer (called BaseModel) on position embedding (and training losses). We only need to focus on the related part when coding.
 
     <details><summary>Extend the whole definition: </summary><p>
 
@@ -64,39 +64,108 @@
             self.add_mixin('block_position_embedding', 
                 BlockPositionEmbeddingMixin(args.max_sequence_length, args.hidden_size)
             ) # Add the mixin for GLM
-
-        # we can also directly define hook-functions in the model.
-        # E.g., The code below will remove position embeddings:
-
-        # def position_embedding_forward(self, position_ids, **kwargs):
-        #   return 0 
-
     ```
 
-*  Comprehensive supports for training. `SwissArmyTransformer` aims to provide the best practice for pretraining and finetuning, where you only need to finish `forward_step` and `create_dataset_function` but with hyperparameters to alter useful training configurations.
+*  **Comprehensive supports for training**. `SwissArmyTransformer` aims to provide the best practice for pretraining and finetuning, where you only need to finish `forward_step` and `create_dataset_function` but with hyperparameters to alter useful training configurations.
     - Extend the training to multiple GPUs or nodes by specifying `--num_nodes`, `--num_gpus` and a simple `hostfile`. 
     - DeepSpeed and Model parallelism.
     - Better integration of ZeRO-2 and activation checkpointing.
     - Automatic extending and shuffling training data and `memmap`. 
-    - Successfully support the training of [CogView2](http://github.com/THUDM/CogView).
+    - Successfully support the training of [CogView2](http://github.com/THUDM/CogView2) and [CogVideo](https://github.com/THUDM/cogvideo).
     - The only open-source codebase supporting finetuning [T5-10B](https://arxiv.org/abs/1910.10683) on GPUs currently.
 
 </p></details>
 
 
-## Get started
-```
-    cd examples/cogview2
-    ./scripts/text2image_cogview2.sh
-```
+# Quick Tour
 
-### Run GLM
-1. Prepare input.txt. Example: "Welcome! This is the main page of SwissArmyTransformer".
-2. Run the following commands:
+The most typical python file to use `Bert` in SwissArmyTransformer (for inference) is as follows:
+```python
+# @File: inference_bert.py
+from SwissArmyTransformer import get_args, get_tokenizer, AutoModel
+# Parse args, initialize the environment. This is necessary.
+args = get_args() 
+# Automatically download and load model. Will also dump model-related hyperparameters to args.
+model, args = AutoModel.from_pretrained(args, 'bert-base-uncased') 
+# Get the BertTokenizer according to args.tokenizer_type (automatically set).
+tokenizer = get_tokenizer(args) 
+# Here to use bert as you want!
+# ...
 ```
-    cd examples/glm
-    ./scripts/generate_glm.sh config/model_glm_10B_chinese.sh
+Then we can run the code via
+```bash
+    SAT_HOME=/path/to/download python inference_bert.py --mode inference
 ```
+All officially supported model names are in [urls.py](SwissArmyTransformer/resources/urls.py).
 
-Output:
-[CLS]Welcome! This is the main page of SwissArmyTransformer. It is a comprehensive and clear explanation of the technical problems in the transformer. It is also an introduction to the development of the SwissArmy transformers. Welcome to Swiss Army Transforters. This is the main page of Swiss army tranforter. It's a complete and clean explaination of technology problem in the Tranformer, which is an integral part of the army's technological development. It also anintroduction of the developments of the Army technicians. Well, if you have any questions, please feel free to contact the official webs
+To finetune or pretrain a transformer is also extremely easy!
+```python
+# @File: finetune_bert.py
+from SwissArmyTransformer import get_args, get_tokenizer, AutoModel
+from SwissArmyTransformer.model.mixins import MLPHeadMixin
+
+def create_dataset_function(path, args):
+    # Here to load the dataset
+    # ...
+    assert isinstance(dataset, torch.utils.data.Dataset)
+    return dataset
+
+def forward_step(data_iterator, model, args, timers):
+    inputs = next(data_iterator) # from the dataset of create_dataset_function.
+    loss, *others = model(inputs)
+    return loss
+    
+# Parse args, initialize the environment. This is necessary.
+args = get_args() 
+model, args = AutoModel.from_pretrained(args, 'bert-base-uncased') 
+tokenizer = get_tokenizer(args) 
+# Here to use bert as you want!
+model.del_mixin('bert-final')
+model.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
+# ONE LINE to train! 
+# args already includes hyperparams such as lr, train-iters, zero-stage ...
+training_main(args, 
+    model_cls=model, 
+    forward_step_function=forward_step, # user define
+    create_dataset_function=create_dataset_function # user define
+)
+```
+Then we can run the code via
+```shell
+deepspeed --include localhost:0,1 finetune_bert.py \
+    --experiment-name ftbert \
+    --mode finetune --train-iters 1000 --save /path/to/save \
+    --train-data /path/to/train --valid-data /path/to/valid \
+    --lr 0.00002 --batch-size 8 --zero-stage 1 --fp16
+```
+Here we use data-parallel on GPUs 0,1. We can also launch the training on many inter-connected machines via `--hostfile /path/to/hostfile`. See the tutorial for more details.
+
+To write your own model, you only need to consider the difference between the standard Transformer. For example, if you have a idea to improve the attention operation:
+```python
+from SwissArmyTransformer.model import BaseMixin
+class MyAttention(BaseMixin):
+    def __init__(self, hidden_size):
+        super(MyAttention, self).__init__()
+        # MyAttention may needs some new params, e.g. a learnable alpha.
+        self.learnable_alpha = torch.nn.Parameter(torch.ones(hidden_size))
+    
+    # This is a hook function, the name `attention_fn` is special.
+    def attention_fn(q, k, v, mask, dropout=None, **kwargs):
+        # Code for my attention.
+        # ...
+        return attention_results
+```
+Here `attention_fn` is a hook function, replacing the default action by the new function. All available hooks are in [transformer_defaults.py](/SwissArmyTransformer/transformer_defaults.py). 
+Now we can use `add_mixin` to apply our change to all the transformers, such as BERT, Vit and CogView. See the tutorial for more details. 
+
+## Tutorials 
+TO BE RELEASED SOON...
+
+# Citation
+Currently we don't have a paper, so you don't need to formally cite us!~ 
+
+If this project helps your research or engineering, use `\footnote{https://github.com/THUDM/SwissArmyTransformer}` to mention us and recommend `SwissArmyTransformer` to others.
+
+The tutorial for contributing SwissArmyTransformer is on the way!
+
+The project is based on (a user of) DeepSpeed, Megatron-LM and Huggingface transformers. Thanks for their awesome work.

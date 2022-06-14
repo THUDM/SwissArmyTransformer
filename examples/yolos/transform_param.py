@@ -16,7 +16,7 @@ torch.distributed.init_process_group(
 import SwissArmyTransformer.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
-from yolos_model import YOLOS
+from SwissArmyTransformer.model.official.yolos_model import YOLOS
 model = YOLOS(args, layernorm_epsilon=1e-6)
 
 def copy_layer_param(src, dst):

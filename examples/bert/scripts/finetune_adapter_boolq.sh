@@ -1,19 +1,23 @@
 #! /bin/bash
 
-# Change for multinode config
-CHECKPOINT_PATH=/data/qingsong/pretrain/
+CHECKPOINT_PATH=$1
+if [[ "$1" == "" ]] || [[ "$2" == "" ]];
+then
+    echo "Please pass in two root folders to save model and data!"
+    exit
+fi
 
 NUM_WORKERS=1
-NUM_GPUS_PER_WORKER=4
+NUM_GPUS_PER_WORKER=1
 MP_SIZE=1
 
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
-source $main_dir/config/model_bert_base.sh
-echo $MODEL_TYPE
+MODEL_TYPE="bert-base-uncased"
 
-OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
+OPTIONS_SAT="SAT_HOME=$1" #"SAT_HOME=/raid/dm/sat_models"
+OPTIONS_NCCL="NCCL_DEBUG=warning NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
@@ -21,14 +25,12 @@ en_data="hf://super_glue/boolq/train"
 eval_data="hf://super_glue/boolq/validation"
 test_data="hf://super_glue/boolq/test"
 
-config_json="$script_dir/ds_config_ft.json"
 gpt_options=" \
        --experiment-name finetune-$MODEL_TYPE-boolq \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
        --train-iters 1000 \
        --resume-dataloader \
-       $MODEL_ARGS \
        --train-data ${en_data} \
        --valid-data ${eval_data} \
        --distributed-backend nccl \
@@ -38,21 +40,22 @@ gpt_options=" \
        --fp16 \
        --save-interval 1000 \
        --eval-interval 100 \
-       --save checkpoints/ \
+       --save "$CHECKPOINT_PATH/checkpoints" \
        --split 1 \
        --strict-eval \
-       --eval-batch-size 8
+       --eval-batch-size 8 \
+       --zero-stage 1 \
+       --lr 0.00002 \
+       --batch-size 64 \
+       --data_root $2 \
+       --md_type $MODEL_TYPE \
+       --tokenizer-type bert-base-uncased \
+       --layernorm-order post \
+       --save-args
 "
 
 
-
-gpt_options="${gpt_options}
-       --deepspeed \
-       --deepspeed_config ${config_json} \
-"
-
-
-run_cmd="${OPTIONS_NCCL} deepspeed --include localhost:1,2,7,9 --hostfile ${HOST_FILE_PATH} finetune_bert_adapter_boolq.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} deepspeed --include localhost:0 --hostfile ${HOST_FILE_PATH} finetune_bert_adapter_boolq.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

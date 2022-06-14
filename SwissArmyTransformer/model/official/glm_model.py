@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 
-from .base_model import BaseModel
-from .mixins import BaseMixin
+from SwissArmyTransformer.model.base_model import BaseModel, BaseMixin
 
 class BlockPositionEmbeddingMixin(BaseMixin):
     def __init__(self, max_sequence_length, hidden_size, init_method_std=0.02):
@@ -51,4 +50,11 @@ class GLMModel(BaseModel):
                         help="Use random start position to cover all the position embeddings")
         group.add_argument('--cloze-eval', action='store_true', help='Evaluation dataset with cloze task')
         group.add_argument('--old-checkpoint', action='store_true', help="Loading the checkpoint from old libraray")
+
+        group.add_argument('--tokenizer-model-type', type=str,
+                       default=None,
+                       help="Model type to use for sentencepiece tokenization \
+                           (one of ['bpe', 'char', 'unigram', 'word']) or \
+                           bert vocab to use for BertWordPieceTokenizer (one of \
+                           ['bert-large-uncased', 'bert-large-cased', etc.])")
         return parser
