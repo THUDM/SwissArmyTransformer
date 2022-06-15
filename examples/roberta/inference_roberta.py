@@ -1,40 +1,22 @@
 import os
-import argparse
-from SwissArmyTransformer import get_args
-py_parser = argparse.ArgumentParser(add_help=False)
-py_parser.add_argument('--pretrain_path', type=str, default=None)
-py_parser.add_argument('--old_checkpoint', action="store_true")
-known, args_list = py_parser.parse_known_args()
-args = get_args(args_list)
-args = argparse.Namespace(**vars(args), **vars(known))
-pretrain_path = args.pretrain_path
-model_type = '-'.join(args.load.split('/')[-1].split('-')[1:])
-print(model_type)
-
-import os
 import torch
-init_method = 'tcp://'
-master_ip = os.getenv('MASTER_ADDR', '127.0.0.1')
-master_port = os.getenv('MASTER_PORT', '16666')
-init_method += master_ip + ':' + master_port
-torch.distributed.init_process_group(
-        backend='nccl',
-        world_size=args.world_size, rank=args.rank, init_method=init_method)
+import argparse
+from SwissArmyTransformer import get_args, AutoModel
+# from SwissArmyTransformer.model.official.bert_model import BertModel
 
-import SwissArmyTransformer.mpu as mpu
-mpu.initialize_model_parallel(args.model_parallel_size)
+args = get_args()
 
-from roberta_model import RobertaModel
-from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
-model = RobertaModel(args)
-load_checkpoint(model, args)
+model_type = 'roberta-base'
+model, args = AutoModel.from_pretrained(args, model_type)
 
+pretrain_path = ''
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
 from transformers import RobertaTokenizer, RobertaForMaskedLM
 tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, model_type))
 roberta = RobertaForMaskedLM.from_pretrained(os.path.join(pretrain_path, model_type), output_hidden_states=True)
 
 model.eval()
+roberta.eval()
 with torch.no_grad():
     text = ["This is a piece of text.", "Another piece of text."]
     encoded_input = tokenizer(text, return_tensors='pt', padding=True)

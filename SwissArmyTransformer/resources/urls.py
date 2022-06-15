@@ -1,6 +1,8 @@
 MODEL_ULRS = {
     'bert-base-uncased': 'https://cloud.tsinghua.edu.cn/f/f45fff1a308846cfa63a/?dl=1',
     'bert-large-uncased': 'https://cloud.tsinghua.edu.cn/f/6d4f38c96e8c4c16917e/?dl=1',
+    'roberta-base': 'https://cloud.tsinghua.edu.cn/f/307fd141932440bc92da/?dl=1',
+    'roberta-large': 'https://cloud.tsinghua.edu.cn/f/66c42c24ca304cecaf7e/?dl=1',
     'vit-base-patch16-224-in21k': 'https://cloud.tsinghua.edu.cn/f/fdf40233d9034b6a8bdc/?dl=1',
     'deit-tiny': 'https://cloud.tsinghua.edu.cn/f/b759657cb80e4bc69303/?dl=1',
     'deit-small': 'https://cloud.tsinghua.edu.cn/f/51498210e2c943dbbef1/?dl=1',
