@@ -5,8 +5,7 @@ We transform parameters of [roberta-base](https://huggingface.co/roberta-base) a
 ## Inference
 
 ```bash
-bash scripts/inference_roberta.sh base
-bash scripts/inference_roberta.sh large
+bash scripts/inference_roberta.sh /path/to/model
 ```
 
 ## Finetune

@@ -12,7 +12,7 @@ script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
 OPTIONS_SAT="SAT_HOME=$1" #"SAT_HOME=/raid/dm/sat_models"
 
-run_cmd="${OPTIONS_SAT} python inference_bert.py --mode inference --layernorm-order post"
+run_cmd="${OPTIONS_SAT} python inference_bert.py --mode inference"
 echo ${run_cmd}
 eval ${run_cmd}
 
