@@ -295,6 +295,8 @@ def get_args(args_list=None):
 
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
+    if args.local_rank is None:
+        args.local_rank = int(os.getenv("LOCAL_RANK", '0')) # torchrun
     
     if args.device == -1: # not set manually
         args.device = args.rank % torch.cuda.device_count()
