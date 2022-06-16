@@ -64,10 +64,20 @@ class NEW_MLPHeadMixin(BaseMixin):
     def final_forward(self, logits, **kw_args):
         cls_logits = logits[:,:self.cls_number].sum(1)
         if 'pos1' in kw_args.keys():
-            logits = logits.reshape([-1, logits.shape[-1]])
-            pos1_embedding = logits[kw_args['pos1']] #32 * hidden
-            pos2_embedding = logits[kw_args['pos2']]
-            cls_logits = torch.cat([cls_logits, pos1_embedding, pos2_embedding], dim=-1)
+            word1 = kw_args['word1'].unsqueeze(-1)
+            pos1_embedding = torch.sum(logits * word1, dim=1)
+            word2 = kw_args['word2'].unsqueeze(-1)
+            pos2_embedding = torch.sum(logits * word2, dim=1)
+            # breakpoint()
+            # logits = logits.reshape([-1, logits.shape[-1]])
+
+            # pos1_embedding = logits[kw_args['pos1']] #32 * hidden
+            #
+            # pos2_embedding = logits[kw_args['pos2']]
+            #
+            # cls_logits = pos1_embedding - pos2_embedding
+            # cls_logits = torch.abs(pos1_embedding - pos2_embedding)
+            cls_logits = torch.cat([cls_logits, pos1_embedding, pos2_embedding, torch.abs(pos1_embedding-pos2_embedding), pos1_embedding * pos2_embedding], dim=-1)
         logits = cls_logits
         if len(kw_args['attention_output']) > 0:
             attention_output = kw_args['attention_output']
@@ -160,33 +170,3 @@ class QA_MLPHeadMixin(BaseMixin):
                 logits = self.activation_func(logits)
             logits = layer(logits)
         return start_logits, end_logits, logits
-
-class WIC_MLPHeadMixin(BaseMixin):
-    def __init__(self, hidden_size, *output_sizes, bias=True, activation_func=torch.nn.functional.relu, init_mean=0, init_std=0.005, old_model=None):
-        super().__init__()
-        self.activation_func = activation_func
-        last_size = hidden_size
-        self.layers = torch.nn.ModuleList()
-        for i, sz in enumerate(output_sizes):
-            this_layer = torch.nn.Linear(last_size, sz, bias=bias)
-            last_size = sz
-            if old_model is None:
-                torch.nn.init.normal_(this_layer.weight, mean=init_mean, std=init_std)
-            else:
-                print("****************************load head weight***********************************")
-                old_weights = old_model.mixins["classification_head"].layers[i].weight.data
-                this_layer.weight.data.copy_(old_weights)
-            self.layers.append(this_layer)
-
-
-    def final_forward(self, logits, **kw_args):
-        cls_embedding = logits[:,0] #32 * hidden
-        logits = logits.reshape([-1, logits.shape[-1]])
-        pos1_embedding = logits[kw_args['pos1']] #32 * hidden
-        pos2_embedding = logits[kw_args['pos2']]
-        logits = torch.cat([cls_embedding, pos1_embedding, pos2_embedding], dim=-1)
-        for i, layer in enumerate(self.layers):
-            if i > 0:
-                logits = self.activation_func(logits)
-            logits = layer(logits)
-        return logits

@@ -9,10 +9,10 @@ import random
 import argparse
 import os
 
-def change_ds_config(lr, seed, batch_size):
+def change_ds_config(lr, seed, batch_size, gradient_accumulation_steps):
     ds_config = {
         "train_micro_batch_size_per_gpu":batch_size,
-        "gradient_accumulation_steps": 1,
+        "gradient_accumulation_steps": gradient_accumulation_steps,
         "steps_per_print": 10,
         "gradient_clipping": 0.1,
         "fp16": {
@@ -43,16 +43,17 @@ def change_ds_config(lr, seed, batch_size):
     with open(f"scripts/ds_config_{seed}.json", "w") as f:
         json.dump(ds_config, f)
 
-def run(gpu, seed_per_gpu, dataset, log_dir, lr, batch_size, epochs, step1_epochs, finetune_type):
+def run(gpu, seed_per_gpu, dataset, log_dir, lr, batch_size, gradient_accumulation_steps, epochs, step1_epochs, finetune_type):
     os.makedirs(log_dir, exist_ok=True)
     f = open(log_dir + str(gpu) + ".txt", "w")
     for i in range(seed_per_gpu):
         seed = random.randint(1, 1000000000)
-        change_ds_config(lr, seed, batch_size)
+        change_ds_config(lr, seed, batch_size, gradient_accumulation_steps)
         f.write(f"{i} run begin")
         new_finetune_type = finetune_type
-        # new_finetune_type = finetune_type + f"[{8+i}-{8+i}]"
+        # new_finetune_type = finetune_type + f"[{i}-{i}]"
         # step1_epochs = epochs // 2
+        step1_epochs = epochs //10 * (i+1)
         os.system(f"bash scripts/finetune_superglue.sh {dataset} {seed} {gpu} {lr} {epochs} {step1_epochs} {new_finetune_type}")
         f.write(f"{i} run end")
     f.close()
@@ -71,35 +72,40 @@ if __name__ == "__main__":
     Plist = []
 
     log_dir = f"multiseed_node{args.node}_/"
-
     if args.lr_search:
         lr_search = [5e-5, 1e-4, 5e-4, 1e-5]
         assert len(lr_search) == args.number_gpu
     else:
-        lr_search = [1.5e-5] * args.number_gpu
+        lr_search = [1e-5] * args.number_gpu
+        if args.dataset == "wic":
+            lr_search = [3e-5] * args.number_gpu
 #单层 all 1e-4
 #lora 1e-3
-    finetune_type = 'all'
+    finetune_type = '2step+lora'
     batch_size = 32
+    gradient_accumulation_steps = 1
+    if args.dataset=='wsc':
+        batch_size = 8
+        gradient_accumulation_steps = 4
     epochs = 20
     step1_epochs = 2
     if args.dataset in ["squad", "squad_v2"]:
         epochs = 10
         step1_epochs = 1
     elif args.dataset in ["rte", "mrpc", 'emotion']:
-        epochs=60
-        step1_epochs = 6
-    elif args.dataset in ["boolq"]:
+        epochs= 90
+        step1_epochs = 30
+    elif args.dataset in ["boolq", 'wic', "multirc"]:
         epochs=40  #测试用，需要改成40
         step1_epochs = 4
-    elif args.dataset in ["wnli", "cb", "copa"]:
+    elif args.dataset in ["wnli", "cb", "copa", "wsc"]:
         epochs = 400
         step1_epochs = 40
-    elif args.dataset in ["qqp", "qnli"]:
+    elif args.dataset in ["qqp", "qnli", "sst2"]:
         epochs = 10
         step1_epochs = 1
     for i in range(args.number_gpu):
-        p = Process(target=run, args=(gpu_start+i,args.seed_per_gpu,args.dataset,log_dir,lr_search[i], batch_size, epochs,step1_epochs,finetune_type  ))
+        p = Process(target=run, args=(gpu_start+i,args.seed_per_gpu,args.dataset,log_dir,lr_search[i], batch_size, gradient_accumulation_steps,  epochs,step1_epochs,finetune_type  ))
         p.start()
         Plist.append(p)
     for i in range(args.number_gpu):

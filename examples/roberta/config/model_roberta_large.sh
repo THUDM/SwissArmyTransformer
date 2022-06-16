@@ -7,5 +7,5 @@ MODEL_ARGS="--num-layers 24 \
             --hidden-dropout 0.1 \
             --attention-dropout 0.1 \
             --checkpoint-activations \
-            --checkpoint-num-layers 1 \
+            --checkpoint-num-layers 12 \
             --load ${CHECKPOINT_PATH}/$MODEL_TYPE"

@@ -36,6 +36,7 @@ def get_dataset_keys(dataset_name):
         'cola':["input_ids", "position_ids", "attention_mask", "label"],
         'wnli':["input_ids", "position_ids", "attention_mask", "label"],
         'sst2':["input_ids", "position_ids", "attention_mask", "label"],
+        'stsb':["input_ids", "position_ids", "attention_mask", "label"],
         #squad
         'squad':["input_ids", "position_ids", "attention_mask", "label", "start_list", "end_list"],
         'squad_v2':["input_ids", "position_ids", "attention_mask", "label", "start_list", "end_list"],
@@ -57,6 +58,7 @@ def get_class_num(dataset_name):
         'cola':2,
         'wnli':2,
         'sst2':2,
+        'stsb':2,
         'squad':2,
         'squad_v2':2,
         'conll2003':9,
@@ -64,7 +66,7 @@ def get_class_num(dataset_name):
     return dataset_class_num[dataset_name]
 
 def get_batch_function(dataset_name):
-    if dataset_name in ["boolq", "rte", "cb", "mrpc", "qnli", "qqp", "cola", 'wnli', 'conll2003', 'sst2'] :
+    if dataset_name in ["boolq", "rte", "cb", "mrpc", "qnli", "qqp", "cola", 'wnli', 'conll2003', 'sst2', 'stsb'] :
         def get_batch(data_iterator, args, timers):
             # Items and their type.
             keys = ['input_ids', 'position_ids', 'attention_mask', 'label']
@@ -200,13 +202,23 @@ def create_dataset_function(path, args):
         cache_dir = '/sharefs/cogview-new/yzy/SwissArmyTransformerDatasets'
     else:
         raise Exception("no PLATFORM")
-    offline = False
+    offline = True
     transformer_name = f"{dataset_name}_transformer_{args.sample_length}"
     process_fn = None
     filter_fn = None
     if dataset_name == "sst2":
         def process_fn(row):
             pack, label = _encode_single_text(row['sentence'], args), int(row['label'])
+            return {
+                'input_ids': np.array(pack['input_ids'], dtype=np.int64),
+                'position_ids': np.array(pack['position_ids'], dtype=np.int64),
+                'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
+                'label': label
+            }
+    elif dataset_name == "stsb":
+        def process_fn(row):
+            pack, label = _encode_double_text(row['sentence1'], row['sentence2'], args), float(row['label'])
+            label = int(label * 1000)
             return {
                 'input_ids': np.array(pack['input_ids'], dtype=np.int64),
                 'position_ids': np.array(pack['position_ids'], dtype=np.int64),

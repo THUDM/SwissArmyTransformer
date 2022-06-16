@@ -40,13 +40,14 @@ gpt_options=" \
        --warmup .02 \
        --checkpoint-activations \
        --fp16 \
-       --save-interval 1000 \
+       --save-interval 10000 \
        --eval-interval 100 \
        --save checkpoints/ \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8 \
-       --do-train
+       --do-train \
+       --layernorm-epsilon 1e-12 \
 "
 
 

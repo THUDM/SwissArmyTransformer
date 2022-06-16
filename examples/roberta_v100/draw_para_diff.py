@@ -53,6 +53,8 @@ def solve(model_new, model_old):
     pass
 
 if __name__ == '__main__':
+
+    #checkpoints/finetune-roberta-large-rte-all-lr1e-05-seed504467621-05-30-16-53
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--new_hyperparam', type=str, default=None)
     py_parser.add_argument('--sample_length', type=int, default=512-16)
@@ -67,7 +69,7 @@ if __name__ == '__main__':
     model_new = ClassificationModel(args)
     model_old = ClassificationModel(args)
 
-    args.do_train = True
+    args.do_train = False
     _ = load_checkpoint(model_old, args)
     args.load = args.ssl_load2
     _ = load_checkpoint(model_new, args)

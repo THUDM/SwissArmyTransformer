@@ -20,7 +20,7 @@ class ClassificationModel(RobertaModel):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)
         # self.del_mixin('roberta-final')
         # self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
-        self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
+        # self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
     def disable_untrainable_params(self):
         self.transformer.word_embeddings.requires_grad_(False)
         # for layer_id in range(len(self.transformer.layers)):
@@ -130,7 +130,7 @@ def forward_step(data_iterator, model, args, timers):
 
 pretrain_path = ''
 from transformers import RobertaTokenizer
-tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-large'))
+tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-large'), add_prefix_space=True)
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
 
 def _encode(text):
@@ -152,18 +152,19 @@ def create_dataset_function(path, args):
         if query[-1]=='.' or query[-1] == ',':
             query = query[:-1]
         sentence = nlp(text)
-        encoded_text = tokenizer(text)['input_ids']
-
+        encoded_text = tokenizer(text, is_split_into_words=True)['input_ids']
         start2 = row['text'].find(row['span2_text'])
-        pron_index = tokenizer(row['text'][:start2])['input_ids'].__len__() - 2
-        encoded_query = tokenizer(query)['input_ids'][1:-1]
+        pron_index = tokenizer(row['text'][:start2], is_split_into_words=True)['input_ids'].__len__() - 2
+        encoded_query = tokenizer(query, is_split_into_words=True)['input_ids'][1:-1]
         prefix = encoded_text[:pron_index]
         suffix = encoded_text[pron_index+1 :]
         query_tokens = pad(prefix + encoded_query + suffix)
         query_tokens = np.array(query_tokens)
         query_mask = np.zeros_like(query_tokens)
         query_mask[len(prefix):len(prefix)+len(encoded_query)] = 1
-
+        # print(tokenizer.decode(encoded_query))
+        # print(tokenizer.decode(query_tokens)[:500])
+        # breakpoint()
         #extend chunks
         noun_chunks = {(nc.start, nc.end) for nc in sentence.noun_chunks}
         np_start, cur_np = 0, "NONE"
@@ -203,7 +204,7 @@ def create_dataset_function(path, args):
         cand_token_list = []
         cand_mask_list = []
         for cand_span in noun_chunks:
-            encoded_cand = tokenizer(cand_span.text)['input_ids'][1:-1]
+            encoded_cand = tokenizer(cand_span.text, is_split_into_words=True)['input_ids'][1:-1]
             cand_tokens = pad(prefix + encoded_cand + suffix)
             cand_tokens = np.array(cand_tokens)
             cand_mask = np.zeros_like(cand_tokens)
@@ -231,7 +232,7 @@ def create_dataset_function(path, args):
             'cand_mask': cand_mask
         }
 
-    return load_hf_dataset(path, process_fn, columns = ["label", "query_tokens", "query_mask", "cand_tokens", "cand_mask"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="wsc_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["label", "query_tokens", "query_mask", "cand_tokens", "cand_mask"], cache_dir='/sharefs/cogview-new/yzy/SwissArmyTransformerDatasets', offline=True, transformer_name="wsc_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)

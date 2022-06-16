@@ -15,7 +15,8 @@ from functools import partial
 class ClassificationModel(RobertaModel):
     def __init__(self, args, transformer=None, parallel_output=True):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)
-        self.del_mixin('roberta-final')
+        if "wsc" not in args.dataset_name:
+            self.del_mixin('roberta-final')
         num_input = args.final_input
         num_output = 1 if args.class_num == 2 else args.class_num
         layer_range = None
@@ -29,12 +30,14 @@ class ClassificationModel(RobertaModel):
         # layer_range = [0,1,2,21,22,23]
         print("layer_range!!!", layer_range)
         self.layer_range = layer_range
+        std = 0.005
+        print("std!!!", std)
         if 'squad' in args.dataset_name:
-            self.add_mixin('classification_head', QA_MLPHeadMixin(args, num_input, 2048, num_output, old_model=args.old_model))
+            self.add_mixin('classification_head', QA_MLPHeadMixin(args, num_input, 2048, num_output, old_model=args.old_model, init_std=std))
         elif 'conll' in args.dataset_name:
-            self.add_mixin('classification_head', NER_MLPHeadMixin(args, num_input, 2048, num_output, old_model=args.old_model))
-        else:
-            self.add_mixin('classification_head', NEW_MLPHeadMixin(args, num_input, 2048, num_output, old_model=args.old_model))
+            self.add_mixin('classification_head', NER_MLPHeadMixin(args, num_input, 2048, num_output, old_model=args.old_model, init_std=std))
+        elif 'wsc' not in args.dataset_name:
+            self.add_mixin('classification_head', NEW_MLPHeadMixin(args, num_input, 2048, num_output, old_model=args.old_model, init_std=std))
         self.finetune_type = args.finetune_type
         if 'geglue' in self.finetune_type:
             print('Add GEGLUE')
@@ -113,23 +116,84 @@ class ClassificationModel(RobertaModel):
         optimizer = partial(ChildTuningAdamW, reserve_p=args.reserve_p, mode=args.child_type, **optimizer_kwargs)
         return optimizer
 
+def get_masked_input(tokens, mask):
+    masked_tokens = tokens.clone()
+    masked_tokens[mask] = 50264
+    return masked_tokens
+
+def get_lprobs(model, tokens, mask, position_ids, attention_mask):
+    logits, *mems = model(get_masked_input(tokens, mask), position_ids, attention_mask)
+    lprobs = torch.nn.functional.log_softmax(logits, dim=-1, dtype=torch.float)
+    scores = lprobs.gather(2, tokens.unsqueeze(-1)).squeeze(-1)
+    mask = mask.type_as(scores)
+    scores = (scores * mask).sum(dim=-1) / mask.sum(dim=-1)
+    return scores
+
 def forward_step(data_iterator, model, args, timers):
     """Forward step."""
 
     # Get the batch.
     # timers('batch generator').start()
     get_batch = get_batch_function(args.dataset_name)
-    tokens, labels, attention_mask, position_ids, loss_mask, *extra_data = get_batch(
-        data_iterator, args, timers)
-    # timers('batch generator').stop()
-    if len(extra_data) >= 1:
-        extra_data = extra_data[0]
-    else:
-        extra_data = {}
-    attention_output = []
-    logits, *mems = model(tokens, position_ids, attention_mask, attention_output = attention_output, **extra_data)
 
-    return get_loss_metrics(logits, labels, args.dataset_name, **extra_data)
+    if args.dataset_name == 'wsc':
+        query_tokens, query_mask, query_attention_mask, query_position_ids, cand_tokens, cand_mask, cand_attention_mask, cand_tokens_position_ids, labels = get_batch(
+            data_iterator, args, timers)
+        loss, nloss = 0.0, 0
+        ncorrect, nqueries = 0, 0
+        for i in range(labels.shape[0]):
+            label = labels[i]
+            query_lprobs = get_lprobs(
+                model,
+                query_tokens[i].unsqueeze(0),
+                query_mask[i].unsqueeze(0),
+                query_position_ids[i].unsqueeze(0),
+                query_attention_mask[i].unsqueeze(0),
+            )
+            cand_tokens_now = cand_tokens[i]
+            cand_mask_now = cand_mask[i]
+            cand_position_ids_now = cand_tokens_position_ids[i]
+            cand_attention_mask_now = cand_attention_mask[i]
+            for j in range(args.max_cand_len):
+                if cand_tokens_now[j][0] == -1:
+                    cand_tokens_now = cand_tokens_now[:j]
+                    cand_mask_now = cand_mask_now[:j]
+                    cand_position_ids_now = cand_position_ids_now[:j]
+                    cand_attention_mask_now = cand_attention_mask_now[:j]
+                    break
+            cand_lprobs = get_lprobs(
+                model,
+                cand_tokens_now,
+                cand_mask_now,
+                cand_position_ids_now,
+                cand_attention_mask_now,
+            )
+            pred = (query_lprobs >= cand_lprobs).all().item()
+            ncorrect += 1 if pred == label else 0
+            nqueries += 1
+            if label:
+                nloss += 1
+                loss += torch.nn.functional.cross_entropy(
+                    torch.cat([query_lprobs, cand_lprobs]).unsqueeze(0),
+                    query_lprobs.new([0]).long(),
+                )
+        if nloss == 0:
+            loss = torch.tensor(0.0, requires_grad=True, device=query_tokens.device)
+        acc = torch.tensor(ncorrect/nqueries, device=query_tokens.device)
+        eval_acc = torch.concat([torch.ones(ncorrect, device=acc.device), torch.zeros(nqueries-ncorrect, device=acc.device)], dim=0)
+        return loss, {'acc': acc, 'eval_acc':eval_acc}
+    else:
+        tokens, labels, attention_mask, position_ids, loss_mask, *extra_data = get_batch(
+            data_iterator, args, timers)
+        # timers('batch generator').stop()
+        if len(extra_data) >= 1:
+            extra_data = extra_data[0]
+        else:
+            extra_data = {}
+        attention_output = []
+        logits, *mems = model(tokens, position_ids, attention_mask, attention_output = attention_output, **extra_data)
+
+        return get_loss_metrics(logits, labels, args.dataset_name, **extra_data)
 
 #模型并行会有问题！！
 if __name__ == '__main__':
@@ -137,6 +201,7 @@ if __name__ == '__main__':
     py_parser.add_argument('--new_hyperparam', type=str, default=None)
     py_parser.add_argument('--name-model', type=str, default=None)
     py_parser.add_argument('--sample_length', type=int, default=512)
+    py_parser.add_argument('--max_cand_len', type=int, default=20)
 
     #type
     py_parser.add_argument('--finetune-type', type=str, default="all")
@@ -207,7 +272,7 @@ if __name__ == '__main__':
     args.class_num = get_class_num(args.dataset_name)
     args.final_input = args.hidden_size
     if args.dataset_name == 'wic':
-        args.final_input = 3 * args.hidden_size
+        args.final_input = 5 * args.hidden_size
     args.get_optimizer_group = None
     args.old_model = None
     

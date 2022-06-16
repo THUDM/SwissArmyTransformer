@@ -53,6 +53,9 @@ if [[ "$task_name" == "emotion" ]]; then
   dataset_name="default"
   hf_path="emotion"
 fi
+if [[ "$task_name" == "wsc" ]]; then
+  dataset_name="wsc.fixed"
+fi
 
 en_data="hf://${hf_path}/${dataset_name}/train"
 eval_data="hf://${hf_path}/${dataset_name}/validation"
@@ -64,7 +67,7 @@ finetune_type="$type"
 gpt_options=" \
        --finetune-type ${finetune_type} \
        --name-model $MODEL_TYPE \
-       --experiment-name finetune-$MODEL_TYPE-${task_name}-${finetune_type}-lr${lr}-seed${seed}-new2- \
+       --experiment-name finetune-$MODEL_TYPE-${task_name}-${finetune_type}-lr${lr}-seed${seed}- \
        --summary-dir runs/finetune-$MODEL_TYPE-${task_name}-${finetune_type} \
        --cls-number 1 \
        --collect-len 2 \
@@ -90,6 +93,16 @@ gpt_options=" \
        --seed ${seed} \
        --save-args \
 "
+
+
+
+if [[ "$task_name" == "wsc" ]]; then
+  gpt_options="${gpt_options}
+         --checkpoint-activations \
+         --checkpoint-num-layers 12 \
+  "
+fi
+
 
 #ffadd part
 gpt_options="${gpt_options}

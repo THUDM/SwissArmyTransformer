@@ -18,10 +18,16 @@ from SwissArmyTransformer import mpu
 pretrain_path = ''
 from transformers import RobertaTokenizer
 from transformers import DebertaTokenizer
+from transformers import BertTokenizer
 tokenizers = {}
 tokenizers['roberta-large'] = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-large'), local_files_only=True)
-tokenizers['deberta-large'] = DebertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'microsoft/deberta-large'), local_files_only=True)
+tokenizers['roberta-large-addprefix'] = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-large'), local_files_only=True, add_prefix_space=False)
 
+# tokenizers['bert-large'] = BertTokenizer.from_pretrained(os.path.join(pretrain_path, 'bert-large-uncased'), local_files_only=False)
+# tokenizers['bert-large-addprefix'] = BertTokenizer.from_pretrained(os.path.join(pretrain_path, 'bert-large-uncased'), local_files_only=True, add_prefix_space=False)
+
+tokenizers['deberta-large'] = DebertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'microsoft/deberta-large'), local_files_only=True)
+jishu = [0,0]
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
 from SwissArmyTransformer.data_utils import load_hf_dataset
 
@@ -32,7 +38,9 @@ def get_dataset_keys(dataset_name):
         'rte':["input_ids", "position_ids", "attention_mask", "label"],
         'copa':["input_ids_1", "position_ids_1", "attention_mask_1", "input_ids_2", "position_ids_2", "attention_mask_2", "label"],
         'cb':["input_ids", "position_ids", "attention_mask", "label"],
-        'wic':["input_ids", "position_ids", "attention_mask", "label", "pos1", "pos2"],
+        'wic':["input_ids", "position_ids", "attention_mask", "label", "pos1", "pos2", "pos1_e", "pos2_e"],
+        'multirc':["input_ids", "position_ids", "attention_mask", "label"],
+        'wsc': ["label", "query_tokens", "query_mask", "cand_tokens", "cand_mask"],
         #glue
         'mrpc':["input_ids", "position_ids", "attention_mask", "label"],
         'qnli':["input_ids", "position_ids", "attention_mask", "label"],
@@ -40,6 +48,7 @@ def get_dataset_keys(dataset_name):
         'cola':["input_ids", "position_ids", "attention_mask", "label"],
         'wnli':["input_ids", "position_ids", "attention_mask", "label"],
         'sst2':["input_ids", "position_ids", "attention_mask", "label"],
+        'stsb':["input_ids", "position_ids", "attention_mask", "stsb_label"],
         #squad
         'squad':["input_ids", "position_ids", "attention_mask", "label", "start_list", "end_list"],
         'squad_v2':["input_ids", "position_ids", "attention_mask", "label", "start_list", "end_list"],
@@ -64,15 +73,43 @@ def get_class_num(dataset_name):
         'cola':2,
         'wnli':2,
         'sst2':2,
+        'stsb':2,
         'squad':2,
         'squad_v2':2,
         'conll2003':9,
         'emotion':6,
+        'multirc':2,
+        'wsc':2,
     }
     return dataset_class_num[dataset_name]
 
 def get_batch_function(dataset_name):
-    if dataset_name in ["boolq", "rte", "cb", "mrpc", "qnli", "qqp", "cola", 'wnli', 'conll2003', 'sst2', 'emotion'] :
+    if dataset_name == "stsb" :
+        def get_batch(data_iterator, args, timers):
+            # Items and their type.
+            keys = ['input_ids', 'position_ids', 'attention_mask', 'stsb_label']
+            datatype = torch.int64
+
+            # Broadcast data.
+            timers('data loader').start()
+            if data_iterator is not None:
+                data = next(data_iterator)
+            else:
+                data = None
+            timers('data loader').stop()
+            data_b = mpu.broadcast_data(keys, data, datatype)
+            # Unpack.
+            tokens = data_b['input_ids'].long()
+            labels = data_b['stsb_label'].long()
+            position_ids = data_b['position_ids'].long()
+            attention_mask = data_b['attention_mask'][:, None, None, :].float()
+
+            # Convert
+            if args.fp16:
+                attention_mask = attention_mask.half()
+
+            return tokens, labels, attention_mask, position_ids, (tokens!=1)
+    elif dataset_name in ["boolq", "rte", "cb", "mrpc", "qnli", "qqp", "cola", 'wnli', 'conll2003', 'sst2', 'emotion', 'multirc', 'stsb'] :
         def get_batch(data_iterator, args, timers):
             # Items and their type.
             keys = ['input_ids', 'position_ids', 'attention_mask', 'label']
@@ -97,6 +134,43 @@ def get_batch_function(dataset_name):
                 attention_mask = attention_mask.half()
 
             return tokens, labels, attention_mask, position_ids, (tokens!=1)
+    elif dataset_name == "wsc":
+        def get_batch(data_iterator, args, timers):
+            # Items and their type.
+            keys = ["label", "query_tokens", "query_mask", "cand_tokens", "cand_mask", "label"]
+            datatype = torch.int64
+
+            # Broadcast data.
+            timers('data loader').start()
+            if data_iterator is not None:
+                data = next(data_iterator)
+            else:
+                data = None
+            timers('data loader').stop()
+            data_b = mpu.broadcast_data(keys, data, datatype)
+            # Unpack.
+            query_tokens = data_b['query_tokens'].long()
+            query_mask = data_b['query_mask'].long()
+            cand_tokens = data_b['cand_tokens'].long()
+            cand_mask = data_b['cand_mask'].long()
+            labels = data_b['label'].long()
+
+            query_mask = query_mask.bool()
+            cand_mask = cand_mask.bool()
+
+            cand_tokens = cand_tokens.reshape([query_tokens.shape[0], -1, query_tokens.shape[1]])
+            cand_mask = cand_mask.reshape([query_mask.shape[0], -1, query_mask.shape[1]])
+            padding_idx = 1
+            query_position_ids = create_position_ids_from_input_ids(query_tokens, 1, 0)
+            query_attention_mask = (torch.ones_like(query_position_ids, device=query_tokens.device) * query_position_ids.ne(padding_idx))[:,None,None,:].float()
+            cand_tokens_position_ids = create_position_ids_from_input_ids(cand_tokens.reshape([cand_tokens.shape[0]*cand_tokens.shape[1],-1]), 1, 0).reshape(cand_tokens.shape)
+            cand_attention_mask = (torch.ones_like(cand_tokens_position_ids, device=query_tokens.device) * cand_tokens_position_ids.ne(padding_idx))[:,:,None,None,:].float()
+
+            # Convert
+            if args.fp16:
+                query_attention_mask = query_attention_mask.half()
+                cand_attention_mask = cand_attention_mask.half()
+            return query_tokens, query_mask, query_attention_mask, query_position_ids, cand_tokens, cand_mask, cand_attention_mask, cand_tokens_position_ids, labels
     elif dataset_name == "copa":
         def get_batch(data_iterator, args, timers):
             # Items and their type.
@@ -132,7 +206,7 @@ def get_batch_function(dataset_name):
     elif dataset_name == 'wic':
         def get_batch(data_iterator, args, timers):
             # Items and their type.
-            keys = ['input_ids', 'position_ids', 'attention_mask', 'label', 'pos1', 'pos2']
+            keys = ['input_ids', 'position_ids', 'attention_mask', 'label', 'pos1', 'pos2', 'pos1_e', 'pos2_e']
             datatype = torch.int64
 
             # Broadcast data.
@@ -150,6 +224,20 @@ def get_batch_function(dataset_name):
             attention_mask = data_b['attention_mask'][:, None, None, :].float()
             pos1 = data_b['pos1'].long()
             pos2 = data_b['pos2'].long()
+            pos1_e = data_b['pos1_e'].long()
+            pos2_e = data_b['pos2_e'].long()
+
+            bz = labels.shape[0]
+            word1 = torch.zeros_like(tokens, dtype=attention_mask.dtype, device=tokens.device)
+            word2 = torch.zeros_like(tokens, dtype=attention_mask.dtype, device=tokens.device)
+            for i in range(bz):
+                len = (pos1_e[i] - pos1[i] + 1)
+                for j in range(pos1[i],pos1_e[i]+1):
+                    word1[i,j] = 1/len
+                len = (pos2_e[i] - pos2[i] + 1)
+                for j in range(pos2[i], pos2_e[i]+1):
+                    word2[i,j] = 1/len
+
             bz = tokens.shape[0]
             for i in range(bz):
                 pos1[i] += i * tokens.shape[1]
@@ -158,8 +246,10 @@ def get_batch_function(dataset_name):
             # Convert
             if args.fp16:
                 attention_mask = attention_mask.half()
+                word1 = word1.half()
+                word2 = word2.half()
 
-            return tokens, labels, attention_mask, position_ids, (tokens!=1), {'pos1':pos1, 'pos2':pos2}
+            return tokens, labels, attention_mask, position_ids, (tokens!=1), {'pos1':pos1, 'pos2':pos2, 'word1':word1, 'word2':word2}
     elif dataset_name in ['squad', 'squad_v2']:
         def get_batch(data_iterator, args, timers):
             # Items and their type.
@@ -191,15 +281,23 @@ def get_batch_function(dataset_name):
     return get_batch
 
 def _encode_single_text(text, args, is_split_into_words=False):
-    encoded_input = tokenizers[args.name_model](text, max_length=args.sample_length, padding='max_length', truncation='only_first', is_split_into_words=is_split_into_words)
+    if is_split_into_words == True:
+        tokenizer_name = args.name_model+"-addprefix"
+    else:
+        tokenizer_name = args.name_model
+    encoded_input = tokenizers[tokenizer_name](text, max_length=args.sample_length, padding='max_length', truncation='only_first', is_split_into_words=is_split_into_words)
     # if 'roberta' in args.model_type:
     position_ids = create_position_ids_from_input_ids(torch.tensor([encoded_input['input_ids']]), 1, 0)
     # else:
     #     position_ids =
     return dict(input_ids=encoded_input['input_ids'], position_ids=position_ids[0].numpy(), attention_mask=encoded_input['attention_mask'])
 
-def _encode_double_text(text, text_pair, args, truncation='only_first'):
-    encoded_input = tokenizers[args.name_model](text, text_pair, max_length=args.sample_length, padding='max_length', truncation=truncation)
+def _encode_double_text(text, text_pair, args, truncation='only_first', is_split_into_words=False):
+    if is_split_into_words == True:
+        tokenizer_name = args.name_model+"-addprefix"
+    else:
+        tokenizer_name = args.name_model
+    encoded_input = tokenizers[tokenizer_name](text, text_pair, max_length=args.sample_length, padding='max_length', truncation=truncation, is_split_into_words=is_split_into_words)
     position_ids = create_position_ids_from_input_ids(torch.tensor([encoded_input['input_ids']]), 1, 0)
     return dict(input_ids=encoded_input['input_ids'], position_ids=position_ids[0].numpy(), attention_mask=encoded_input['attention_mask'])
 
@@ -212,10 +310,29 @@ def create_dataset_function(path, args):
     else:
         raise Exception("no PLATFORM")
     offline = False
-    transformer_name = f"{dataset_name}_{args.name_model}_{args.sample_length}"
+    transformer_name = f"{dataset_name}_{args.name_model}_{args.sample_length}_stsb2"
     process_fn = None
     filter_fn = None
-    if dataset_name == "emotion":
+    if dataset_name == "stsb":
+        def process_fn(row):
+            pack, label = _encode_double_text(row['sentence1'], row['sentence2'], args), float(row['label'])
+            label = int(label * 1000)
+            return {
+                'input_ids': np.array(pack['input_ids'], dtype=np.int64),
+                'position_ids': np.array(pack['position_ids'], dtype=np.int64),
+                'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
+                'stsb_label': label
+            }
+    elif dataset_name == "multirc":
+        def process_fn(row):
+            pack, label = _encode_double_text(row['question']+row['answer'], row['paragraph'] , truncation="only_second", args=args), int(row['label'])
+            return {
+                'input_ids': np.array(pack['input_ids'], dtype=np.int64),
+                'position_ids': np.array(pack['position_ids'], dtype=np.int64),
+                'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
+                'label': label
+            }
+    elif dataset_name == "emotion":
         def process_fn(row):
             pack, label = _encode_single_text(row['text'], args), int(row['label'])
             return {
@@ -235,19 +352,34 @@ def create_dataset_function(path, args):
             }
     elif dataset_name == "wic":
         def process_fn(row):
-            pack = _encode_double_text(row['sentence1'], row['sentence2'], args)
+            split = True
+            pack = _encode_double_text(row['sentence1'], row['sentence2'], args,  is_split_into_words=split)
             label = int(row['label'])
             start1, end1 = int(row['start1']), int(row['end1'])
             start2, end2 = int(row['start2']), int(row['end2'])
-            pos1 = tokenizers[args.name_model](row['sentence1'][:start1])['input_ids'].__len__() - 2
-            pos2 = tokenizers[args.name_model](row['sentence2'][:start2])['input_ids'].__len__() - 2 + tokenizers[args.name_model](row['sentence1'])['input_ids'].__len__()
+            pos1 = tokenizers[args.name_model+"-addprefix"](row['sentence1'][:start1], is_split_into_words=split)['input_ids'].__len__() - 2
+            pos1_e = tokenizers[args.name_model+"-addprefix"](row['sentence1'][:end1], is_split_into_words=split)['input_ids'].__len__() - 2
+            if pos1 == 0:
+                pos1 += 1
+            pos2 = tokenizers[args.name_model+"-addprefix"](row['sentence2'][:start2], is_split_into_words=split)['input_ids'].__len__() - 2
+            pos2_e = tokenizers[args.name_model+"-addprefix"](row['sentence2'][:end2], is_split_into_words=split)['input_ids'].__len__() - 2
+            if pos2 == 0:
+                pos2 += 1
+            pos2 += tokenizers[args.name_model+"-addprefix"](row['sentence1'], is_split_into_words=split)['input_ids'].__len__()
+            pos2_e += tokenizers[args.name_model+"-addprefix"](row['sentence1'], is_split_into_words=split)['input_ids'].__len__()
+            # new_sentence = (f"{row['sentence1']} {row['sentence2']} Does {row['word']} have the same meaning in both sentences?")
+            # pack = _encode_single_text(new_sentence, args)
+            # label = int(row['label'])
+
             return {
                 'input_ids': np.array(pack['input_ids'], dtype=np.int64),
                 'position_ids': np.array(pack['position_ids'], dtype=np.int64),
                 'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
                 'label': label,
                 'pos1': pos1,
-                'pos2': pos2
+                'pos1_e': pos1_e,
+                'pos2': pos2,
+                'pos2_e':pos2_e,
             }
     elif dataset_name == 'cb':
         def process_fn(row):
@@ -422,8 +554,98 @@ def create_dataset_function(path, args):
                 'attention_mask': np.array(pack['attention_mask'], dtype=np.int64),
                 'label': np.array(label_ids, dtype=np.int64),
             }
+    elif dataset_name in ['wsc']:
+        import en_core_web_sm
+        def process_fn(row):
+            nlp = en_core_web_sm.load()
+            pad = lambda a: a[0:args.sample_length] if len(a) > args.sample_length else a + [1] * (args.sample_length-len(a))
+            text = row['text']
+            query = row['span1_text']
+            if query[-1]=='.' or query[-1] == ',':
+                query = query[:-1]
+            sentence = nlp(text)
+            tokenizer = tokenizers[args.name_model+'-addprefix']
+            encoded_text = tokenizer(text, is_split_into_words=True)['input_ids']
+            start2 = row['text'].find(row['span2_text'])
+            pron_index = tokenizer(row['text'][:start2], is_split_into_words=True)['input_ids'].__len__() - 2
+            encoded_query = tokenizer(query, is_split_into_words=True)['input_ids'][1:-1]
+            prefix = encoded_text[:pron_index]
+            suffix = encoded_text[pron_index+1 :]
+            query_tokens = pad(prefix + encoded_query + suffix)
+            query_tokens = np.array(query_tokens)
+            query_mask = np.zeros_like(query_tokens)
+            query_mask[len(prefix):len(prefix)+len(encoded_query)] = 1
+            # print(tokenizer.decode(encoded_query))
+            # print(tokenizer.decode(query_tokens)[:500])
+            # breakpoint()
+            #extend chunks
+            noun_chunks = {(nc.start, nc.end) for nc in sentence.noun_chunks}
+            np_start, cur_np = 0, "NONE"
+            for i, token in enumerate(sentence):
+                np_type = token.pos_ if token.pos_ in {"NOUN", "PROPN"} else "NONE"
+                if np_type != cur_np:
+                    if cur_np != "NONE":
+                        noun_chunks.add((np_start, i))
+                    if np_type != "NONE":
+                        np_start = i
+                    cur_np = np_type
+            if cur_np != "NONE":
+                noun_chunks.add((np_start, len(sentence)))
+            noun_chunks = [sentence[s:e] for (s, e) in sorted(noun_chunks)]
+
+            #exclude pron and query
+            noun_chunks = [
+                nc
+                for nc in noun_chunks
+                if (nc.lemma_ != "-PRON-" and not all(tok.pos_ == "PRON" for tok in nc))
+            ]
+            excl_txt = [query.lower()]
+            filtered_chunks = []
+            for chunk in noun_chunks:
+                lower_chunk = chunk.text.lower()
+                found = False
+                for excl in excl_txt:
+                    if (lower_chunk in excl or excl in lower_chunk) or lower_chunk == excl:
+                        found = True
+                        break
+                if not found:
+                    filtered_chunks.append(chunk)
+
+            noun_chunks = filtered_chunks
+
+            #calc cand_tokens
+            cand_token_list = []
+            cand_mask_list = []
+            for cand_span in noun_chunks:
+                encoded_cand = tokenizer(cand_span.text, is_split_into_words=True)['input_ids'][1:-1]
+                cand_tokens = pad(prefix + encoded_cand + suffix)
+                cand_tokens = np.array(cand_tokens)
+                cand_mask = np.zeros_like(cand_tokens)
+                cand_mask[len(prefix):len(prefix)+len(encoded_cand)] = 1
+                cand_token_list.append(cand_tokens)
+                cand_mask_list.append(cand_mask)
+
+            if len(cand_token_list) > args.max_cand_len:
+                cand_token_list = cand_token_list[:args.max_cand_len]
+                cand_mask_list = cand_mask_list[:args.max_cand_len]
+            for i in range(args.max_cand_len - len(cand_token_list)):
+                cand_token_list.append([-1] * args.sample_length)
+                cand_mask_list.append([0] * args.sample_length)
+            cand_tokens = np.stack(cand_token_list)
+            cand_mask = np.stack(cand_mask_list)
+            cand_tokens = cand_tokens.reshape([-1])
+            cand_mask = cand_mask.reshape([-1])
+
+            label = int(row['label'])
+            return {
+                'label': label,
+                'query_tokens': query_tokens,
+                'query_mask' : query_mask,
+                'cand_tokens': cand_tokens,
+                'cand_mask': cand_mask
+            }
         def filter_fn(row):
-            if len(row['tokens']) == 0:
+            if "tokens" in row.keys() and len(row['tokens']) == 0:
                 return False
             else:
                 return True
@@ -431,12 +653,19 @@ def create_dataset_function(path, args):
         raise Exception('Dataset name is wrong.')
     return load_hf_dataset(path, process_fn, filter_fn = filter_fn, columns = get_dataset_keys(dataset_name), cache_dir=cache_dir, offline=offline, transformer_name=transformer_name)
 
+
 def get_loss_metrics(logits, labels, dataset_name, **extra_data):
-    if dataset_name in ['rte', 'boolq', 'wic', 'mrpc', 'qnli', 'qqp', 'cola', 'wnli', 'sst2']:
+    if dataset_name in ['rte', 'boolq', 'wic', 'mrpc', 'qnli', 'qqp', 'cola', 'wnli', 'sst2', 'multirc']:
         pred = logits.contiguous().float().squeeze(-1)
+        # if dataset_name == 'multirc':
+        #     pos_weight = torch.ones([1], dtype=pred.dtype, device=pred.device) * 1.25
+        # else:
+        #     pos_weight = None
+        pos_weight = None
         loss = torch.nn.functional.binary_cross_entropy_with_logits(
             pred,
-            labels.float()
+            labels.float(),
+            pos_weight = pos_weight
         )
         true_pos = ((pred > 0.).long() * labels).sum() * 1.0
         false_pos = ((1-(pred > 0.).long()) * labels).sum() * 1.0
@@ -446,6 +675,20 @@ def get_loss_metrics(logits, labels, dataset_name, **extra_data):
         eval_acc = ((pred > 0.).long() == labels).float()
 
         return loss, {'acc': acc, 'tp': true_pos, 'fp': false_pos, 'tn': true_neg, 'fn': false_neg, 'eval_acc': eval_acc}
+    elif dataset_name in ['stsb']:
+        pred = logits.contiguous().float().squeeze(-1)
+        labels = labels.float()/1000
+        loss = torch.nn.functional.mse_loss(
+            pred,
+            labels,
+        )
+
+        vpred = pred - torch.mean(pred)
+        vlabels = labels - torch.mean(labels)
+
+        pearson = torch.sum(vpred * vlabels) / (torch.sqrt(torch.sum(vpred ** 2)) * torch.sqrt(torch.sum(vlabels ** 2)))
+
+        return loss, {'pearson': pearson, 'eval_stsb_pred': pred, 'eval_stsb_labels': labels}
     elif dataset_name=="copa":
         bz = logits.shape[0] // 2
         logits = logits.squeeze(-1).reshape(2, bz).permute(1, 0)
@@ -543,7 +786,13 @@ def get_loss_metrics(logits, labels, dataset_name, **extra_data):
 
 from datasets import load_metric
 def handle_metrics(metrics):
-    if 'eval_pred' in metrics.keys():
+    if 'eval_stsb_labels' in metrics.keys():
+        pred = metrics['eval_stsb_pred']
+        labels = metrics['eval_stsb_labels']
+        metric = load_metric('glue', 'stsb')
+        results = metric.compute(predictions=pred, references=labels)
+        return {"pearson": torch.tensor(results["pearson"]), "spearmanr": torch.tensor(results["spearmanr"])}
+    elif 'eval_pred' in metrics.keys():
         pred = metrics['eval_pred']
         labels = metrics['eval_labels']
         true_predictions = []

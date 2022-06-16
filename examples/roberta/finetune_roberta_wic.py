@@ -43,7 +43,7 @@ class ClassificationModel(RobertaModel):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)
         self.del_mixin('roberta-final')
         self.add_mixin('classification_head', WIC_MLPHeadMixin(args.hidden_size * 3, 2048, 1))
-        self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
+        # self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
     def disable_untrainable_params(self):
         self.transformer.word_embeddings.requires_grad_(False)
         # for layer_id in range(len(self.transformer.layers)):
@@ -97,13 +97,31 @@ def forward_step(data_iterator, model, args, timers):
         pred,
         labels.float()
     )
+    true_pos = ((pred > 0.).long() * labels).sum() * 1.0
+    false_pos = ((1-(pred > 0.).long()) * labels).sum() * 1.0
+    true_neg = ((1-(pred > 0.).long()) * (1-labels)).sum() * 1.0
+    false_neg = ((pred > 0.).long() * (1-labels)).sum() * 1.0
     acc = ((pred > 0.).long() == labels).sum() / labels.numel()
-    return loss, {'acc': acc}
+    eval_acc = ((pred > 0.).long() == labels).float()
+
+    return loss, {'acc': acc, 'tp': true_pos, 'fp': false_pos, 'tn': true_neg, 'fn': false_neg, 'eval_acc': eval_acc}
 
 pretrain_path = ''
 from transformers import RobertaTokenizer
 tokenizer = RobertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'roberta-large'))
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
+
+def handle_metrics(metrics):
+    acc = sum(metrics['eval_acc'].split(1,0))/len(metrics['eval_acc'])
+    TP = sum(metrics['tp'].split(1,0))
+    TN = sum(metrics['tn'].split(1,0))
+    FP = sum(metrics['fp'].split(1,0))
+    FN = sum(metrics['fn'].split(1,0))
+    Precision = TP/(TP+FP)
+    Recall = TP/(TP+FN)
+    F1 = 2*(Precision*Recall)/(Precision+Recall)
+    MC = (TP*TN-FP*FN)/torch.sqrt((TP+FP)*(FN+TP)*(FN+TN)*(FP+TN))
+    return {'acc': acc, 'f1': F1, 'mc':MC}
 
 def _encode(text, text_pair):
     encoded_input = tokenizer(text, text_pair, max_length=args.sample_length, padding='max_length', truncation='only_first')
@@ -127,7 +145,7 @@ def create_dataset_function(path, args):
             'pos1': pos1,
             'pos2': pos2
         }
-    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label", "pos1", "pos2"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=False, transformer_name="wic_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label", "pos1", "pos2"], cache_dir='/sharefs/cogview-new/yzy/SwissArmyTransformerDatasets', offline=False, transformer_name="wic_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
@@ -140,4 +158,4 @@ if __name__ == '__main__':
     args = argparse.Namespace(**vars(args), **vars(known))
     # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
     # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
-    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
+    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, handle_metrics=handle_metrics)

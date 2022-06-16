@@ -1,7 +1,7 @@
 #! /bin/bash
 
 # Change for multinode config
-CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/roberta
+CHECKPOINT_PATH=/sharefs/cogview-new/yzy/roberta
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=4
@@ -29,19 +29,20 @@ eval_data="hf://super_glue/${dataset_name}/validation"
 
 config_json="$script_dir/ds_config_ft.json"
 gpt_options=" \
-       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-best-WTPT-\
+       --experiment-name finetune-$MODEL_TYPE-${dataset_name}-best-\
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
-       --epochs 20 \
+       --epochs 400 \
        --resume-dataloader \
        $MODEL_ARGS \
        --train-data ${en_data} \
        --distributed-backend nccl \
        --lr-decay-style linear \
-       --checkpoint-activations \
        --fp16 \
        --save checkpoints/ \
        --split 1 \
+       --save-interval 4000 \
+       --eval-interval 400 \
        --eval-batch-size 2 \
        --warmup 0.1 \
        --valid-data ${eval_data} \
@@ -63,7 +64,7 @@ else
   echo "use gpu $FINETUNE_GPU"
 fi
 
-run_cmd="${OPTIONS_NCCL} deepspeed --include=localhost:$FINETUNE_GPU --master_port ${port} --hostfile ${HOST_FILE_PATH} finetune_roberta_${task_name}.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} deepspeed --include=localhost:4,5,6,7 --master_port ${port} --hostfile ${HOST_FILE_PATH} finetune_roberta_${task_name}.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

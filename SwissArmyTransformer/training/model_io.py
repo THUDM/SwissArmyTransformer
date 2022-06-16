@@ -105,8 +105,8 @@ def get_checkpoint_iteration(args):
                 print_rank_0('ERROR: Invalid metadata file {}. Exiting'.format(
                     tracker_filename))
                 exit()
-    assert iteration > 0 or release, 'error parsing metadata file {}'.format(
-        tracker_filename)
+    # assert iteration > 0 or release, 'error parsing metadata file {}'.format(
+    #     tracker_filename)
 
     return iteration, release, True
 

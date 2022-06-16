@@ -13,7 +13,7 @@ from SwissArmyTransformer.model.mixins import MLPHeadMixin
 
 class ClassificationModel(BertModel):
     def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-12, **kwargs):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon, **kwargs)
+        super().__init__(args, transformer=transformer, parallel_output=parallel_output, **kwargs)
         self.del_mixin('bert-final')
         self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
         # self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
