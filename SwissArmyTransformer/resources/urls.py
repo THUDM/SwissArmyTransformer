@@ -11,7 +11,7 @@ MODEL_ULRS = {
     'clip': 'https://cloud.tsinghua.edu.cn/f/bd29f0537f9949e6a4fb/?dl=1',
     'yolos-tiny': 'https://cloud.tsinghua.edu.cn/f/8ee048b6a1f1403d9253/?dl=1',
     # CogView2
-    'coglm': 'https://lfs.aminer.cn/misc/cogview/coglm.zip',
+    'coglm': 'https://lfs.aminer.cn/misc/cogview/cogview2/coglm.zip',
     'cogview2-dsr': 'https://lfs.aminer.cn/misc/cogview/cogview2/cogview2-dsr.zip',
     'cogview2-itersr': 'https://lfs.aminer.cn/misc/cogview/cogview2/cogview2-itersr.zip',
 }
