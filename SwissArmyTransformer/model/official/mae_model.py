@@ -7,7 +7,7 @@ from SwissArmyTransformer.model.official.vit_model import ViTModel
 from SwissArmyTransformer.model.mixins import BaseMixin
 from SwissArmyTransformer import mpu
 
-from SwissArmyTransformer.model_utils.pos_embed import get_2d_sincos_pos_embed
+from SwissArmyTransformer.model.position_embedding import get_2d_sincos_pos_embed
 
 """
 MAE model follows encoder-decoder architecture.
