@@ -3,11 +3,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from SwissArmyTransformer.model.base_model import BaseMixin, BaseModel, non_conflict
-from SwissArmyTransformer.model.vit_model import ViTModel
+from SwissArmyTransformer.model.official.vit_model import ViTModel
 from SwissArmyTransformer.model.mixins import BaseMixin
 from SwissArmyTransformer import mpu
 
-from util.pos_embed import get_2d_sincos_pos_embed
+from SwissArmyTransformer.model.position_embedding import get_2d_sincos_pos_embed
 
 """
 MAE model follows encoder-decoder architecture.
@@ -15,7 +15,7 @@ For encoder, it is a normal ViTModel with customed position embeddings.
 For decoder, it is a normal BaseModel adding [MASK] token.
 """
 
-from SwissArmyTransformer.model.vit_model import InterpolatedPositionEmbeddingMixin
+from SwissArmyTransformer.model.official.vit_model import InterpolatedPositionEmbeddingMixin
 
 class PosMixin(InterpolatedPositionEmbeddingMixin):
     def __init__(self, hidden_size, old_property, property, init_method_std=0.02):

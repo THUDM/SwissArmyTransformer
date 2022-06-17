@@ -8,7 +8,7 @@ import torchvision
 import torchvision.transforms as transforms
 import torch.nn.functional as F
 from SwissArmyTransformer import mpu, get_args
-from mae_model import MAE
+from SwissArmyTransformer.model.official.mae_model import MAE, MAEEncoder
 from mae_finetune_model import MAE_finetune
 from SwissArmyTransformer.training.deepspeed_training import training_main
 
@@ -78,57 +78,24 @@ def init_function(args, model):
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--old_checkpoint', action="store_true")
+    py_parser.add_argument('--md_type', type=str)
     # py_parser.add_argument('--prefix_len', type=int, default=16)
     py_parser = MAE.add_model_specific_args(py_parser)
+    py_parser = MAE_finetune.add_model_specific_args(py_parser)
+    py_parser = MAEEncoder.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
-    from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
-    initialize_distributed(args)
-    set_random_seed(args.seed)
-    swiss_args = argparse.Namespace(
-        num_layers=12,
-        vocab_size=1,
-        hidden_size=768,
-        num_attention_heads=12,
-        hidden_dropout=0.,
-        attention_dropout=0.,
-        in_channels=3,
-        image_size=[224, 224],
-        patch_size=16,
-        pre_len=1,
-        post_len=0,
-        inner_hidden_size=None,
-        hidden_size_per_attention_head=None,
-        checkpoint_activations=True,
-        checkpoint_num_layers=1,
-        sandwich_ln=False,
-        post_ln=False,
-        # model_parallel_size=1,
-        # world_size=1,
-        # rank=0,
-        num_classes=1000,
-        dec_num_layers=8,
-        dec_hidden_size=512,
-        dec_num_attention_heads=16,
-        load='/data/qingsong/pretrain/swiss-mae',
-        old_image_size=[224, 224],
-        old_pre_len=1,
-        old_post_len=0,
-        mode='finetune'
-        )
-    from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
-    swiss_model = MAE(swiss_args)
-    load_checkpoint(swiss_model, swiss_args)
-    swiss_model = swiss_model.encoder
-    swiss_model = MAE_finetune(swiss_model, swiss_args.hidden_size, 10)
+    # from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
+    # initialize_distributed(args)
+    # set_random_seed(args.seed)
+    model, args = MAE.from_pretrained(args, args.md_type)
+
+    swiss_model = model.encoder
+    swiss_model = MAE_finetune(swiss_model, args.hidden_size, args.num_finetune_classes)
     if args.fp16:
         swiss_model.half()
     elif args.bf16:
         swiss_model.bfloat16()
     model = swiss_model.cuda(torch.cuda.current_device())
-    override_attrs = vars(swiss_args).keys()
-    for name in override_attrs:
-        dec_attr = getattr(swiss_args, name)
-        setattr(args, name, dec_attr)
     training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function, init_function=init_function)
