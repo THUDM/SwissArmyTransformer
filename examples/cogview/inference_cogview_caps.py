@@ -22,16 +22,8 @@ from SwissArmyTransformer.generation.utils import generate_continually
 
 
 def main(args):
-    initialize_distributed(args)
-    tokenizer = get_tokenizer(args)
-    # build model 
-    model = BaseModel(args)
-    if args.fp16:
-        model = model.half()
-    model = model.to(args.device)
-    load_checkpoint(model, args)
-    set_random_seed(args.seed)
-    model.eval()
+    model, args = BaseModel.from_pretrained(args, 'cogview-base')
+    tokenizer = get_tokenizer(args=args)
     
     # define function for each query
     query_template = '[BASE] [BOI1] [Image]{} [EOI1] [ROI1] {}'

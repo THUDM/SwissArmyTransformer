@@ -19,7 +19,7 @@ torch.distributed.init_process_group(
 import SwissArmyTransformer.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
-from mae_model import MAE
+from SwissArmyTransformer.model.official.mae_model import MAE
 model = MAE(args, layernorm_epsilon=1e-6)
 
 def copy_layer_param(src, dst):

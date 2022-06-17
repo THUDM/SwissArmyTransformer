@@ -30,35 +30,8 @@ def main(args):
     '''
     # initialize_distributed(args)
     model, args = CachedAutoregressiveModel.from_pretrained(args, 'cogview-base')
+    tokenizer = get_tokenizer(args=args)
 
-    '''
-    2022/06/17
-    Set Tokenizer for CogView.
-    '''
-    path = os.getenv('SAT_HOME', '~/.sat_models')
-    img_tokenizer_path = os.path.join(path, 'cogview-base', args.img_tokenizer_path)
-    print("img_tokenizer_path = ", img_tokenizer_path)
-    outer_tokenizer = UnifiedTokenizer(
-        img_tokenizer_path,
-        txt_tokenizer_type='cogview',
-        device=torch.cuda.current_device()
-    )
-    tokenizer = get_tokenizer(args=args, outer_tokenizer=outer_tokenizer)
-
-    '''
-    2022/06/17
-    Modify setting of model load.
-    '''
-    # build model 
-    # model = CachedAutoregressiveModel(args)
-    if args.fp16:
-        model = model.half()
-    model = model.to(args.device)
-    # load_checkpoint(model, args)
-    # set_random_seed(args.seed)
-
-    model.eval()
-    
     # define function for each query
     query_template = '[ROI1] {} [BASE] [BOI1] [MASK]*1024' if not args.full_query else '{}'
     invalid_slices = [slice(tokenizer.img_tokenizer.num_tokens, None)]

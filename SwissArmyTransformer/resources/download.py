@@ -46,6 +46,7 @@ def auto_create(name, *, path=None, url=None):
         # unzip
         if not os.path.isdir(model_path):
             import zipfile
+            print(f'Unzipping {file_path}...')
             f = zipfile.ZipFile(file_path, 'r')
             f.extractall(path=path) # TODO check hierarcy of folders and name consistency
             assert os.path.isdir(model_path), f'Unzip failed, or the first-level folder in zip is not {name}.'

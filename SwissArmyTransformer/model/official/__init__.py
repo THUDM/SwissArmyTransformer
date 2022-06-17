@@ -4,3 +4,4 @@ from .t5_model import T5Model
 from .vit_model import ViTModel
 from .bert_model import BertModel
 from .roberta_model import RobertaModel
+from .mae_model import MAE
