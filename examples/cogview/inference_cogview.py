@@ -14,22 +14,49 @@ import random
 import torch
 import argparse
 
-from SwissArmyTransformer import get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
+# from SwissArmyTransformer import get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
+from SwissArmyTransformer import get_args, get_tokenizer
 from SwissArmyTransformer.model import CachedAutoregressiveModel
 from SwissArmyTransformer.generation.sampling_strategies import BaseStrategy
 from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence
 from SwissArmyTransformer.generation.utils import timed_name, save_multiple_images, generate_continually
+from SwissArmyTransformer.tokenization.cogview import UnifiedTokenizer
 
 def main(args):
-    initialize_distributed(args)
-    tokenizer = get_tokenizer(args)
+
+    '''
+    2022/06/17
+    Modify load_checkpoint to from_pretraind
+    '''
+    # initialize_distributed(args)
+    model, args = CachedAutoregressiveModel.from_pretrained(args, 'cogview-base')
+
+    '''
+    2022/06/17
+    Set Tokenizer for CogView.
+    '''
+    path = os.getenv('SAT_HOME', '~/.sat_models')
+    img_tokenizer_path = os.path.join(path, 'cogview-base', args.img_tokenizer_path)
+    print("img_tokenizer_path = ", img_tokenizer_path)
+    outer_tokenizer = UnifiedTokenizer(
+        img_tokenizer_path,
+        txt_tokenizer_type='cogview',
+        device=torch.cuda.current_device()
+    )
+    tokenizer = get_tokenizer(args=args, outer_tokenizer=outer_tokenizer)
+
+    '''
+    2022/06/17
+    Modify setting of model load.
+    '''
     # build model 
-    model = CachedAutoregressiveModel(args)
+    # model = CachedAutoregressiveModel(args)
     if args.fp16:
         model = model.half()
     model = model.to(args.device)
-    load_checkpoint(model, args)
-    set_random_seed(args.seed)
+    # load_checkpoint(model, args)
+    # set_random_seed(args.seed)
+
     model.eval()
     
     # define function for each query
