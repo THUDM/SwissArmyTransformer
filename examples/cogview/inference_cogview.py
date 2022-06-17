@@ -14,24 +14,24 @@ import random
 import torch
 import argparse
 
-from SwissArmyTransformer import get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
+# from SwissArmyTransformer import get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
+from SwissArmyTransformer import get_args, get_tokenizer
 from SwissArmyTransformer.model import CachedAutoregressiveModel
 from SwissArmyTransformer.generation.sampling_strategies import BaseStrategy
 from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence
 from SwissArmyTransformer.generation.utils import timed_name, save_multiple_images, generate_continually
+from SwissArmyTransformer.tokenization.cogview import UnifiedTokenizer
 
 def main(args):
-    initialize_distributed(args)
-    tokenizer = get_tokenizer(args)
-    # build model 
-    model = CachedAutoregressiveModel(args)
-    if args.fp16:
-        model = model.half()
-    model = model.to(args.device)
-    load_checkpoint(model, args)
-    set_random_seed(args.seed)
-    model.eval()
-    
+
+    '''
+    2022/06/17
+    Modify load_checkpoint to from_pretraind
+    '''
+    # initialize_distributed(args)
+    model, args = CachedAutoregressiveModel.from_pretrained(args, 'cogview-base')
+    tokenizer = get_tokenizer(args=args)
+
     # define function for each query
     query_template = '[ROI1] {} [BASE] [BOI1] [MASK]*1024' if not args.full_query else '{}'
     invalid_slices = [slice(tokenizer.img_tokenizer.num_tokens, None)]

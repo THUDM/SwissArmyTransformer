@@ -375,6 +375,14 @@ def get_args(args_list=None):
 def update_args_with_file(args, path):
     with open(path, 'r', encoding='utf-8') as f:
         config = json.load(f)
+    # expand relative path
+    folder = os.path.dirname(path)
+    for k in config:
+        # all the relative paths in config are based on the folder
+        if k.endswith('_path'): 
+            config[k] = os.path.join(folder, config[k])
+            if args.rank == 0:
+                print(f'> parsing relative path {k} in model_config as {config[k]}.')
     args = vars(args)
     for k in list(args.keys()):
         if k in config:

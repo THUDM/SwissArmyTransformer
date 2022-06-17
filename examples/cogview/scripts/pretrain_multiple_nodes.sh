@@ -15,7 +15,6 @@ HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
 full_data="/dataset/fd5061f6/cogview/cogdata_new/cogdata_task_4leveltokens/merge.bin"
-small_data="/dataset/fd5061f6/cogview/cogdata_new/cogdata_task_4leveltokens/zijian/zijian.bin.part_0.cogdata"
 
 config_json="$script_dir/ds_config_zero.json"
 gpt_options=" \
@@ -42,8 +41,6 @@ gpt_options=" \
        --eval-interval 1000 \
        --save /root/checkpoints \
 "
-       # --load pretrained/cogview/cogview-base
-
 
 gpt_options="${gpt_options}
        --deepspeed \
