@@ -193,4 +193,4 @@ class CaiT(EncoderDecoderModel):
             cross_attention_mask = enc_attention_mask
         encoder_outputs = self.encode(input_ids, enc_position_ids, enc_attention_mask, **kw_args)
         decoder_outputs, *mems = self.decode(input_ids, dec_position_ids, dec_attention_mask, encoder_outputs=encoder_outputs, cross_attention_mask=cross_attention_mask, **kw_args)
-        return encoder_outputs, decoder_outputs, *mems
+        return (encoder_outputs, decoder_outputs, *mems)
