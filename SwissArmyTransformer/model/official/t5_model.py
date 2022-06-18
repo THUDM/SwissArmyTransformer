@@ -284,4 +284,4 @@ class T5Model(EncoderDecoderModel):
         decoder_outputs, *mems = self.decode(dec_input_ids, dec_attention_mask,
                                              encoder_outputs=encoder_outputs, cross_attention_mask=cross_attention_mask,
                                              **kw_args)
-        return encoder_outputs, decoder_outputs, *mems
+        return (encoder_outputs, decoder_outputs, *mems)
