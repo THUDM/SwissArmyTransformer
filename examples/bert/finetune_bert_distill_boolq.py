@@ -6,8 +6,36 @@ import numpy as np
 
 from SwissArmyTransformer import mpu, get_args, get_tokenizer
 from SwissArmyTransformer.training.deepspeed_training import training_main
+import torch.nn as nn
 from bert_ft_model import ClassificationModel
 
+
+class DistillModel(nn.Module):
+    def __init__(self, teacher, student):
+        super().__init__()
+        self.teacher = teacher
+        self.student = student
+    
+    def forward(self, input_ids, position_ids, attention_mask, token_type_ids):
+        teacher_logits, *mem_t = self.teacher(input_ids=input_ids, position_ids=position_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        student_logits, *mem_s = self.student(input_ids=input_ids, position_ids=position_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        return teacher_logits, student_logits
+    
+    def disable_untrainable_params(self):
+        enable = ['layernorm', 'classification_head']
+        for n, p in self.teacher.named_parameters():
+            flag = False
+            for e in enable:
+                if e in n.lower():
+                    flag = True
+                    break
+            if not flag:
+                p.requires_grad_(False)
+
+    @classmethod
+    def add_model_specific_args(cls, parser):
+        group = parser.add_argument_group('BERT-distill', 'BERT distill Configurations')
+        return parser
 
 def get_batch(data_iterator, args, timers):
     # Items and their type.
@@ -45,16 +73,17 @@ def forward_step(data_iterator, model, args, timers):
         data_iterator, args, timers)
     timers('batch generator').stop()
 
-    logits, *mems = model(input_ids=tokens, position_ids=position_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+    teacher_logits, student_logits = model(input_ids=tokens, position_ids=position_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
     # pred = ((logits.contiguous().float().squeeze(-1)) * loss_mask).sum(dim=-1) / loss_mask.sum(dim=-1)
-    pred = logits.contiguous().float().squeeze(-1)[..., 0]
+    pred = student_logits.contiguous().float().squeeze(-1)[..., 0]
     loss = torch.nn.functional.binary_cross_entropy_with_logits(
         pred,
         labels.float()
     )
+    loss_distill = nn.MSELoss()(teacher_logits, student_logits)
+    total_loss = loss + 0.1 * loss_distill
     acc = ((pred > 0.).long() == labels).sum() / labels.numel()
-    return loss, {'acc': acc}
-
+    return total_loss, {'acc': acc}
 
 def _encode(text, text_pair):
     tokenizer = get_tokenizer()
@@ -81,16 +110,14 @@ if __name__ == '__main__':
     py_parser.add_argument('--sample_length', type=int, default=512-16)
     py_parser.add_argument('--old_checkpoint', action="store_true")
     py_parser.add_argument('--data_root', type=str)
-    py_parser.add_argument('--md_type', type=str)
-    py_parser = ClassificationModel.add_model_specific_args(py_parser)
+    py_parser = DistillModel.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
     
-    model, args = ClassificationModel.from_pretrained(args, args.md_type)
+    student_model, student_args = ClassificationModel.from_pretrained(args, 'bert-base-uncased')
+    teacher_model, teacher_args = ClassificationModel.from_pretrained(args, 'bert-large-uncased')
+    model = DistillModel(teacher_model, student_model)
     
-    # Example: from_pretrained() for a recently trained model.
-    # model, args = ClassificationModel.from_pretrained(args, 'finetune-bert-base-uncased-boolq06-10-16-14', home_path='/raid/dm/sat_models/checkpoints')
-
-    get_tokenizer(args)
-    training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
+    get_tokenizer(teacher_args)
+    training_main(teacher_args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function)

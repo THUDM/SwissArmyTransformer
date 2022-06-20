@@ -44,16 +44,15 @@ gpt_options=" \
        --split 1 \
        --strict-eval \
        --eval-batch-size 8 \
-       --zero-stage 1 \
+       --zero-stage 0 \
        --lr 0.00002 \
        --batch-size 64 \
        --data_root $2 \
-       --md_type $MODEL_TYPE \
        --save-args
 "
 
 
-run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} deepspeed --include localhost:0 --hostfile ${HOST_FILE_PATH} finetune_bert_adapter_boolq.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} deepspeed --include localhost:2 --hostfile ${HOST_FILE_PATH} finetune_bert_distill_boolq.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 
