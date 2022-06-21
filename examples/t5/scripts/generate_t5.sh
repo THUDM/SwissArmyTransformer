@@ -1,5 +1,5 @@
 #!/bin/bash
-CHECKPOINT_PATH=/dataset/fd5061f6/sat_pretrained/glm
+CHECKPOINT_PATH=/sharefs/english/yanan/huggingface_models
 
 source $1
 MPSIZE=1
@@ -19,7 +19,7 @@ config_json="$script_dir/config_t5_large.json"
 
 python -m torch.distributed.launch --nproc_per_node=$MPSIZE --master_port $MASTER_PORT inference_t5.py \
        --deepspeed \
-       --deepspeed-config ${config_json} \
+       --deepspeed_config ${config_json} \
        --mode inference \
        --model-parallel-size $MPSIZE \
        $MODEL_ARGS \

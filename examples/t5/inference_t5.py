@@ -78,6 +78,7 @@ def main(args):
     args.do_train = False
     initialize_distributed(args)
     tokenizer = get_tokenizer(args)
+    args.decoder_start_token_id = tokenizer.get_command('sop').Id
     # load_checkpoint(model, args)
     set_random_seed(args.seed)
 
@@ -85,9 +86,11 @@ def main(args):
     model_cls = T5Model
     model, optimizer = setup_model_and_optimizer(args, model_cls=model_cls)
 
-    missing_keys, unexpected_keys = model.module.load_state_dict(
-        torch.load("/dataset/fd5061f6/yanan/huggingface_models/t5-large/model_states.pt")["module"])
-    optimizer.refresh_fp32_params()
+    missing_keys, unexpected_keys = model.load_state_dict(
+        torch.load(os.path.join(args.load, "mp_rank_00_model_states.pt"))["module"])
+    print(f"Missing keys {missing_keys}, unexpected keys {unexpected_keys}")
+    if optimizer is not None:
+        optimizer.refresh_fp32_params()
     model.eval()
     input_ids = tokenizer.EncodeAsIds("The <extra_id_0> walks in <extra_id_1> park").tokenization
     input_ids = input_ids + [tokenizer.get_command("eos").Id]
@@ -98,6 +101,7 @@ def main(args):
     data = {'text': input_ids, 'loss_mask': input_ids.new_ones(input_ids.shape), 'target': decoder_input_ids,
             'attention_mask': input_ids.new_ones(input_ids.shape)}
     tokens, decoder_tokens, labels, loss_mask, attention_mask = get_batch(data, args)
+    breakpoint()
     encoder_outputs, logits, *_ = model(enc_input_ids=tokens, dec_input_ids=decoder_tokens,
                                         enc_attention_mask=attention_mask)
     losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
@@ -107,7 +111,6 @@ def main(args):
         loss = loss / loss_mask.sum()
     loss.backward()
 
-    breakpoint()
 
     end_tokens = [tokenizer.get_command('eop').Id, tokenizer.get_command('eos').Id]
     # define function for each query

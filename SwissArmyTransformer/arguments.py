@@ -131,6 +131,9 @@ def add_training_args(parser):
     
     group.add_argument('--fp16', action='store_true',
                        help='Run model in fp16 mode')
+
+    group.add_argument('--bf16', action='store_true',
+                       help='Run model in bf16 mode')
     
     return parser
 
@@ -308,10 +311,11 @@ def get_args(args_list=None):
         if args.deepspeed_config is not None:
             with open(args.deepspeed_config) as file:
                 deepspeed_config = json.load(file)
+            args.fp16, args.bf16 = False, False
             if "fp16" in deepspeed_config and deepspeed_config["fp16"]["enabled"]:
                 args.fp16 = True
-            else:
-                args.fp16 = False
+            elif "bfloat16" in deepspeed_config and deepspeed_config["bfloat16"]["enabled"]:
+                args.bf16 = True
             if "train_micro_batch_size_per_gpu" in deepspeed_config:
                 args.batch_size = deepspeed_config["train_micro_batch_size_per_gpu"]
             if "gradient_accumulation_steps" in deepspeed_config:
