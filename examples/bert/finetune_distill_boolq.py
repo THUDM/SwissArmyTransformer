@@ -1,5 +1,3 @@
-import os
-
 import torch
 import argparse
 import numpy as np
@@ -9,26 +7,7 @@ from SwissArmyTransformer.training.deepspeed_training import training_main
 import torch.nn as nn
 from bert_ft_model import ClassificationModel
 
-
-class DistillModel(nn.Module):
-    def __init__(self, teacher, student):
-        super().__init__()
-        self.teacher = teacher
-        self.student = student
-    
-    def forward(self, input_ids, position_ids, attention_mask, token_type_ids):
-        teacher_logits, *mem_t = self.teacher(input_ids=input_ids, position_ids=position_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-        student_logits, *mem_s = self.student(input_ids=input_ids, position_ids=position_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-        return teacher_logits, student_logits
-    
-    def disable_untrainable_params(self):
-        for n, p in self.teacher.named_parameters():
-            p.requires_grad_(False)
-
-    @classmethod
-    def add_model_specific_args(cls, parser):
-        group = parser.add_argument_group('BERT-distill', 'BERT distill Configurations')
-        return parser
+from SwissArmyTransformer.model.official import DistillModel
 
 def get_batch(data_iterator, args, timers):
     # Items and their type.
@@ -65,8 +44,20 @@ def forward_step(data_iterator, model, args, timers):
     tokens, labels, attention_mask, position_ids, token_type_ids, loss_mask = get_batch(
         data_iterator, args, timers)
     timers('batch generator').stop()
+    teacher_kwargs = dict(
+        input_ids=tokens,
+        position_ids=position_ids,
+        attention_mask=attention_mask,
+        token_type_ids=token_type_ids
+    )
+    student_kwargs = dict(
+        input_ids=tokens,
+        position_ids=position_ids,
+        attention_mask=attention_mask,
+        token_type_ids=token_type_ids
+    )
 
-    teacher_logits, student_logits = model(input_ids=tokens, position_ids=position_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+    teacher_logits, student_logits = model(teacher_kwargs, student_kwargs)
     # pred = ((logits.contiguous().float().squeeze(-1)) * loss_mask).sum(dim=-1) / loss_mask.sum(dim=-1)
     pred = student_logits.contiguous().float().squeeze(-1)[..., 0]
     loss = torch.nn.functional.binary_cross_entropy_with_logits(
@@ -109,7 +100,7 @@ if __name__ == '__main__':
     args = argparse.Namespace(**vars(args), **vars(known))
     
     student_model, student_args = ClassificationModel.from_pretrained(args, 'bert-base-uncased')
-    teacher_model, teacher_args = ClassificationModel.from_pretrained(args, 'checkpoints/finetune-bert-large-uncased-boolq06-21-05-18')
+    teacher_model, teacher_args = ClassificationModel.from_pretrained(args, args.teacher)
     model = DistillModel(teacher_model, student_model)
     
     get_tokenizer(student_args)

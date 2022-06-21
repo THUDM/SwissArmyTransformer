@@ -1,9 +1,10 @@
 #! /bin/bash
 
 CHECKPOINT_PATH=$1
-if [[ "$1" == "" ]] || [[ "$2" == "" ]];
+if [[ "$1" == "" ]] || [[ "$2" == "" ]] || [[ "$3" == "" ]];
 then
     echo "Please pass in two root folders to save model and data!"
+    echo "Please pass in a folder of your teacher model!"
     exit
 fi
 
@@ -48,7 +49,8 @@ gpt_options=" \
        --lr 0.00002 \
        --batch-size 8 \
        --data_root $2 \
-       --save-args
+       --save-args \
+       --teacher $3
 "
 
 
