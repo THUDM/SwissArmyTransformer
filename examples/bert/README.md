@@ -18,7 +18,7 @@ Finetune bert-base-uncased:
 bash scripts/finetune_boolq.sh /data/qingsong/pretrain /data/qingsong/dataset
 ```
 
-* iter 1000 val acc: 0.734
+* iter 1000 val acc: 0.755
 
 Finetune bert with adapter:
 
