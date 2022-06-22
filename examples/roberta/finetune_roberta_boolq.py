@@ -116,4 +116,4 @@ if __name__ == '__main__':
     args = argparse.Namespace(**vars(args), **vars(known))
     # from cogdata.utils.ice_tokenizer import get_tokenizer as get_ice
     # tokenizer = get_tokenizer(args=args, outer_tokenizer=get_ice())
-    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, handle_metrics=handle_metrics)
+    training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, handle_metrics_function=handle_metrics)

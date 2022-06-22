@@ -40,13 +40,13 @@ from SwissArmyTransformer.data_utils import make_loaders
 from SwissArmyTransformer.ops import LayerNorm
 from SwissArmyTransformer.arguments import set_random_seed, initialize_distributed
 
-def training_main(args, model_cls, forward_step_function, create_dataset_function, handle_metrics=None, init_function=None):
+def training_main(args, model_cls, forward_step_function, create_dataset_function, handle_metrics_function=None, init_function=None):
     """Main training program."""
     hooks = {
         'forward_step': forward_step_function,
         'init_function': init_function,
         'create_dataset_function': create_dataset_function,
-        'handle_metrics': handle_metrics,
+        'handle_metrics': handle_metrics_function,
     }
 
     timers = Timers()  # Timer.
