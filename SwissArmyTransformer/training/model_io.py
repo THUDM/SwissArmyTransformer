@@ -73,8 +73,8 @@ def save_checkpoint(iteration, model, optimizer,
             if args.tokenizer_type != 'fake':
                 to_dump['tokenizer_type'] = args.tokenizer_type 
             # architecture related args
-            arch_args_list = ['num_layers', 'hidden_size', 'num_attention_heads', 'vocab_size',
-             'layernorm_order', 'inner_hidden_size', 'hidden_size_per_attention_head', 'model_parallel_size']
+            arch_args_list = ['num_layers', 'hidden_size', 'num_attention_heads', 'vocab_size', 'hidden_dropout', 'attention_dropout',
+             'layernorm_order', 'inner_hidden_size', 'hidden_size_per_attention_head', 'model_parallel_size', 'max_sequence_length']
             for name in arch_args_list: 
                 if hasattr(args, name) and getattr(args, name) is not None:
                     to_dump[name] = getattr(args, name)
