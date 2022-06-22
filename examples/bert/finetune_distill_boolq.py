@@ -1,12 +1,13 @@
-import os
-
 import torch
 import argparse
 import numpy as np
 
 from SwissArmyTransformer import mpu, get_args, get_tokenizer
 from SwissArmyTransformer.training.deepspeed_training import training_main
+import torch.nn as nn
 from bert_ft_model import ClassificationModel
+
+from SwissArmyTransformer.model.official import DistillModel
 
 def get_batch(data_iterator, args, timers):
     # Items and their type.
@@ -43,17 +44,30 @@ def forward_step(data_iterator, model, args, timers):
     tokens, labels, attention_mask, position_ids, token_type_ids, loss_mask = get_batch(
         data_iterator, args, timers)
     timers('batch generator').stop()
+    teacher_kwargs = dict(
+        input_ids=tokens,
+        position_ids=position_ids,
+        attention_mask=attention_mask,
+        token_type_ids=token_type_ids
+    )
+    student_kwargs = dict(
+        input_ids=tokens,
+        position_ids=position_ids,
+        attention_mask=attention_mask,
+        token_type_ids=token_type_ids
+    )
 
-    logits, *mems = model(input_ids=tokens, position_ids=position_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+    teacher_logits, student_logits = model(teacher_kwargs, student_kwargs)
     # pred = ((logits.contiguous().float().squeeze(-1)) * loss_mask).sum(dim=-1) / loss_mask.sum(dim=-1)
-    pred = logits.contiguous().float().squeeze(-1)[..., 0]
+    pred = student_logits.contiguous().float().squeeze(-1)[..., 0]
     loss = torch.nn.functional.binary_cross_entropy_with_logits(
         pred,
         labels.float()
     )
+    loss_distill = nn.MSELoss()(teacher_logits, student_logits)
+    total_loss = loss + 0.1 * loss_distill
     acc = ((pred > 0.).long() == labels).sum() / labels.numel()
-    return loss, {'acc': acc}
-
+    return total_loss, {'acc': acc}
 
 def _encode(text, text_pair):
     tokenizer = get_tokenizer()
@@ -80,16 +94,14 @@ if __name__ == '__main__':
     py_parser.add_argument('--sample_length', type=int, default=512-16)
     py_parser.add_argument('--old_checkpoint', action="store_true")
     py_parser.add_argument('--data_root', type=str)
-    py_parser.add_argument('--md_type', type=str)
-    py_parser = ClassificationModel.add_model_specific_args(py_parser)
+    py_parser = DistillModel.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
     
-    model, args = ClassificationModel.from_pretrained(args, args.md_type)
+    student_model, student_args = ClassificationModel.from_pretrained(args, 'bert-base-uncased')
+    teacher_model, teacher_args = ClassificationModel.from_pretrained(args, args.teacher)
+    model = DistillModel(teacher_model, student_model)
     
-    # Example: from_pretrained() for a recently trained model.
-    # model, args = ClassificationModel.from_pretrained(args, 'finetune-bert-base-uncased-boolq06-10-16-14', home_path='/raid/dm/sat_models/checkpoints')
-
-    get_tokenizer(args)
-    training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
+    get_tokenizer(student_args)
+    training_main(student_args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function)
