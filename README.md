@@ -2,6 +2,7 @@
 
 ## Tutorials
 
+* [quick start](/tutorials/quick_start.md)
 * [training](/tutorials/training.md)
 * [inference](/tutorials/inference.md)
 
