@@ -1,5 +1,5 @@
 
 - Tutorials
-  - [0 quick start](tutorials/0_quick_start.md)
-  - [1 training](tutorials/1_training.md)
-  - [2 inference](tutorials/2_inference.md)
+  - [00 quick start](tutorials/00_quick_start.md)
+  - [01 training](tutorials/01_training.md)
+  - [02 inference](tutorials/02_inference.md)
