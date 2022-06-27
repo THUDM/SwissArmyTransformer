@@ -347,7 +347,7 @@ class BaseTransformer(torch.nn.Module):
         self.embedding_dropout = torch.nn.Dropout(embedding_dropout_prob)
 
         self.word_embeddings = VocabParallelEmbedding(
-            vocab_size, hidden_size, init_method=unscaled_init_method(0.02))
+            vocab_size, hidden_size)
 
         self.position_embeddings = torch.nn.Embedding(max_sequence_length, hidden_size)
         torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)

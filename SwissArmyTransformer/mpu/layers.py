@@ -31,7 +31,7 @@ from .mappings import copy_to_model_parallel_region
 from .mappings import gather_from_model_parallel_region
 from .mappings import reduce_from_model_parallel_region
 from .mappings import scatter_to_model_parallel_region
-from .utils import divide
+from .utils import divide, unscaled_init_method
 from .utils import VocabUtility
 
 
@@ -81,7 +81,7 @@ class VocabParallelEmbedding(torch.nn.Module):
         init_method: method to initialize weights.
     """
     def __init__(self, num_embeddings, embedding_dim,
-                 init_method=init.xavier_normal_):
+                 init_method=unscaled_init_method(0.02)):
         super(VocabParallelEmbedding, self).__init__()
         # Keep the input dimensions.
         self.num_embeddings = num_embeddings
@@ -140,7 +140,7 @@ class ParallelEmbedding(torch.nn.Module):
         init_method: method to initialize weights.
     """
     def __init__(self, num_embeddings, embedding_dim,
-                 init_method=init.xavier_normal_,
+                 init_method=unscaled_init_method(0.02),
                  keep_master_weight_for_test=False):
         super(ParallelEmbedding, self).__init__()
         # Keep the input dimensions.
@@ -199,7 +199,7 @@ class ColumnParallelLinear(torch.nn.Module):
                                      used for initialization.
     """
     def __init__(self, input_size, output_size, bias=True, gather_output=True,
-                 init_method=init.xavier_normal_, stride=1,
+                 init_method=unscaled_init_method(0.02), stride=1,
                  keep_master_weight_for_test=False, module=None, name=None):
         super(ColumnParallelLinear, self).__init__()
 
@@ -273,7 +273,7 @@ class RowParallelLinear(torch.nn.Module):
     """
     def __init__(self, input_size, output_size, bias=True,
                  input_is_parallel=False,
-                 init_method=init.xavier_normal_, stride=1,
+                 init_method=unscaled_init_method(0.02), stride=1,
                  keep_master_weight_for_test=False, module=None, name=None):
         super(RowParallelLinear, self).__init__()
 

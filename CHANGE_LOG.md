@@ -71,3 +71,7 @@ This will let the key `'last_attention_map'` appear in the next layer's `kw_args
 1. `from_pretrained` now auto downloads models. There are two kinds of usages: `SomeModel.from_pretrained(args, name)` will load the weights of `name` model to a `SomeModel` with the same model arch hyper-params with `name`; `AutoModel.from_pretrained(args, name)` will return an official model (`model_class` Class) with the pretrained weights.
 2. ENV `SAT_HOME` is where we put the models in. Set it in your shell file.
 3. don't necessarily need `deepspeed_config`, or pass model arch hyper-params for `from_pretrained`. Use `zero-stage 0/1/2`.  
+
+# 2022.6.27
+1. Fix *flat_output bug.
+2. fix defualt mpu init_method bug.
