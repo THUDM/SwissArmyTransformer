@@ -473,7 +473,7 @@ class BaseTransformer(torch.nn.Module):
                         output_cross_layer[k] = len(flat_outputs) - 1
                     # --------------------
 
-                    return x_, output_per_layers_part, output_cross_layer, flat_outputs
+                    return (x_, output_per_layers_part, output_cross_layer, *flat_outputs)
                 return custom_forward
 
             # prevent to lose requires_grad in checkpointing.
@@ -495,7 +495,7 @@ class BaseTransformer(torch.nn.Module):
                     flat_inputs.append(v)
                     cross_layer_index[k] = len(flat_inputs) - 1
                 # --------------------
-                hidden_states, output_per_layers_part, output_cross_layer, flat_outputs = \
+                hidden_states, output_per_layers_part, output_cross_layer, *flat_outputs = \
                     checkpoint(custom(l, l + chunk_length, kw_args_index, cross_layer_index), *args, *flat_inputs)
                 
                 # recover output_per_layers_part, output_cross_layer
