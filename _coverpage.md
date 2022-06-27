@@ -6,4 +6,4 @@
 - DeepSpeed enhanced for large model training
 
 [GitHub](https://github.com/THUDM/SwissArmyTransformer)
-[Get Started](#swissarmytransformer)
+[Get Started](#SwissArmyTransformer-Documentation)
