@@ -19,7 +19,7 @@ jobs:
            npm i docsify-cli -g
            rm README.md
            docsify generate . --sidebar README.md
-           python3 add_header.py
+           python3 ./github/add_header.py
            mv README_tmp.md README.md
            git config --global user.email "lqs@mail.bnu.edu.cn"
            git config --global user.name "Qingsong Lv"
