@@ -19,7 +19,9 @@ import argparse
 import stat
 from functools import partial
 
-from SwissArmyTransformer import mpu, get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
+from SwissArmyTransformer import mpu, get_args, get_tokenizer
+
+from SwissArmyTransformer.training import initialize_distributed, set_random_seed
 
 from SwissArmyTransformer.model import GLMModel
 from SwissArmyTransformer.model.mixins import CachedAutoregressiveMixin
@@ -45,17 +47,11 @@ def get_masks_and_position_ids_glm(seq, mask_position, context_length):
     return tokens, attention_mask, position_ids
 
 
-def main(args):
-    args.do_train = False
-    initialize_distributed(args)
+def main(model, args):
     tokenizer = get_tokenizer(args)
-    # build model 
-    model = GLMModel(args)
-    model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
     if args.fp16:
         model = model.half()
     model = model.to(args.device)
-    load_checkpoint(model, args)
     set_random_seed(args.seed)
     model.eval()
 
@@ -152,7 +148,8 @@ def main(args):
     os.makedirs(args.output_path, exist_ok=True)
     generate_continually(process, args.input_source)
 
-
+from SwissArmyTransformer import AutoModel
+from SwissArmyTransformer.model.official import GLMModel
 if __name__ == "__main__":
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--sampling-strategy', type=str, default='BaseStrategy', help='type name of sampling strategy')
@@ -160,6 +157,12 @@ if __name__ == "__main__":
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
-    
+    args.do_train = False
+
+    initialize_distributed(args)
+    # build model
+    model,args = AutoModel.from_pretrained(args, 'glm-large-zh')
+    model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
+
     with torch.no_grad():
-        main(args)
+        main(model, args)
