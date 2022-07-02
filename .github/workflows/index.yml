@@ -21,7 +21,7 @@ jobs:
            docsify generate . --sidebar README.md
            python3 .github/add_header.py
            mv README_tmp.md README.md
-		   bash .github/git_push.sh
+           bash .github/git_push.sh
       - name: List files in the repository
         run: |
           ls ${{ github.workspace }}
