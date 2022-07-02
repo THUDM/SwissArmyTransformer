@@ -21,11 +21,7 @@ jobs:
            docsify generate . --sidebar README.md
            python3 .github/add_header.py
            mv README_tmp.md README.md
-           git config --global user.email "lqs@mail.bnu.edu.cn"
-           git config --global user.name "Qingsong Lv"
-           git add README.md
-           git commit -m "index file by github actions"
-           git push origin docs
+		   bash .github/git_push.sh
       - name: List files in the repository
         run: |
           ls ${{ github.workspace }}
