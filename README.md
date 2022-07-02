@@ -1,5 +1,4 @@
 # SwissArmyTransformer Documentation
-- [About](about.md)
 
 - Examples
   - [BERT](examples/BERT.md)
