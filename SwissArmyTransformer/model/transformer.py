@@ -65,6 +65,7 @@ class SelfAttention(torch.nn.Module):
             gather_output=False,
             init_method=init_method,
             bias=bias,
+            params_dtype=torch.half,
             module=self,
             name="query_key_value"
         )
@@ -76,6 +77,7 @@ class SelfAttention(torch.nn.Module):
             input_is_parallel=True,
             init_method=output_layer_init_method,
             bias=bias,
+            params_dtype=torch.half,
             module=self,
             name="dense"
         )
@@ -125,11 +127,11 @@ class CrossAttention(torch.nn.Module):
         # Strided linear layer.
         self.query = ColumnParallelLinear(hidden_size, self.inner_hidden_size,
                                           gather_output=False,
-                                          init_method=init_method, bias=bias, module=self, name="query")
+                                          init_method=init_method, bias=bias, params_dtype=torch.half, module=self, name="query")
         self.key_value = ColumnParallelLinear(hidden_size, 2 * self.inner_hidden_size,
                                               stride=2,
                                               gather_output=False,
-                                              init_method=init_method, bias=bias, module=self, name="key_value")
+                                              init_method=init_method, bias=bias, params_dtype=torch.half, module=self, name="key_value")
         # Dropout. Note that for a single iteration, this layer will generate
         # different outputs on different number of parallel partitions but
         # on average it should not be partition dependent.
@@ -140,7 +142,7 @@ class CrossAttention(torch.nn.Module):
             self.inner_hidden_size,
             hidden_size,
             input_is_parallel=True,
-            init_method=output_layer_init_method, bias=bias, module=self, name="dense")
+            init_method=output_layer_init_method, bias=bias, params_dtype=torch.half, module=self, name="dense")
         self.output_dropout = torch.nn.Dropout(output_dropout_prob)
 
         object.__setattr__(self, 'transformer', transformer_pointer)
@@ -185,6 +187,7 @@ class MLP(torch.nn.Module):
             gather_output=False,
             init_method=init_method,
             bias=bias,
+            params_dtype=torch.half,
             module=self,
             name="dense_h_to_4h"
         )
@@ -195,6 +198,7 @@ class MLP(torch.nn.Module):
             input_is_parallel=True,
             init_method=output_layer_init_method,
             bias=bias,
+            params_dtype=torch.half,
             module=self,
             name="dense_4h_to_h"
         )
@@ -347,7 +351,7 @@ class BaseTransformer(torch.nn.Module):
         self.embedding_dropout = torch.nn.Dropout(embedding_dropout_prob)
 
         self.word_embeddings = VocabParallelEmbedding(
-            vocab_size, hidden_size)
+            vocab_size, hidden_size, torch.half)
 
         self.position_embeddings = torch.nn.Embedding(max_sequence_length, hidden_size)
         torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)

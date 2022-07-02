@@ -53,7 +53,7 @@ class BaseMixin(torch.nn.Module):
 
 
 class BaseModel(torch.nn.Module):
-    def __init__(self, args, transformer=None, **kwargs):
+    def __init__(self, args, init_method, transformer=None, **kwargs):
         super(BaseModel, self).__init__()
         self.mixins = torch.nn.ModuleDict()
         self.collect_hooks_()
@@ -73,6 +73,7 @@ class BaseModel(torch.nn.Module):
                 hidden_size_per_attention_head=args.hidden_size_per_attention_head,
                 checkpoint_activations=args.checkpoint_activations,
                 checkpoint_num_layers=args.checkpoint_num_layers,
+                init_method=init_method,
                 layernorm_order=args.layernorm_order,
                 hooks=self.hooks,
                 **kwargs
