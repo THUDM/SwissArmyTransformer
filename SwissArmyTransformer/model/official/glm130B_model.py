@@ -16,20 +16,7 @@ from SwissArmyTransformer.model.transformer import BaseTransformer
 from SwissArmyTransformer.transformer_defaults import standard_attention
 from SwissArmyTransformer.mpu.utils import split_tensor_along_last_dim, divide
 
-class BlockPositionEmbeddingMixin(BaseMixin):
-    def __init__(self, max_sequence_length, hidden_size, init_method_std=0.02):
-        super(BlockPositionEmbeddingMixin, self).__init__()
-        self.max_sequence_length = max_sequence_length
-        self.hidden_size = hidden_size
-        self.block_position_embeddings = torch.nn.Embedding(max_sequence_length, hidden_size)
-        torch.nn.init.normal_(self.block_position_embeddings.weight, mean=0.0, std=init_method_std)
-    
-    def position_embedding_forward(self, position_ids, **kwargs):
-        position_ids, block_position_ids = position_ids[:, 0], position_ids[:, 1]
-        position_embeddings = self.transformer.position_embeddings(position_ids)
-        block_position_embeddings = self.block_position_embeddings(block_position_ids)
-        return position_embeddings + block_position_embeddings
-
+import math
 
 class RotaryEmbeddingMixin(BaseMixin):
     def __init__(self, fp16, learnable_rotary_embedding, apply_rotary_positional_embedding_kernel, bf16, hidden_size, num_attention_heads):
@@ -51,38 +38,56 @@ class RotaryEmbeddingMixin(BaseMixin):
 
            
     def attention_forward(self, hidden_states, mask, **kw_args):
-        self = self.transformer.layers[kw_args['layer_id']].attention
+        print('mytest 16', hidden_states.float().abs().mean())
+        exit()
+        attn = self.transformer.layers[kw_args['layer_id']].attention
         attention_fn = standard_attention
-        if 'attention_fn' in self.hooks:
-            attention_fn = self.hooks['attention_fn']
+        if 'attention_fn' in attn.hooks:
+            attention_fn = attn.hooks['attention_fn']
 
-        mixed_raw_layer = self.query_key_value(hidden_states)
+        mixed_raw_layer = attn.query_key_value(hidden_states)
         (mixed_query_layer,
             mixed_key_layer,
             mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, 3)
 
-        dropout_fn = self.attention_dropout if self.training else None
+        dropout_fn = attn.attention_dropout if attn.training else None
 
-        query_layer = self._transpose_for_scores(mixed_query_layer)
-        key_layer = self._transpose_for_scores(mixed_key_layer)
-        value_layer = self._transpose_for_scores(mixed_value_layer)
+        query_layer = attn._transpose_for_scores(mixed_query_layer)
+        key_layer = attn._transpose_for_scores(mixed_key_layer)
+        value_layer = attn._transpose_for_scores(mixed_value_layer)
 
+        # print('mytest 15', query_layer)
+        # exit()
         # Rotary embeddings
         # [b, sq] -> [sq, b]
         kw_args['position_ids'] = kw_args['position_ids'].transpose(0, 1)
-        cos, sin = self.rotary_emb(value_layer, seq_len=kw_args['position_ids'].max() + 1)
+        # print('mytest 5', kw_args['position_ids'])
+
+        query_layer = query_layer.transpose(1, 2).transpose(0, 1)
+        key_layer = key_layer.transpose(1, 2).transpose(0, 1)
+
+        cos, sin = self.rotary_emb(value_layer, seq_len=query_layer.shape[0])
+
+        # print('mytest 4', query_layer.shape, key_layer.shape, cos.shape, sin.shape)
+
         query_layer, key_layer = self.apply_rotary_fn(query_layer, key_layer, cos, sin, kw_args['position_ids'])
-            
+
+        # print('mytest 11', query_layer.shape, key_layer.shape)
+
+        query_layer = query_layer.transpose(0, 1).transpose(1, 2)
+        key_layer = key_layer.transpose(0, 1).transpose(1, 2)
+
+        # print('mytest 12', query_layer.shape, key_layer.shape)
 
         context_layer = attention_fn(query_layer, key_layer, value_layer, mask, dropout_fn, **kw_args)
 
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
+        new_context_layer_shape = context_layer.size()[:-2] + (attn.hidden_size_per_partition,)
         context_layer = context_layer.view(*new_context_layer_shape)
-        output = self.dense(context_layer)
+        output = attn.dense(context_layer)
 
-        if self.training:
-            output = self.output_dropout(output)
+        if attn.training:
+            output = attn.output_dropout(output)
 
         return output
 
@@ -133,31 +138,32 @@ class DeepNormWithGLUMixin(BaseMixin):
             hidden_states: [batch, seq_len, hidden_size]
             mask: [(1, 1), seq_len, seq_len]
         '''
-        self = self.transformer.layers[kw_args['layer_id']]
+        layer = self.transformer.layers[kw_args['layer_id']]
         # Layer norm at the begining of the transformer layer.
-        attention_input = self.input_layernorm(hidden_states)
+        attention_input = layer.input_layernorm(hidden_states)
         # Self attention.
-        attention_output = self.attention(attention_input, mask, **kw_args)
-        
+        attention_output = layer.attention(attention_input, mask, **kw_args)
+        # print('mytest 14', attention_output.float().abs().mean())
+        # exit()
         # Residual connection.
         alpha = (2 * self.num_layers) ** 0.5
         hidden_states = attention_input * alpha + attention_output
 
-        mlp_input = self.post_attention_layernorm(hidden_states)
+        mlp_input = layer.post_attention_layernorm(hidden_states)
 
-        if self.is_decoder:
+        if layer.is_decoder:
             encoder_outputs = kw_args['encoder_outputs']
             if encoder_outputs is not None:
                 assert 'cross_attention_mask' in kw_args
                 # Cross attention
-                attention_output = self.cross_attention(mlp_input, **kw_args)
+                attention_output = layer.cross_attention(mlp_input, **kw_args)
                 # Residual connection.
                 hidden_states = hidden_states + attention_output
                 # Layer norm post the cross attention
-                mlp_input = self.post_cross_attention_layernorm(hidden_states)
+                mlp_input = layer.post_cross_attention_layernorm(hidden_states)
 
         # MLP.
-        mlp_output = self.mlp(mlp_input, **kw_args)
+        mlp_output = layer.mlp(mlp_input, **kw_args)
 
         # Second residual connection.
         output = mlp_input * alpha + mlp_output
@@ -174,18 +180,25 @@ class FP32SoftmaxMixin(BaseMixin):
 
         # We disable the PB-relax-Attention and only changes the order of computation, because it is enough for most of training. 
         # The implementation in the paper can be done very easily, if you really need it to train very deep transformers. 
-        query_key_layer_scaling_coeff = kw_args['layer_id']
+        query_key_layer_scaling_coeff = kwargs['layer_id'] + 1
         if scaling_attention_score:
             query_layer = query_layer / math.sqrt(query_layer.shape[-1]) / query_key_layer_scaling_coeff
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         if log_attention_weights is not None:
             attention_scores += log_attention_weights
+        # print('mytest 99', attention_mask)
+        # print('mytest 100', query_layer.shape)
+        # print('mytest 101', key_layer.shape)
+        # print('mytest 102', value_layer.shape)
+        # print('mytest 103', attention_scores.shape)
 
         if not (attention_mask.shape[-2] == 1 and (attention_mask > 0).all()):
             # if auto-regressive, skip
             attention_scores = torch.mul(attention_scores, attention_mask) - \
                             10000.0 * (1.0 - attention_mask)
 
+        # print('mytest 104', attention_scores.shape)
+        
         attention_scores = attention_scores.float()
         attention_scores = attention_scores * query_key_layer_scaling_coeff
 
@@ -207,7 +220,7 @@ def empty_init(master_weight, module, name):
     pass
 
 class GLM130B(BaseModel):
-    def __init__(self, args, transformer=None, parallel_output=True):
+    def __init__(self, args, transformer=None, parallel_output=False):
         super().__init__(args, empty_init, transformer=transformer, parallel_output=parallel_output)
         self.add_mixin('glu-deep-norm',
             DeepNormWithGLUMixin(args.num_layers, args.hidden_size, args.inner_hidden_size)

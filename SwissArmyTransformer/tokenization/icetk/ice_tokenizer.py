@@ -82,7 +82,7 @@ class _IceTokenizer(AbstractTokenizer):
         return self.tokenizer.encode(text)
 
     def detokenize(self, token_ids):
-        return "".join([self.IdToToken(t) for t in token_ids])
+        return " ".join([self.IdToToken(t) for t in token_ids])
 
     @property
     def eod(self):

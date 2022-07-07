@@ -7,7 +7,7 @@ class RotaryEmbedding(torch.nn.Module):
 
     def __init__(self, dim, base=10000, precision=torch.half, learnable=False):
         super().__init__()
-        inv_freq = 1. / (base ** (torch.arange(0, dim, 2).float() / dim))
+        inv_freq = 1. / (base ** (torch.arange(0, dim, 2, device=torch.cuda.current_device()).float() / dim))
         self.learnable = learnable
         if learnable:
             self.inv_freq = torch.nn.Parameter(inv_freq)
@@ -92,13 +92,17 @@ def apply_rotary_pos_emb_fused(q, k, cos, sin, offset: int = 0):
 
 @torch.jit.script
 def apply_rotary_pos_emb_index(q, k, cos, sin, position_id):
-    # position_id: [sq, b], q: [sq, b * np, hn] -> [sq, b, np, hn], cos: [sq, 1, hn] -> [sq, b, 1, hn]
-    sq, b, np = position_id.size(0), position_id.size(1), q.size(1) // position_id.size(1)
-    q, k = q.view(sq, b, np, -1), k.view(sq, b, np, -1)
-    cos, sin = F.embedding(position_id, cos.squeeze(1)).unsqueeze(2), \
-               F.embedding(position_id, sin.squeeze(1)).unsqueeze(2)
+    # position_id: [sq, b], q, k: [sq, b, np, hn], cos: [sq, 1, hn] -> [sq, b, 1, hn]
+    # cos, sin = F.embedding(position_id, cos.squeeze(1)).unsqueeze(2), \
+    #            F.embedding(position_id, sin.squeeze(1)).unsqueeze(2)
+    # print('mytest 17', position_id.shape, cos.shape, sin.shape)
+    cos, sin = F.embedding(position_id, cos.squeeze(1)), \
+               F.embedding(position_id, sin.squeeze(1))
+    # print('mytest 18', cos.shape, sin.shape)
+    cos = cos.unsqueeze(2)
+    sin = sin.unsqueeze(2)
     q, k = (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
-    return q.view(sq, b * np, -1), k.view(sq, b * np, -1)
+    return q, k
 
 
 def apply_rotary_pos_emb_index_torch(q, k, cos, sin, position_id):  # jitting fails with bf16

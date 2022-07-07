@@ -113,6 +113,7 @@ class VocabParallelEmbedding(torch.nn.Module):
 
     def forward(self, input_):
         # Build the mask.
+        # print('mytest 1', input_)
         input_mask = (input_ < self.vocab_start_index) | \
                      (input_ >= self.vocab_end_index)
         # Mask the input.
@@ -123,10 +124,12 @@ class VocabParallelEmbedding(torch.nn.Module):
                                       self.padding_idx, self.max_norm,
                                       self.norm_type, self.scale_grad_by_freq,
                                       self.sparse)
+        # print('mytest 2', output_parallel)
         # Mask the output embedding.
         output_parallel[input_mask, :] = 0.0
         # Reduce across all the model parallel GPUs.
         output = reduce_from_model_parallel_region(output_parallel)
+        # print('mytest 3', output)
         return output
 
 
