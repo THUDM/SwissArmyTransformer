@@ -61,8 +61,6 @@ def generate_continually(func, input_source='interactive'):
             inputs = fin.readlines()
         err_linenos = []
         for line_no, raw_text in enumerate(inputs):
-            if line_no % dist.get_world_size() != dist.get_rank():
-                continue
             rk = dist.get_rank()
             print(f'Working on No. {line_no} on {rk}... ')
             raw_text = raw_text.strip()

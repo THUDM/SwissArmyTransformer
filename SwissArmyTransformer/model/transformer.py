@@ -39,7 +39,7 @@ class SelfAttention(torch.nn.Module):
     def __init__(self, hidden_size, num_attention_heads,
                  attention_dropout_prob, output_dropout_prob,
                  init_method, layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True,
-                 hooks={}, transformer_pointer=None):
+                 hooks={}, transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
         super(SelfAttention, self).__init__()
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
@@ -65,9 +65,11 @@ class SelfAttention(torch.nn.Module):
             gather_output=False,
             init_method=init_method,
             bias=bias,
-            params_dtype=torch.half,
+            params_dtype=params_dtype,
             module=self,
-            name="query_key_value"
+            name="query_key_value",
+            skip_init=skip_init,
+            device=device
         )
         self.attention_dropout = torch.nn.Dropout(attention_dropout_prob)
 
@@ -77,9 +79,11 @@ class SelfAttention(torch.nn.Module):
             input_is_parallel=True,
             init_method=output_layer_init_method,
             bias=bias,
-            params_dtype=torch.half,
+            params_dtype=params_dtype,
             module=self,
-            name="dense"
+            name="dense",
+            skip_init=skip_init,
+            device=device
         )
         self.output_dropout = torch.nn.Dropout(output_dropout_prob)
         
@@ -107,7 +111,7 @@ class CrossAttention(torch.nn.Module):
     """Parallel cross-attention layer for Transformer"""
 
     def __init__(self, hidden_size, num_attention_heads, attention_dropout_prob, output_dropout_prob, init_method,
-                 layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, hooks={},transformer_pointer=None):
+                 layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, hooks={},transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
         super().__init__()
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
@@ -127,11 +131,12 @@ class CrossAttention(torch.nn.Module):
         # Strided linear layer.
         self.query = ColumnParallelLinear(hidden_size, self.inner_hidden_size,
                                           gather_output=False,
-                                          init_method=init_method, bias=bias, params_dtype=torch.half, module=self, name="query")
+                                          init_method=init_method, bias=bias, params_dtype=params_dtype, module=self, name="query", skip_init=skip_init, device=device)
         self.key_value = ColumnParallelLinear(hidden_size, 2 * self.inner_hidden_size,
                                               stride=2,
                                               gather_output=False,
-                                              init_method=init_method, bias=bias, params_dtype=torch.half, module=self, name="key_value")
+                                              init_method=init_method, bias=bias, params_dtype=params_dtype, module=self, name="key_value",
+                                              skip_init=skip_init, device=device)
         # Dropout. Note that for a single iteration, this layer will generate
         # different outputs on different number of parallel partitions but
         # on average it should not be partition dependent.
@@ -142,7 +147,8 @@ class CrossAttention(torch.nn.Module):
             self.inner_hidden_size,
             hidden_size,
             input_is_parallel=True,
-            init_method=output_layer_init_method, bias=bias, params_dtype=torch.half, module=self, name="dense")
+            init_method=output_layer_init_method, bias=bias, params_dtype=params_dtype, module=self, name="dense",skip_init=skip_init,
+            device=device)
         self.output_dropout = torch.nn.Dropout(output_dropout_prob)
 
         object.__setattr__(self, 'transformer', transformer_pointer)
@@ -168,7 +174,7 @@ class CrossAttention(torch.nn.Module):
 
 class MLP(torch.nn.Module):
     def __init__(self, hidden_size, output_dropout_prob, init_method, inner_hidden_size=None,
-                 output_layer_init_method=None, layer_id=None, hooks={}, bias=True, activation_func=gelu, transformer_pointer=None):
+                 output_layer_init_method=None, layer_id=None, hooks={}, bias=True, activation_func=gelu, transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
         super(MLP, self).__init__()
         self.layer_id = layer_id
         self.activation_func = activation_func
@@ -187,9 +193,11 @@ class MLP(torch.nn.Module):
             gather_output=False,
             init_method=init_method,
             bias=bias,
-            params_dtype=torch.half,
+            params_dtype=params_dtype,
             module=self,
-            name="dense_h_to_4h"
+            name="dense_h_to_4h",
+            skip_init=skip_init,
+            device=device
         )
         # Project back to h.
         self.dense_4h_to_h = RowParallelLinear(
@@ -198,9 +206,11 @@ class MLP(torch.nn.Module):
             input_is_parallel=True,
             init_method=output_layer_init_method,
             bias=bias,
-            params_dtype=torch.half,
+            params_dtype=params_dtype,
             module=self,
-            name="dense_4h_to_h"
+            name="dense_4h_to_h",
+            skip_init=skip_init,
+            device=device
         )
         self.dropout = torch.nn.Dropout(output_dropout_prob)
         object.__setattr__(self, 'transformer', transformer_pointer)
@@ -237,7 +247,10 @@ class BaseTransformerLayer(torch.nn.Module):
             use_bias=True,
             activation_func=gelu,
             hooks={},
-            transformer_pointer=None
+            transformer_pointer=None,
+            params_dtype=torch.float,
+            skip_init=False,
+            device=torch.device('cpu')
     ):
         super(BaseTransformerLayer, self).__init__()
         # Set output layer initialization if not provided.
@@ -265,7 +278,10 @@ class BaseTransformerLayer(torch.nn.Module):
             output_layer_init_method=output_layer_init_method,
             bias=use_bias,
             hooks=hooks,
-            transformer_pointer=transformer_pointer
+            transformer_pointer=transformer_pointer,
+            params_dtype=params_dtype,
+            skip_init=skip_init,
+            device=device
         )
 
         # Layernorm on the input data.
@@ -287,7 +303,8 @@ class BaseTransformerLayer(torch.nn.Module):
                 output_layer_init_method=output_layer_init_method,
                 bias=use_bias,
                 hooks=hooks,
-                transformer_pointer=transformer_pointer
+                transformer_pointer=transformer_pointer,
+                params_dtype=params_dtype
             )
             self.post_cross_attention_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
 
@@ -302,7 +319,10 @@ class BaseTransformerLayer(torch.nn.Module):
             layer_id=layer_id,
             activation_func=activation_func,
             hooks=hooks,
-            transformer_pointer=transformer_pointer
+            transformer_pointer=transformer_pointer,
+            params_dtype=params_dtype,
+            skip_init=skip_init,
+            device=device
         )
 
     def forward(self, hidden_states, mask, *args, **kw_args):
@@ -333,7 +353,10 @@ class BaseTransformer(torch.nn.Module):
                  layernorm=LayerNorm,
                  init_method=None,
                  use_final_layernorm=True,
-                 hooks={}
+                 hooks={},
+                 params_dtype=torch.float,
+                 skip_init=False,
+                 device=torch.device('cpu')
                  ):
         super(BaseTransformer, self).__init__()
 
@@ -351,7 +374,7 @@ class BaseTransformer(torch.nn.Module):
         self.embedding_dropout = torch.nn.Dropout(embedding_dropout_prob)
 
         self.word_embeddings = VocabParallelEmbedding(
-            vocab_size, hidden_size, torch.half)
+            vocab_size, hidden_size, params_dtype, skip_init, device)
 
         self.position_embeddings = torch.nn.Embedding(max_sequence_length, hidden_size)
         torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)
@@ -383,6 +406,9 @@ class BaseTransformer(torch.nn.Module):
                 activation_func=activation_func,
                 hooks=self.hooks,
                 transformer_pointer=self,
+                params_dtype=params_dtype,
+                skip_init=skip_init,
+                device=device
             )
 
         self.layers = torch.nn.ModuleList(
@@ -398,22 +424,16 @@ class BaseTransformer(torch.nn.Module):
         # sanity check
         assert len(input_ids.shape) == 2
         batch_size, query_length = input_ids.shape
-        # print('mytest 11', input_ids)
-        # print('mytest 12', position_ids)
-        # print('mytest 13', attention_mask)
-        # if input_ids.shape[1] == 1:
-        #     exit()
+
         if attention_mask is None:
             attention_mask = torch.ones(1, 1, device=input_ids.device).type_as(
                 next(self.parameters())
             )  # None means full attention
         assert len(attention_mask.shape) == 2 or \
                len(attention_mask.shape) == 4 and attention_mask.shape[1] == 1
-            
+
         # initial output_cross_layer might be generated by word/position_embedding_forward
         output_cross_layer = {}
-
-        # print('mytest 16', input_ids, position_ids, attention_mask)
 
         # embedding part
         if 'word_embedding_forward' in self.hooks:
@@ -421,17 +441,15 @@ class BaseTransformer(torch.nn.Module):
         else:  # default
             hidden_states = HOOKS_DEFAULT['word_embedding_forward'](self, input_ids, output_cross_layer=output_cross_layer,**kw_args)
 
-        # print('mytest 12', hidden_states)
-
-        # if 'position_embedding_forward' in self.hooks:
-        #     position_embeddings = self.hooks['position_embedding_forward'](position_ids, output_cross_layer=output_cross_layer, **kw_args)
-        # else:
-        #     assert len(position_ids.shape) <= 2
-        #     assert position_ids.shape[-1] == query_length
-        #     position_embeddings = HOOKS_DEFAULT['position_embedding_forward'](self, position_ids, output_cross_layer=output_cross_layer, **kw_args)
-        # if position_embeddings is not None:
-        #     hidden_states = hidden_states + position_embeddings
-        # hidden_states = self.embedding_dropout(hidden_states)
+        if 'position_embedding_forward' in self.hooks:
+            position_embeddings = self.hooks['position_embedding_forward'](position_ids, output_cross_layer=output_cross_layer, **kw_args)
+        else:
+            assert len(position_ids.shape) <= 2
+            assert position_ids.shape[-1] == query_length
+            position_embeddings = HOOKS_DEFAULT['position_embedding_forward'](self, position_ids, output_cross_layer=output_cross_layer, **kw_args)
+        if position_embeddings is not None:
+            hidden_states = hidden_states + position_embeddings
+        hidden_states = self.embedding_dropout(hidden_states)
 
         output_per_layers = []
         if self.checkpoint_activations:
@@ -524,7 +542,6 @@ class BaseTransformer(torch.nn.Module):
         else:
             output_this_layer = []
             for i, layer in enumerate(self.layers):
-                # print('mytest 9', i, hidden_states.shape)
                 args = [hidden_states, attention_mask]
 
                 output_this_layer_obj, output_cross_layer_obj = {}, {}
@@ -537,7 +554,6 @@ class BaseTransformer(torch.nn.Module):
                         **output_cross_layer,
                         output_this_layer=output_this_layer_obj, output_cross_layer=output_cross_layer_obj
                     )
-                    # print('mytest 13', layer_ret)
                 else:
                     layer_ret = layer(*args, layer_id=torch.tensor(i), **kw_args, **output_cross_layer,
                         output_this_layer=output_this_layer_obj, output_cross_layer=output_cross_layer_obj)
@@ -566,7 +582,5 @@ class BaseTransformer(torch.nn.Module):
 
         outputs = [logits_parallel]
         outputs.extend(output_per_layers)
-        
-        # print("mytest 10", outputs[0])
-        exit()
+
         return outputs

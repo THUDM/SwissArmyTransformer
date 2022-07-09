@@ -57,6 +57,12 @@ def add_model_config_args(parser):
     # TODO: fully test it, support the generation.
     group.add_argument('--model-parallel-size', type=int, default=1,
                        help='size of the model parallel.')
+
+    group.add_argument('--skip-init', action='store_true',
+                       help='skip model initialization')
+    
+    group.add_argument('--use-cpu-initialization', action='store_true', 
+                       help='initialize model on cpu')
     
     # ---------------  Inessential hyper-parameters --------------- 
 
