@@ -17,7 +17,6 @@ import torch
 import torch.nn.functional as F
 import argparse
 import stat
-from functools import partial
 
 from SwissArmyTransformer import mpu, get_args, get_tokenizer
 from SwissArmyTransformer.arguments import initialize_distributed, set_random_seed
@@ -36,15 +35,13 @@ def get_masks_and_position_ids_glm(seq, mask_position, context_length):
 
     attention_mask = torch.ones((1, len(seq), len(seq)), device=tokens.device)
     attention_mask.tril_()
-    attention_mask[..., :context_length] = 1
+    attention_mask[..., :context_length - 1] = 1
     attention_mask.unsqueeze_(1)
 
-    position_ids = torch.zeros(2, len(seq), device=tokens.device, dtype=torch.long)
-    torch.arange(0, context_length, out=position_ids[0, :context_length])
-    position_ids[0, context_length:] = mask_position
-    torch.arange(1, len(seq) - context_length + 1, out=position_ids[1, context_length:])
-
+    position_ids = torch.arange(len(seq), dtype=torch.long,
+                                device=tokens.device)
     position_ids = position_ids.unsqueeze(0)
+
     return tokens, attention_mask, position_ids
 
 
@@ -54,7 +51,7 @@ def main(args):
     tokenizer = get_tokenizer(args)
     # build model 
     model = GLM130B(args)
-    model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
+    # model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
     model.get_mixin("glu-deep-norm").reinit()
 
     if args.fp16:
@@ -63,11 +60,11 @@ def main(args):
 
     load_checkpoint(model, args)
     model.add_mixin('rotary-embedding', 
-            RotaryEmbeddingMixin(args.fp16, args.learnable_rotary_embedding, args.apply_rotary_positional_embedding_kernel, args.bf16, args.hidden_size, args.num_attention_heads)
+            RotaryEmbeddingMixin(args.fp16, args.apply_rotary_positional_embedding_kernel, args.bf16, args.hidden_size, args.num_attention_heads, args.model_parallel_size)
         )
     set_random_seed(args.seed)
     model.eval()
-
+    
     end_tokens = [tokenizer.get_command('eop'), tokenizer.get_command('eos')]
     # define function for each query
     if args.sampling_strategy == 'BaseStrategy':
@@ -82,10 +79,10 @@ def main(args):
             query_id, raw_text = raw_text.split('\t')
         # add MASK
         generation_mask = '[gMASK]' if args.task_mask else '[MASK]'
-        if 'MASK]' not in raw_text:
-            raw_text += ' ' + generation_mask
         seq = tokenizer.tokenize(raw_text)
-        seq = [tokenizer.get_command('ENC')] + seq
+        if 'MASK]' not in raw_text:
+            seq += [tokenizer.get_command('gMASK')]
+            raw_text += ' ' + generation_mask
         if not raw_text.endswith('MASK]'):
             seq = seq + [tokenizer.get_command('eos')]
         print('raw text: {}\n'.format(raw_text))
@@ -111,10 +108,8 @@ def main(args):
             if mask_position == len(seq):
                 break
             
-            get_func = partial(get_masks_and_position_ids_glm, mask_position=mask_position, context_length=len(seq))
+            get_func = partial(get_masks_and_position_ids_glm, mask_position=mask_position, context_length=len(seq) + 1)
             output_list = []
-            
-            _, _, position_ids = get_func(seq)
 
             for tim in range(max(args.batch_size // mbz, 1)):
                 input_seq = torch.cuda.LongTensor(
@@ -125,7 +120,7 @@ def main(args):
                         strategy=strategy,
                         log_attention_weights=None,
                         get_masks_and_position_ids=get_func,
-                        position_ids=position_ids
+                        # position_ids=position_ids
                         )[0] # we don't use mems, fill back
                 if isinstance(output, torch.Tensor): # different strategies
                     output = list(output)
@@ -161,7 +156,6 @@ def main(args):
             for txt in txts:
                 fout.write(txt + '\n')
         os.chmod(full_path, stat.S_IRWXO + stat.S_IRWXG + stat.S_IRWXU)
-
     os.makedirs(args.output_path, exist_ok=True)
     generate_continually(process, args.input_source)
 
