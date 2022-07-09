@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -20,7 +21,7 @@ torch._C._jit_set_profiling_executor(False)
 torch._C._jit_override_can_fuse_on_cpu(True)
 torch._C._jit_override_can_fuse_on_gpu(True)
 
-import math
+
 
 class RotaryEmbeddingMixin(BaseMixin):
     def __init__(self, fp16, apply_rotary_positional_embedding_kernel, bf16, hidden_size, num_attention_heads, model_parallel_size, learnable_rotary_embedding=False):
@@ -164,7 +165,7 @@ class DeepNormWithGLUMixin(BaseMixin):
 
         return output
 
-class FP32SoftmaxMixin(BaseMixin):
+class SelfAttentionWithFP32SoftmaxMixin(BaseMixin):
     def __init__(self, hidden_size, num_attention_heads, model_parallel_size):
         super().__init__()  
         self.hidden_size_per_attention_head = divide(hidden_size, num_attention_heads)
@@ -314,22 +315,20 @@ class WordEmbedding(BaseMixin):
     def word_embedding_forward(self, input_ids, output_cross_layer, **kw_args):
         return self.transformer.word_embeddings(input_ids).transpose(0, 1)
 
-def empty_init(master_weight, module, name):
-    pass
 
 class GLM130B(BaseModel):
     def __init__(self, args, transformer=None, parallel_output=False):
-        super().__init__(args, init_method=empty_init, params_dtype=torch.half if args.fp16 else torch.float, transformer=transformer, parallel_output=parallel_output)
-        self.add_mixin('glu-deep-norm',
+        super().__init__(args, params_dtype=torch.half if args.fp16 else torch.float, transformer=transformer, parallel_output=parallel_output)
+        self.add_mixin('glu-deepnorm',
             DeepNormWithGLUMixin(args.num_layers, args.hidden_size, args.inner_hidden_size)
         )
         self.add_mixin('fp32-softmax', 
-            FP32SoftmaxMixin(args.hidden_size, args.num_attention_heads, args.model_parallel_size)
+            SelfAttentionWithFP32SoftmaxMixin(args.hidden_size, args.num_attention_heads, args.model_parallel_size)
         )
         self.add_mixin('final-forward', 
             FinalForwardMixin()
         )
-        self.add_mixin('none-position-embedding', 
+        self.add_mixin('non-position-embedding', 
             NonePositionEmbedding()
         )
         self.add_mixin('word-embedding', 

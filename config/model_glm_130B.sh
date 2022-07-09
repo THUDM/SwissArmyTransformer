@@ -6,7 +6,7 @@ MODEL_ARGS="--task-mask \
             --vocab-size 150528 \
             --num-attention-heads 96 \
             --max-sequence-length 1025 \
-            --tokenizer-type icetk \
+            --tokenizer-type icetk-glm-130B \
             --layernorm-order post \
             --skip-init \
             --load ${CHECKPOINT_PATH}/iter_0041000"

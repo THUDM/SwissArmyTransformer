@@ -55,11 +55,11 @@ def get_tokenizer(args=None, *, tokenizer_type=None, outer_tokenizer=None):
         elif tokenizer_type == "glm_ChineseSPTokenizer":
             from .glm import ChineseSPTokenizer
             get_tokenizer.tokenizer = ChineseSPTokenizer(args.tokenizer_model_type, **kwargs)
-    # elif tokenizer_type == 'icetk':
-    #     from icetk import icetk
-    #     get_tokenizer.tokenizer = icetk
     elif tokenizer_type == 'icetk':
-        from .icetk import _IceTokenizer
+        from icetk import icetk
+        get_tokenizer.tokenizer = icetk
+    elif tokenizer_type == 'icetk-glm-130B':
+        from .icetk_glm_130B import _IceTokenizer
         get_tokenizer.tokenizer = _IceTokenizer()
     # elif tokenizer_type.startswith('hf'):
     #     from .hf_tokenizer import HFT5Tokenizer

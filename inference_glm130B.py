@@ -17,6 +17,7 @@ import torch
 import torch.nn.functional as F
 import argparse
 import stat
+import re
 
 from SwissArmyTransformer import mpu, get_args, get_tokenizer
 from SwissArmyTransformer.arguments import initialize_distributed, set_random_seed
@@ -51,8 +52,7 @@ def main(args):
     tokenizer = get_tokenizer(args)
     # build model 
     model = GLM130B(args)
-    # model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
-    model.get_mixin("glu-deep-norm").reinit()
+    model.get_mixin("glu-deepnorm").reinit()
 
     if args.fp16:
         model = model.half()
@@ -62,11 +62,12 @@ def main(args):
     model.add_mixin('rotary-embedding', 
             RotaryEmbeddingMixin(args.fp16, args.apply_rotary_positional_embedding_kernel, args.bf16, args.hidden_size, args.num_attention_heads, args.model_parallel_size)
         )
-    set_random_seed(args.seed)
+
     model.eval()
     
     end_tokens = [tokenizer.get_command('eop'), tokenizer.get_command('eos')]
     # define function for each query
+
     if args.sampling_strategy == 'BaseStrategy':
         strategy = BaseStrategy(temperature=args.temperature, top_k=args.top_k,end_tokens=end_tokens)
     elif args.sampling_strategy == 'BeamSearchStrategy':
@@ -77,11 +78,23 @@ def main(args):
     def process(raw_text):
         if args.with_id:
             query_id, raw_text = raw_text.split('\t')
+
         # add MASK
         generation_mask = '[gMASK]' if args.task_mask else '[MASK]'
-        seq = tokenizer.tokenize(raw_text)
+        mask_pattern = r'\[g?MASK\]'
+        text_list = re.split(mask_pattern, raw_text)
+        pattern_list = re.compile(mask_pattern).findall(raw_text)
+        seq = []
+        for i in range(len(pattern_list)):
+            pattern = pattern_list[i]
+            sub_text = text_list[i]
+            seq.extend(tokenizer.tokenize(sub_text))
+            seq.append(tokenizer.get_command(pattern))
+        
+        seq.extend(tokenizer.tokenize(text_list[-1]))
+
         if 'MASK]' not in raw_text:
-            seq += [tokenizer.get_command('gMASK')]
+            seq += [tokenizer.get_command(generation_mask)]
             raw_text += ' ' + generation_mask
         if not raw_text.endswith('MASK]'):
             seq = seq + [tokenizer.get_command('eos')]
@@ -97,7 +110,7 @@ def main(args):
         while True:
             seq = output_list[0] # TODO find the best one
             # detect
-            mask_tokens = ['MASK', 'sMASK', 'gMASK'] if args.task_mask else ['MASK']
+            mask_tokens = ['[MASK]', '[sMASK]', '[gMASK]'] if args.task_mask else ['[MASK]']
             mask_tokens = [tokenizer.get_command(token) for token in mask_tokens]
             mask_position = len(seq)
             for token in mask_tokens:
@@ -120,7 +133,6 @@ def main(args):
                         strategy=strategy,
                         log_attention_weights=None,
                         get_masks_and_position_ids=get_func,
-                        # position_ids=position_ids
                         )[0] # we don't use mems, fill back
                 if isinstance(output, torch.Tensor): # different strategies
                     output = list(output)
