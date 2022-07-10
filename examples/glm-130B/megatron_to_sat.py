@@ -3,7 +3,7 @@ import sys
 import torch
 
 def megatron_to_sat(checkpoint_name, target):
-    num_layer = 69
+    num_layer = 70
     # checkpoint_name = '/thudm/workspace/hanyu/SwissArmyTransformer-old/data/global_step10400/iter_0010400/10400/mp_rank_00_model_states.pt'
     sd = torch.load(checkpoint_name, map_location='cpu')
     new_sd = {}

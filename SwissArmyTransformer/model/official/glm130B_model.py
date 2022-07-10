@@ -334,6 +334,10 @@ class GLM130B(BaseModel):
         self.add_mixin('word-embedding', 
             WordEmbedding()
         )
+        self.add_mixin('rotary-embedding', 
+            RotaryEmbeddingMixin(args.fp16, args.apply_rotary_positional_embedding_kernel, args.bf16, args.hidden_size, args.num_attention_heads, args.model_parallel_size)
+        )
+        self.get_mixin("glu-deepnorm").reinit()
 
     @classmethod
     def add_model_specific_args(cls, parser):

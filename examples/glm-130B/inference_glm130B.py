@@ -19,6 +19,8 @@ import argparse
 import stat
 import re
 
+sys.path.append("../..")
+
 from SwissArmyTransformer import mpu, get_args, get_tokenizer
 from SwissArmyTransformer.arguments import initialize_distributed, set_random_seed
 from SwissArmyTransformer.training import load_checkpoint
@@ -31,7 +33,7 @@ from SwissArmyTransformer.generation.utils import timed_name, generate_continual
 
 from SwissArmyTransformer.model.official.glm130B_model import RotaryEmbeddingMixin
 
-def get_masks_and_position_ids_glm(seq, mask_position, context_length):
+def get_masks_and_position_ids_gmask(seq, mask_position, context_length):
     tokens = seq.unsqueeze(0)
 
     attention_mask = torch.ones((1, len(seq), len(seq)), device=tokens.device)
@@ -45,6 +47,22 @@ def get_masks_and_position_ids_glm(seq, mask_position, context_length):
 
     return tokens, attention_mask, position_ids
 
+def get_masks_and_position_ids_mask(seq, mask_position, context_length):
+    tokens = seq.unsqueeze(0)
+
+    attention_mask = torch.ones((1, len(seq), len(seq)), device=tokens.device)
+    attention_mask.tril_()
+    attention_mask[..., :context_length - 1] = 1
+    attention_mask.unsqueeze_(1)
+    
+    position_ids = torch.arange(len(seq), dtype=torch.long,
+                                device=tokens.device)
+    position_ids[context_length - 1:] = mask_position
+    
+    position_ids = position_ids.unsqueeze(0)
+
+    return tokens, attention_mask, position_ids
+
 
 def main(args):
     args.do_train = False
@@ -52,17 +70,12 @@ def main(args):
     tokenizer = get_tokenizer(args)
     # build model 
     model = GLM130B(args)
-    model.get_mixin("glu-deepnorm").reinit()
 
     if args.fp16:
         model = model.half()
     model = model.to(args.device)
 
     load_checkpoint(model, args)
-    model.add_mixin('rotary-embedding', 
-            RotaryEmbeddingMixin(args.fp16, args.apply_rotary_positional_embedding_kernel, args.bf16, args.hidden_size, args.num_attention_heads, args.model_parallel_size)
-        )
-
     model.eval()
     
     end_tokens = [tokenizer.get_command('eop'), tokenizer.get_command('eos')]
@@ -81,6 +94,11 @@ def main(args):
 
         # add MASK
         generation_mask = '[gMASK]' if args.task_mask else '[MASK]'
+        if args.task_mask: 
+            assert '[MASK]' not in raw_text, 'should not mix [MASK] and [gMASK]'
+        else:
+            assert '[gMASK]' not in raw_text, 'should not mix [MASK] and [gMASK]'
+
         mask_pattern = r'\[g?MASK\]'
         text_list = re.split(mask_pattern, raw_text)
         pattern_list = re.compile(mask_pattern).findall(raw_text)
@@ -98,7 +116,8 @@ def main(args):
             raw_text += ' ' + generation_mask
         if not raw_text.endswith('MASK]'):
             seq = seq + [tokenizer.get_command('eos')]
-        print('raw text: {}\n'.format(raw_text))
+        if mpu.get_model_parallel_rank() == 0:
+            print('raw text: {}\n'.format(raw_text))
         if len(seq) > args.max_sequence_length:
             raise ValueError('text too long.')
 
@@ -110,18 +129,20 @@ def main(args):
         while True:
             seq = output_list[0] # TODO find the best one
             # detect
-            mask_tokens = ['[MASK]', '[sMASK]', '[gMASK]'] if args.task_mask else ['[MASK]']
-            mask_tokens = [tokenizer.get_command(token) for token in mask_tokens]
+            mask_tokens = tokenizer.get_command(generation_mask)
             mask_position = len(seq)
-            for token in mask_tokens:
-                try:
-                    mask_position = min(mask_position, seq.index(token))
-                except ValueError:
-                    pass
+            try:
+                mask_position = min(mask_position, seq.index(mask_tokens))
+            except ValueError:
+                pass
             if mask_position == len(seq):
                 break
             
-            get_func = partial(get_masks_and_position_ids_glm, mask_position=mask_position, context_length=len(seq) + 1)
+            if args.task_mask:
+                get_func = partial(get_masks_and_position_ids_gmask, mask_position=mask_position, context_length=len(seq) + 1)
+            else:
+                get_func = partial(get_masks_and_position_ids_mask, mask_position=mask_position, context_length=len(seq) + 1)
+
             output_list = []
 
             for tim in range(max(args.batch_size // mbz, 1)):
@@ -163,7 +184,8 @@ def main(args):
         else:
             prefix = raw_text.replace('/', '')[:20]
             full_path = timed_name(prefix, '.txt', args.output_path)
-            print("answer", txts) # print the first.
+            if mpu.get_model_parallel_rank() == 0:
+                print("answer", txts) # print the first.
         with open(full_path, 'w', encoding='utf-8') as fout:
             for txt in txts:
                 fout.write(txt + '\n')

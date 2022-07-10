@@ -1,6 +1,5 @@
 MODEL_TYPE="blocklm-130B"
-MODEL_ARGS="--task-mask \
-            --num-layers 70 \
+MODEL_ARGS="--num-layers 70 \
             --hidden-size 12288 \
             --inner-hidden-size 32768 \
             --vocab-size 150528 \
@@ -9,4 +8,6 @@ MODEL_ARGS="--task-mask \
             --tokenizer-type icetk-glm-130B \
             --layernorm-order post \
             --skip-init \
+            --task-mask \
             --load ${CHECKPOINT_PATH}/iter_0041000"
+            # 
