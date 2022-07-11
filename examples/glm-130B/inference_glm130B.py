@@ -19,7 +19,6 @@ import argparse
 import stat
 import re
 
-sys.path.append("../..")
 
 from SwissArmyTransformer import mpu, get_args, get_tokenizer
 from SwissArmyTransformer.arguments import initialize_distributed, set_random_seed
