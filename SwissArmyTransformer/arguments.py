@@ -61,8 +61,8 @@ def add_model_config_args(parser):
     group.add_argument('--skip-init', action='store_true',
                        help='skip model initialization')
     
-    group.add_argument('--use-cpu-initialization', action='store_true', 
-                       help='initialize model on cpu')
+    group.add_argument('--use-gpu-initialization', action='store_true', 
+                       help='initialize model on gpu')
     
     # ---------------  Inessential hyper-parameters --------------- 
 
