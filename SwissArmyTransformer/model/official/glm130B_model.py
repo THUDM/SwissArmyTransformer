@@ -7,8 +7,8 @@ from SwissArmyTransformer.model.base_model import BaseModel, BaseMixin
 
 from SwissArmyTransformer.mpu.layers import ColumnParallelLinear
 
-from SwissArmyTransformer.model.positional_embeddings import RotaryEmbedding
-from SwissArmyTransformer.model.positional_embeddings import \
+from SwissArmyTransformer.model.position_embedding import RotaryEmbedding
+from SwissArmyTransformer.model.position_embedding import \
 apply_rotary_pos_emb_torch, apply_rotary_pos_emb, apply_rotary_pos_emb_fused, \
     apply_rotary_pos_emb_index_torch, apply_rotary_pos_emb_index, apply_rotary_pos_emb_index_fused
 
