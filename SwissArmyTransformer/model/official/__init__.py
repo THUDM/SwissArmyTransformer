@@ -6,3 +6,4 @@ from .bert_model import BertModel
 from .roberta_model import RobertaModel
 from .mae_model import MAE
 from .distill_model import DistillModel
+from .glm130B_model import GLM130B

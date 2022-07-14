@@ -53,7 +53,7 @@ class BaseMixin(torch.nn.Module):
 
 
 class BaseModel(torch.nn.Module):
-    def __init__(self, args, transformer=None, **kwargs):
+    def __init__(self, args, transformer=None, params_dtype=torch.float, **kwargs):
         super(BaseModel, self).__init__()
         self.mixins = torch.nn.ModuleDict()
         self.collect_hooks_()
@@ -75,6 +75,9 @@ class BaseModel(torch.nn.Module):
                 checkpoint_num_layers=args.checkpoint_num_layers,
                 layernorm_order=args.layernorm_order,
                 hooks=self.hooks,
+                params_dtype=params_dtype,
+                skip_init=args.skip_init,
+                device=torch.cuda.current_device() if args.use_gpu_initialization else torch.device('cpu'),
                 **kwargs
             )
 
