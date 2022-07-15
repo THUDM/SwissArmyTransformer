@@ -12,6 +12,13 @@ MODEL_ULRS = {
     'yolos-tiny': 'https://cloud.tsinghua.edu.cn/f/8ee048b6a1f1403d9253/?dl=1',
     'mae-vit-base': 'https://cloud.tsinghua.edu.cn/f/5ab3543f0e1d4507ad8c/?dl=1',
     'cogview-base': 'https://cloud.tsinghua.edu.cn/f/df21f6d4109b4285bfd9/?dl=1',
+    'glm-large-zh': 'https://lfs.aminer.cn/misc/cogview/glm/glm-large-zh.zip',
+    'glm-large-en-blank': 'https://lfs.aminer.cn/misc/cogview/glm/glm-large-en-blank.zip',
+    'glm-10b-en': 'https://lfs.aminer.cn/misc/cogview/glm/glm-10b-en.zip',
+    'glm-10b-zh': 'https://lfs.aminer.cn/misc/cogview/glm/glm-10b-zh.zip',
+    # 'glm-large-zh': 'https://cloud.tsinghua.edu.cn/f/df21f6d4109b4285bfd9/?dl=1',
+    # 'glm-large-en-blank': 'https://cloud.tsinghua.edu.cn/f/df21f6d4109b4285bfd9/?dl=1',
+
     # CogView2
     'coglm': 'https://lfs.aminer.cn/misc/cogview/cogview2/coglm.zip',
     'cogview2-dsr': 'https://lfs.aminer.cn/misc/cogview/cogview2/cogview2-dsr.zip',
