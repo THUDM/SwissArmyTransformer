@@ -248,7 +248,7 @@ def split_ds(ds, split=[.8,.2,.0], block_size = 10000, seed=131):
     start_idx = 0
     residual_idx = 0
     rtn_ds = [None]*len(split)
-    rng = numpy.random.default_rng(seed)
+    rng = np.random.default_rng(seed)
     indices = rng.permutation(np.array(range(block_size)))
     for i, f in enumerate(split):
         if f != 0:
@@ -328,7 +328,7 @@ class RandomDataset(data.Dataset):
     def __init__(self, ds, scale=200, seed=131, **kwargs):
         self.wrapped_data = ds
         self.scale = scale
-        self.indices = numpy.random.default_rng(seed).permutation(np.array(range(len(ds))))
+        self.indices = np.random.default_rng(seed).permutation(np.array(range(len(ds))))
 
     def __len__(self):
         return len(self.wrapped_data) * self.scale

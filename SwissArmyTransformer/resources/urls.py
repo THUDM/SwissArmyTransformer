@@ -23,4 +23,8 @@ MODEL_ULRS = {
     'coglm': 'https://lfs.aminer.cn/misc/cogview/cogview2/coglm.zip',
     'cogview2-dsr': 'https://lfs.aminer.cn/misc/cogview/cogview2/cogview2-dsr.zip',
     'cogview2-itersr': 'https://lfs.aminer.cn/misc/cogview/cogview2/cogview2-itersr.zip',
+    
+    # CogVideo
+    'cogvideo-stage1': 'https://lfs.aminer.cn/misc/cogvideo/cogvideo-stage1.zip', 
+    'cogvideo-stage2': 'https://lfs.aminer.cn/misc/cogvideo/cogvideo-stage2.zip',
 }
