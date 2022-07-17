@@ -15,7 +15,7 @@ MP_SIZE=1
 script_path=$(realpath $0)
 script_dir=$(dirname $script_path)
 main_dir=$(dirname $script_dir)
-MODEL_TYPE="bert-base-uncased"
+MODEL_TYPE="bert-distill"
 
 OPTIONS_SAT="SAT_HOME=$1" #"SAT_HOME=/raid/dm/sat_models"
 OPTIONS_NCCL="NCCL_DEBUG=warning NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
@@ -50,7 +50,9 @@ gpt_options=" \
        --batch-size 8 \
        --data_root $2 \
        --save-args \
-       --teacher $3
+       --teacher $3 \
+       --tc-type bert-large-uncased \
+       --st-type bert-base-uncased
 "
 
 

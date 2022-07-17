@@ -19,4 +19,13 @@ class DistillModel(nn.Module):
     def add_model_specific_args(cls, parser):
         group = parser.add_argument_group('BERT-distill', 'BERT distill Configurations')
         group.add_argument('--teacher', type=str)
+        group.add_argument('--tc-type', type=str)
+        group.add_argument('--st-type', type=str)
         return parser
+    
+    @classmethod
+    def from_pretrained(cls, args, teacher_cls, student_name, student_cls):
+        student, args = student_cls.from_pretrained(args, student_name, prefix='student.')
+        teacher, t_args = teacher_cls.from_pretrained(args, args.teacher)
+        model = DistillModel(teacher, student)
+        return model, args
