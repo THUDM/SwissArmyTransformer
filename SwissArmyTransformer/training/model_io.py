@@ -41,7 +41,10 @@ def extract_model_specific_args_from_model(args, model):
     if isinstance(model, torch.nn.Module):
         for md in model.modules(): # search 
             if hasattr(md, 'add_model_specific_args'):
-                md.add_model_specific_args(parser)
+                try:
+                    md.add_model_specific_args(parser)
+                except:
+                    pass
     ret = {}
     for k in vars(parser.parse_args([])).keys():
         if hasattr(args, k):
