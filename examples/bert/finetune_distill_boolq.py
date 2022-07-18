@@ -99,7 +99,7 @@ if __name__ == '__main__':
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
     
-    student_model, student_args = ClassificationModel.from_pretrained(args, 'bert-base-uncased')
+    student_model, student_args = ClassificationModel.from_pretrained(args, args.st_type)
     teacher_model, teacher_args = ClassificationModel.from_pretrained(args, args.teacher)
     model = DistillModel(teacher_model, student_model)
     

@@ -148,16 +148,16 @@ class BaseModel(torch.nn.Module):
         pass
 
     @classmethod
-    def from_pretrained(cls, args, name, *, home_path=None, url=None):
+    def from_pretrained(cls, args, name, *, home_path=None, url=None, prefix=''):
         model_path = auto_create(name, path=home_path, url=url)
         args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
         model = get_model(args, cls)
-        load_checkpoint(model, args, load_path=model_path)
+        load_checkpoint(model, args, load_path=model_path, prefix=prefix)
         return model, args
 
 class AutoModel():
     @classmethod
-    def from_pretrained(cls, args, name, *, home_path=None, url=None):
+    def from_pretrained(cls, args, name, *, home_path=None, url=None, prefix=''):
         '''Automatically find the class and instantiate it. Auto-download.
             Args:
                 args: NameSpace. will add the loaded args into it.
@@ -176,7 +176,7 @@ class AutoModel():
         else:
             model_cls = getattr(SwissArmyTransformer.model, args.model_class)
         model = get_model(args, model_cls)
-        load_checkpoint(model, args, load_path=model_path)
+        load_checkpoint(model, args, load_path=model_path, prefix=prefix)
         return model, args
 
 

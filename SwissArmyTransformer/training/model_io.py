@@ -41,7 +41,10 @@ def extract_model_specific_args_from_model(args, model):
     if isinstance(model, torch.nn.Module):
         for md in model.modules(): # search 
             if hasattr(md, 'add_model_specific_args'):
-                md.add_model_specific_args(parser)
+                try:
+                    md.add_model_specific_args(parser)
+                except argparse.ArgumentError as e:
+                    print(e)
     ret = {}
     for k in vars(parser.parse_args([])).keys():
         if hasattr(args, k):
@@ -146,7 +149,7 @@ def get_checkpoint_iteration(load_path):
     return iteration, release, True
 
 
-def load_checkpoint(model, args, load_path=None):
+def load_checkpoint(model, args, load_path=None, prefix=''):
     """Load a model checkpoint."""
     if load_path is None:
         load_path = args.load
@@ -160,6 +163,14 @@ def load_checkpoint(model, args, load_path=None):
             print('global rank {} is loading checkpoint {}'.format(
                 torch.distributed.get_rank(), checkpoint_name))
     sd = torch.load(checkpoint_name, map_location='cpu')
+    new_sd = {'module':{}}
+    for k in sd:
+        if k != 'module':
+            new_sd[k] = sd[k]
+    for k in sd['module']:
+        if k.startswith(prefix):
+            new_sd['module'][k[len(prefix):]] = sd['module'][k]
+    sd = new_sd
     
     if hasattr(model, 'module'):
         module = model.module
