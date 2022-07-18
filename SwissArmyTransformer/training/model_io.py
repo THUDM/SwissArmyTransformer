@@ -164,6 +164,9 @@ def load_checkpoint(model, args, load_path=None, prefix=''):
                 torch.distributed.get_rank(), checkpoint_name))
     sd = torch.load(checkpoint_name, map_location='cpu')
     new_sd = {'module':{}}
+    for k in sd:
+        if k != 'module':
+            new_sd[k] = sd[k]
     for k in sd['module']:
         if k.startswith(prefix):
             new_sd['module'][k[len(prefix):]] = sd['module'][k]
