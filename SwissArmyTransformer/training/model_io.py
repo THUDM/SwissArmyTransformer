@@ -43,8 +43,8 @@ def extract_model_specific_args_from_model(args, model):
             if hasattr(md, 'add_model_specific_args'):
                 try:
                     md.add_model_specific_args(parser)
-                except:
-                    pass
+                except argparse.ArgumentError as e:
+                    print(e)
     ret = {}
     for k in vars(parser.parse_args([])).keys():
         if hasattr(args, k):
