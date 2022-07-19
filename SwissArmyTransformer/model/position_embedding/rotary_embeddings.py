@@ -20,6 +20,9 @@ class RotaryEmbedding(torch.nn.Module):
             self.sin_cached = None
         self.precision = precision
 
+    def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
+        pass
+
     def forward(self, x, seq_dim=1, seq_len=None):
         if seq_len is None:
             seq_len = x.shape[seq_dim]
