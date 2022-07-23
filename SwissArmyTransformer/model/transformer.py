@@ -423,8 +423,8 @@ class BaseTransformer(torch.nn.Module):
     def forward(self, input_ids, position_ids, attention_mask, *,
                 output_hidden_states=False, **kw_args):
         # sanity check
-        assert len(input_ids.shape) == 2
-        batch_size, query_length = input_ids.shape
+        assert len(input_ids.shape) >= 2
+        batch_size, query_length = input_ids.shape[:2]
 
         if attention_mask is None:
             attention_mask = torch.ones(1, 1, device=input_ids.device).type_as(
@@ -446,7 +446,7 @@ class BaseTransformer(torch.nn.Module):
             position_embeddings = self.hooks['position_embedding_forward'](position_ids, output_cross_layer=output_cross_layer, **kw_args)
         else:
             assert len(position_ids.shape) <= 2
-            assert position_ids.shape[-1] == query_length
+            assert position_ids.shape[-1] == hidden_states.shape[1], (position_ids.shape, hidden_states.shape)
             position_embeddings = HOOKS_DEFAULT['position_embedding_forward'](self, position_ids, output_cross_layer=output_cross_layer, **kw_args)
         if position_embeddings is not None:
             hidden_states = hidden_states + position_embeddings
