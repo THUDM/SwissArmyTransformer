@@ -57,7 +57,7 @@ class BinaryDataset(Dataset):
             with open(path, 'r') as fid:
                 nbytes = fid.seek(0, 2)
                 flen = fid.tell() // self.dtype.itemsize
-            self.bin = np.memmap(path, dtype=self.dtype, shape=(flen // length_per_sample, length_per_sample))
+            self.bin = np.memmap(path, dtype=self.dtype, shape=(flen // length_per_sample, length_per_sample), mode='r')
     
     def __len__(self):
         return self.bin.shape[0]
