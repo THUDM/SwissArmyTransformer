@@ -30,8 +30,6 @@ def evaluate(dataset, data_loader, model, strategy, batch_size, max_length):
             elif dataset.task_type == "gen":
                 blank = []
                 blank = generate_text(model, batch, strategy, batch_size, max_length=max_length)
-                if torch.cuda.current_device() == 0:
-                    print(blank)
                 prediction.append(blank)
 
     result = None
@@ -75,7 +73,7 @@ def main(args):
     for task in args.task:
         datasets, dataloaders, filenames = [], [], []
 
-        if mpu.get_model_parallel_rank() == 0:
+        if torch.distributed.get_rank() == 0:
             print(f"Evaluating task {task}")
         for file_name in sorted(glob.glob(os.path.join(args.eval_data_path, task, "**/*.json*"), recursive=True)):
             if file_name.endswith("_predict.json"):
@@ -92,19 +90,18 @@ def main(args):
         weight = []
         for dataset, dataloader, filename in zip(datasets, dataloaders, filenames):
             result_dict, _ = evaluate(dataset, dataloader, model, strategy, args.batch_size, args.out_seq_length)
-            if mpu.get_model_parallel_rank() == 0:
+            if torch.distributed.get_rank() == 0:
                 output_str = f"    Finish {filename}"
                 for key, value in result_dict.items():
                     result_dict_all[key].append(value)
                     output_str += f", {key} = {value:.3f}%"
-                if mpu.get_model_parallel_rank() == 0:
-                    print(output_str)
+                print(output_str)
                 weight.append(len(dataset))
-        if mpu.get_model_parallel_rank() == 0:
+        if torch.distributed.get_rank() == 0:
             print(f"Task {task}:")
         for key, value in result_dict_all.items():
             idx = np.argmax(value)
-            if mpu.get_model_parallel_rank() == 0:
+            if torch.distributed.get_rank() == 0:
                 print(
                     f"    Metric {key}: max({'/'.join(result_dict_all.keys())}) = "
                     f"{'/'.join(map(lambda x: str(x[idx]), result_dict_all.values()))}"
@@ -112,5 +109,5 @@ def main(args):
                 )
 
     dist.barrier()
-    if mpu.get_model_parallel_rank() == 0:
+    if torch.distributed.get_rank() == 0:
         print(f"done :-), total time: {time.time() - start}")

@@ -35,7 +35,7 @@ def build_multiple_choice_sample(text, choices, is_single_token, unified_multita
 
     dtype = np.int64
     sop_id = tokenizer.get_command("sop")
-    mask_id = tokenizer.get_command("MASK")
+    mask_id = tokenizer.get_command("[MASK]")
 
     token = np.array(text, dtype=dtype)
     target = np.array(text, dtype=dtype)
@@ -85,7 +85,7 @@ def build_multiple_choice_sample(text, choices, is_single_token, unified_multita
         "tokens": token,
         "targets": target,
         "position_ids": position_id,
-        "attention_mask": attention_mask < 0.5,
+        "attention_mask": attention_mask > 0.5,
         "choice_target_ids": choice_target_id,
         "is_single_token": is_single_token,
     }

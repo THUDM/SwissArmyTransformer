@@ -74,8 +74,6 @@ def qa_evaluate(predictions, examples, metric):
         except:
             prediction = ""
         if ground_truths:
-            print(prediction)
-            print(ground_truths)
             score += metric_max_over_ground_truths(metric, prediction, ground_truths)
     score = 100.0 * score / len(predictions)
     return score

@@ -1,6 +1,7 @@
 import torch
 from SwissArmyTransformer import mpu, get_tokenizer
 from SwissArmyTransformer.generation.sampling_strategies import BaseStrategy, BeamSearchStrategy
+from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence 
 
 def process_data(batch):
     return (
@@ -33,12 +34,11 @@ def build_data_loader(dataset, micro_batch_size, num_workers, drop_last):
     return data_loader
 
 
-def cond_log_prob(batch, model, args):
+def cond_log_prob(batch, model):
     # Get the batch.
     tokens, targets, position_ids, attention_mask = process_data(batch)
 
-    # Tell the model what our actual batch size will be
-    # args.micro_batch_size, args.seq_length = tokens.shape[:2]
+    attention_mask = attention_mask.type_as(next(model.parameters()))
 
     # Forward pass through the model.
     logits, *output_per_layers = model(
@@ -67,98 +67,24 @@ def cond_log_prob(batch, model, args):
 
     return choice_logits
 
-def update_mems(hiddens, mems, max_memory_length):
-    '''
-        hiddens: list (num_layers) of [batch, query_length, 2d]
-        mems: None or [num_layers, batch, memory_length, 2d]
-    '''
-    if hiddens is None:
-        return None
-    hiddens = torch.stack(hiddens)
-    memory_length = mems.shape[2] if mems is not None else 0
-    query_length = hiddens.shape[2]
-    new_memory_length = min(max_memory_length, memory_length + query_length)
-    with torch.no_grad():
-        if new_memory_length <= query_length:
-            return hiddens[:, :, -new_memory_length:]
-        else:
-            if mems.shape[1] < hiddens.shape[1]:
-                mems = mems.expand(-1, hiddens.shape[1], -1, -1)
-            return torch.cat(
-                (mems[:, :, -new_memory_length+query_length:], hiddens),
-                dim=2
-            )
-
-def filling_sequence(
-        model, 
-        context_tokens,
-        context_length,
-        attention_mask,
-        position_ids,
-        max_length,
-        batch_size,
-        strategy=BaseStrategy(),
-        max_memory_length=100000,
-        mems=None,
-        **kw_args
-        ):
-    assert context_length > 0
-
-    tokens = context_tokens[..., :context_length]
-
-    attention_mask = attention_mask.type_as(next(model.parameters())) # if fp16
-    # initialize generation
-    counter = context_length - 1 # Last fixed index is ``counter'' 
-    index = 0 if mems is None else mems.shape[2] # Next forward starting index, also the length of cache.
-    # step-by-step generation
-
-    while counter < max_length - 1:
-        # Now, we want to generate seq[counter + 1],
-        # token[:, index: counter+1] needs forwarding.
-
-        if context_tokens[0, counter + 1] > 0: # provided
-            tokens = torch.cat(
-                (
-                    tokens, 
-                    context_tokens[0, counter+1: counter+2].expand(tokens.shape[0], 1)
-                ), dim=1
-            )
-            counter += 1
-            continue
-
-        logits, *output_per_layers = model(
-            tokens[:, index:], 
-            position_ids[..., index: counter+1],
-            attention_mask[..., index: counter+1, :counter+1], # TODO memlen
-            mems=mems,
-            log_attention_weights=None,
-            **kw_args
-        )
-        mem_kv = [o['mem_kv'] for o in output_per_layers]
-        mems = update_mems(mem_kv, mems, max_memory_length=max_memory_length)
-        counter += 1
-        index = counter
-        # sampling
-        logits = logits[:, -1].expand(batch_size, -1) # [batch size, vocab size]
-        tokens = tokens.expand(batch_size, -1)
-        tokens, mems = strategy.forward(logits, tokens, mems)
-
-        if strategy.is_done:
-            break
-    return strategy.finalize(tokens, mems)[0]
-
-
 def generate_text(model, batch, strategy, batch_size, max_length=1024):
+    seq = torch.squeeze(batch["tokens"].to(device=torch.cuda.current_device()).long())[:max_length]
+    context_length = batch["context_length"].to(device=torch.cuda.current_device()).long()
+    seq[context_length:] = -1
+
+    def get_masks_and_position_ids(seq):
+        tokens = seq.unsqueeze(0)
+        attention_mask = batch["attention_mask"].to(device=torch.cuda.current_device()).bool().unsqueeze(1)
+        position_ids = batch["position_ids"].to(device=torch.cuda.current_device()).long()
+        return tokens, attention_mask, position_ids
+        
     output = filling_sequence(
         model,
-        batch["tokens"].to(device=torch.cuda.current_device()).long(),
-        batch["context_length"].to(device=torch.cuda.current_device()).long(),
-        batch["attention_mask"].to(device=torch.cuda.current_device()).bool().unsqueeze(1),
-        batch["position_ids"].to(device=torch.cuda.current_device()).long(),
-        max_length=max_length,
+        seq,
+        get_masks_and_position_ids=get_masks_and_position_ids,
         batch_size=batch_size,
         strategy=strategy
-    )
+    )[0]
 
     tokenizer = get_tokenizer(tokenizer_type='icetk-glm-130B')
     end_tokens = [tokenizer.get_command('eop'), tokenizer.get_command('eos')]
