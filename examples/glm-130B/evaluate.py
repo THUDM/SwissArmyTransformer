@@ -1,7 +1,9 @@
 import argparse
 import importlib
 import torch
-import os
+
+from os.path import join, isdir, isfile, relpath
+from glob import glob
 
 from SwissArmyTransformer import get_args, get_tokenizer
 from SwissArmyTransformer.arguments import initialize_distributed
@@ -21,10 +23,20 @@ def add_evaluation_specific_args(parser):
     return parser
 
 
+def find_all_tasks(all_task_config_path):
+    tasks = []
+    for task in all_task_config_path:
+        if isdir(task):
+            tasks += [relpath(path, ".") for path in glob(join(task, "**/*.yaml"), recursive=True)]
+        elif isfile(task):
+            tasks.append(task)
+    return tasks
+
+
 def evaluate_all_tasks(data_path, model, tokenizer, all_task_config_path, task_classes):
     for config_path, task_class in zip(all_task_config_path, task_classes):
         config = task_class.config_class().from_yaml_file(config_path)
-        config.path = os.path.join(data_path, config.path)
+        config.path = join(data_path, config.path)
         task = task_class(model, tokenizer, config)
         task.evaluate()
 
@@ -39,6 +51,8 @@ def main():
     sat_args.do_train = False
     initialize_distributed(sat_args)
     tokenizer = get_tokenizer(sat_args)
+
+    sat_args.task = find_all_tasks(sat_args.task)
 
     task_classes = []
     for task_config_path in sat_args.task:
