@@ -88,9 +88,9 @@ class TextEncoder(BaseModel):
         super().__init__(args, layernorm_epsilon=layernorm_epsilon, activation_func=activation_func)
         self.add_mixin('text_enc', TextMixin(args.hidden_size, args.projection_dim))
 
-    @classmethod
-    def add_model_specific_args(cls, parser):
-        return super().add_model_specific_args(parser)
+    # @classmethod
+    # def add_model_specific_args(cls, parser):
+    #     return super().add_model_specific_args(parser)
 
 import argparse
 
