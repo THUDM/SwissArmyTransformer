@@ -1,0 +1,4 @@
+name: "MMLU"
+type: "mul"
+module: "tasks.mmlu.task.MMLU"
+path: "MMLU"

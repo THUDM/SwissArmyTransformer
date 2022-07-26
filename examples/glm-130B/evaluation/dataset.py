@@ -1,5 +1,3 @@
-"""Zero-shot datasets."""
-
 import os
 import json
 
@@ -8,12 +6,6 @@ import torch
 
 from SwissArmyTransformer import get_tokenizer
 from scipy.linalg import block_diag
-from metrics import accuracy_metric, qa_exact_match, qa_f1
-
-DEFAULT_METRICS = {
-    "gen": [("EM", qa_exact_match), ("F1", qa_f1)],
-    "mul": [("accuracy", accuracy_metric)],
-}
 
 
 def build_dataset(path, unified_multitask_encoding=False):
@@ -31,7 +23,7 @@ def pad_batch(tokens, targets, position_ids, attention_mask, max_seq_length=None
 
 
 def build_multiple_choice_sample(text, choices, is_single_token, unified_multitask_encoding=False):
-    tokenizer = get_tokenizer(tokenizer_type='icetk-glm-130B')
+    tokenizer = get_tokenizer()
 
     dtype = np.int64
     sop_id = tokenizer.get_command("sop")
@@ -94,29 +86,36 @@ def build_multiple_choice_sample(text, choices, is_single_token, unified_multita
     return item
 
 
-def build_generation_sample(text, max_seq_length):
-    tokenizer = get_tokenizer(tokenizer_type='icetk-glm-130B')
+def build_generation_sample(text, max_seq_length, use_task_mask, unidirectional=True):
+    tokenizer = get_tokenizer()
 
     dtype = np.int64
     sop_id = tokenizer.get_command("sop")
-    mask_id = tokenizer.get_command("[MASK]")
+    mask_id = tokenizer.get_command("[gMASK]") if use_task_mask else tokenizer.get_command("[MASK]")
 
     token = np.array(text, dtype=dtype)
 
     blank_filling = mask_id in text
     if blank_filling:
+        assert not unidirectional, "Unidirectional attention doesn't support blank filling"
+        assert not use_task_mask, "Unidirectional attention doesn't support task mask"
         mask_position = text.index(mask_id)
+        token = np.concatenate((token, [sop_id]))
     else:
         mask_position = len(token)
-        token = np.concatenate((token, [mask_id]))
-    token = np.concatenate((token, [sop_id]))
+        if unidirectional:
+            token = np.concatenate(([mask_id, sop_id], token))
+        else:
+            token = np.concatenate((token, [mask_id, sop_id]))
     context_length = len(token)
 
     position_id = np.arange(0, max_seq_length, dtype=dtype)
-    position_id[context_length - 1 :] = mask_position
+    if not use_task_mask:
+        position_id[context_length - 1 :] = mask_position
 
     attention_mask = np.tril(np.ones((max_seq_length, max_seq_length), dtype=np.long))
-    attention_mask[: context_length - 1, : context_length - 1] = 1
+    if not unidirectional:
+        attention_mask[: context_length - 1, : context_length - 1] = 1
 
     item = {
         "tokens": np.concatenate((token, np.zeros(max_seq_length - len(token), dtype=np.long))),
@@ -138,17 +137,20 @@ class ZeroShotDataset(torch.utils.data.Dataset):
     If [MASK] not in context, will append [MASK] after text
     """
 
-    def __init__(self, path, max_seq_length=2048, unified_multitask_encoding=False):
+    def __init__(
+        self, path, max_seq_length=2048, use_task_mask=False, unidirectional=False, unified_multitask_encoding=False
+    ):
         self.path = path
-        # self.use_gmask = use_gmask
         self.max_seq_length = max_seq_length
         self.data = []
 
-        tokenizer = get_tokenizer(tokenizer_type='icetk-glm-130B')
+        self.dtype = np.long
+
+        tokenizer = get_tokenizer(tokenizer_type="icetk-glm-130B")
         self.mask_id = tokenizer.get_command("[MASK]")
         self.gmask_id = tokenizer.get_command("[gMASK]")
-        # self.mask_id = self.gmask_id if self.use_gmask else self.tmask_id
-        self.dtype = np.long
+        self.use_task_mask = use_task_mask
+        self.unidirectional = unidirectional
 
         self.unified_multitask_encoding = unified_multitask_encoding
 
@@ -196,8 +198,6 @@ class ZeroShotDataset(torch.utils.data.Dataset):
                         text = text[len(text) - text_length : len(text)]
                     self.data.append({"text": text, "targets": targets, "task_type": "gen"})
 
-        self.metrics = DEFAULT_METRICS[self.task_type]
-
     def __len__(self):
         return len(self.data)
 
@@ -213,7 +213,12 @@ class ZeroShotDataset(torch.utils.data.Dataset):
             sample["label"] = item["label"]
             return sample
         elif self.task_type == "gen":  # generative data
-            sample = build_generation_sample(item["text"], max_seq_length=self.max_seq_length)
+            sample = build_generation_sample(
+                item["text"],
+                max_seq_length=self.max_seq_length,
+                use_task_mask=self.use_task_mask,
+                unidirectional=self.unidirectional,
+            )
             sample["targets"] = [np.array(target, dtype=self.dtype) for target in item["targets"]]
             return sample
         else:

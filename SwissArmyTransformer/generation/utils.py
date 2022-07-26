@@ -17,7 +17,7 @@ import stat
 from datetime import datetime
 from torchvision.utils import save_image
 import torch.distributed as dist
-from SwissArmyTransformer.mpu import get_data_parallel_world_size, get_data_parallel_rank
+from SwissArmyTransformer.mpu import get_data_parallel_world_size, get_data_parallel_rank, get_model_parallel_rank
 
 
 def timed_name(prefix, suffix=None, path=None):
@@ -65,16 +65,17 @@ def generate_continually(func, input_source='interactive'):
             if line_no % get_data_parallel_world_size() != get_data_parallel_rank():
                 continue
             rk = dist.get_rank()
-            print(f'Working on No. {line_no} on {rk}... ')
+            if get_model_parallel_rank() == 0:
+                print(f'Working on No. {line_no} on {rk}... ')
             raw_text = raw_text.strip()
             if len(raw_text) == 0:
                 continue
             # try:
             start_time = time.time()
             func(raw_text)
-            print("\nTaken time {:.2f}\n".format(time.time() - start_time), flush=True)
+            if get_model_parallel_rank() == 0:
+                print("\nTaken time {:.2f}\n".format(time.time() - start_time), flush=True)
             # except (ValueError, FileNotFoundError) as e:
             #     err_linenos.append(line_no)
             #     print(e)
             #     continue
-        print(err_linenos)

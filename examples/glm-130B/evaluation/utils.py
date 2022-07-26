@@ -1,7 +1,16 @@
 import torch
-from SwissArmyTransformer import mpu, get_tokenizer
-from SwissArmyTransformer.generation.sampling_strategies import BaseStrategy, BeamSearchStrategy
-from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence 
+import torch.distributed as dist
+from itertools import chain
+from typing import List
+
+from SwissArmyTransformer import mpu
+from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence
+
+
+def print_rank_0(*args, **kwargs):
+    if torch.distributed.get_rank() == 0:
+        print(*args, **kwargs)
+
 
 def process_data(batch):
     return (
@@ -34,19 +43,22 @@ def build_data_loader(dataset, micro_batch_size, num_workers, drop_last):
     return data_loader
 
 
-def cond_log_prob(batch, model):
+def gather_result(prediction, total_length):
+    torch.cuda.empty_cache()
+    world_size = mpu.get_data_parallel_world_size()
+    prediction_gathered = [None for _ in range(world_size)]
+    dist.all_gather_object(prediction_gathered, prediction, group=mpu.get_data_parallel_group())
+    return list(chain(*zip(*prediction_gathered)))[:total_length]
+
+
+def cond_log_prob(model, batch):
     # Get the batch.
     tokens, targets, position_ids, attention_mask = process_data(batch)
 
     attention_mask = attention_mask.type_as(next(model.parameters()))
 
     # Forward pass through the model.
-    logits, *output_per_layers = model(
-            tokens, 
-            position_ids,
-            attention_mask, # TODO memlen
-            log_attention_weights=None
-        )
+    logits, *output_per_layers = model(tokens, position_ids, attention_mask, log_attention_weights=None)  # TODO memlen
 
     # output: [b, sq, vocab]
     output = torch.nn.functional.log_softmax(logits, dim=-1)
@@ -67,7 +79,8 @@ def cond_log_prob(batch, model):
 
     return choice_logits
 
-def generate_text(model, batch, strategy, batch_size, max_length=1024):
+
+def generate_text(model, batch, strategy, max_length) -> List[List[int]]:
     seq = torch.squeeze(batch["tokens"].to(device=torch.cuda.current_device()).long())[:max_length]
     context_length = batch["context_length"].to(device=torch.cuda.current_device()).long()
     seq[context_length:] = -1
@@ -77,30 +90,27 @@ def generate_text(model, batch, strategy, batch_size, max_length=1024):
         attention_mask = batch["attention_mask"].to(device=torch.cuda.current_device()).bool().unsqueeze(1)
         position_ids = batch["position_ids"].to(device=torch.cuda.current_device()).long()
         return tokens, attention_mask, position_ids
-        
+
     output = filling_sequence(
         model,
         seq,
         get_masks_and_position_ids=get_masks_and_position_ids,
-        batch_size=batch_size,
-        strategy=strategy
+        batch_size=strategy.num_beams if hasattr(strategy, "num_beams") else 1,
+        strategy=strategy,
     )[0]
 
-    tokenizer = get_tokenizer(tokenizer_type='icetk-glm-130B')
-    end_tokens = [tokenizer.get_command('eop'), tokenizer.get_command('eos')]
-
-    if isinstance(output, torch.Tensor): # different strategies
+    if isinstance(output, torch.Tensor):  # different strategies
         output = list(output)
 
-    # clip -1s and fill back generated things into seq
-    output = output[0].tolist()
-    try:
-        unfinished = output.index(-1)
-    except ValueError:
-        unfinished = len(output)
-    if output[unfinished - 1] in end_tokens:
-        unfinished -= 1
-    bog = output.index(tokenizer.get_command('sop'))
-    output = output[bog + 1:unfinished]
+    output_targets = []
 
-    return output
+    for line in output:
+        line = line.tolist()
+        unfinished = line.index(-1) if -1 in line else len(line)
+        if line[unfinished - 1] in strategy.end_tokens:
+            unfinished -= 1
+        # bog = line.index(tokenizer.get_command("sop"))
+        line = line[context_length:unfinished]
+        output_targets.append(line)
+
+    return output_targets

@@ -1,5 +1,5 @@
 #!/bin/bash
-CHECKPOINT_PATH=/thudm/workspace/hanyu/SwissArmyTransformer/data/ckpt
+CHECKPOINT_PATH=/thudm/workspace/hanyu/SwissArmyTransformer-1/data/ckpt
 
 source $1
 MPSIZE=8
@@ -32,4 +32,5 @@ python -m torch.distributed.launch --nproc_per_node=$MPSIZE --master_port $MASTE
        --out-seq-length 200 \
        --mode inference \
        --input-source ./input.txt \
+       --task-mask \
        --sampling-strategy BeamSearchStrategy
