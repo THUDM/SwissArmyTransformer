@@ -97,7 +97,7 @@ class BaseTask(ABC):
         metrics_dict = defaultdict(lambda: [])
         weight = []
         for file, (result_dict, length) in result_dict_all.items():
-            for key, value in result_dict.item():
+            for key, value in result_dict.items():
                 metrics_dict[key].append(value)
             weight.append(length)
         for key, value in metrics_dict.items():
@@ -121,8 +121,8 @@ class GenerationTask(BaseTask, ABC):
     def config_class(cls):
         return GenerationTaskConfig
 
-    def __init__(self, model: ModelForEvaluation, tokenizer: _IceTokenizer, config_path: str):
-        super(GenerationTask, self).__init__(model, tokenizer, config_path)
+    def __init__(self, model: ModelForEvaluation, tokenizer: _IceTokenizer, config: GenerationTaskConfig):
+        super(GenerationTask, self).__init__(model, tokenizer, config)
 
         end_tokens = [tokenizer.get_command("eop"), tokenizer.get_command("eos")]
         if self.config.sampling_strategy == "BaseStrategy":
@@ -141,7 +141,7 @@ class GenerationTask(BaseTask, ABC):
 
     def predict_single_batch(self, batch):
         outputs = self.model.generate_text(batch, self.strategy, max_length=self.config.max_seq_length)
-        return outputs
+        return outputs[0]
 
 
 class MultiChoiceTask(BaseTask, ABC):
