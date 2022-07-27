@@ -1,0 +1,3 @@
+name: 'OCNLI_50K'
+type: 'mul'
+path: 'CLUE/ocnli'

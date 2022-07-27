@@ -1,0 +1,6 @@
+name: 'IFLYTEKF'
+type: 'mul'
+path: 'CLUE/iflytek-fc'
+file-pattern:
+  dev: "**/dev_few_all.jsonl"
+  test: "**/test_public.jsonl"

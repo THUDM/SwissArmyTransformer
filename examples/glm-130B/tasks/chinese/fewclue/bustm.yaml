@@ -1,0 +1,6 @@
+name: 'BUSTM'
+type: 'mul'
+path: 'CLUE/bustm'
+file-pattern:
+  dev: "**/dev_few_all.jsonl"
+  test: "**/test_public.jsonl"
