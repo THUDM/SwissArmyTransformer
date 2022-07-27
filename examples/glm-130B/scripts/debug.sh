@@ -1,8 +1,8 @@
 #!/bin/bash
 
-NUM_WORKERS=15
+NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=8
-HOST_FILE_PATH="/thudm/LargeScale/wudao-1"
+HOST_FILE_PATH="/thudm/LargeScale/wudao-0"
 OPTIONS_NCCL="NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 CUDA_LAUNCH_BLOCKING=0"
 
 script_path=$(realpath $0)
@@ -13,7 +13,7 @@ source "${main_dir}/config/model_glm_130B.sh"
 
 ARGS="${main_dir}/evaluate.py \
        --mode inference \
-       --data-path /thudm/LargeScale/data/zeroshot/ \
+       --data-path ./data \
        --task $* \
        $MODEL_ARGS"
 

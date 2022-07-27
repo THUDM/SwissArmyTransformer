@@ -74,20 +74,5 @@ categories = {
 
 
 class MMLU(MultiChoiceTask):
-    def report_final_metrics(self, result_dict_all: Dict[str, Tuple[Dict[str, float], int]]):
-        for name, tasks in categories.items():
-            value, weight = list(
-                zip(
-                    *list(
-                        map(
-                            lambda item: (item[0]["Accuracy"], item[1]),
-                            [result_dict_all[task.lower().replace(" ", "_") + ".json"] for task in tasks],
-                        )
-                    )
-                )
-            )
-            result = np.average(value, weights=weight)
-            print(f"    Category {name}, Accuracy = {result:.3f}%")
-        value, weight = list(zip(*[(result_dict["Accuracy"], size) for result_dict, size in result_dict_all.values()]))
-        result = np.average(value, weights=weight)
-        print(f"Overall Accuracy = {result:.3f}%")
+    def report_overall_metrics(self, result_dict_all: Dict[str, Tuple[Dict[str, float], int]]):
+        self.report_group_metrics("Overall", result_dict_all, level=0)

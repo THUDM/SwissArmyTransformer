@@ -1,0 +1,5 @@
+name: 'superglue_axg'
+type: 'mul'
+path: 'bloom/super_glue_axg'
+file-pattern:
+  test: "**/test.jsonl"

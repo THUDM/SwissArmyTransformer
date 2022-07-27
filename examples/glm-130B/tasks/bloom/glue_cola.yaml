@@ -1,0 +1,5 @@
+name: 'glue_cola'
+type: 'mul'
+path: 'bloom/glue_cola'
+file-pattern:
+  validation: "**/validation.jsonl"

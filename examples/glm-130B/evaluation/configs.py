@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclass_wizard import YAMLWizard
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Optional, List, Dict, Tuple
 
 
 class TaskType(Enum):
@@ -18,12 +18,12 @@ class BaseConfig(YAMLWizard):
     path: str
 
     module: Optional[str] = None
-    metrics: list[str] = field(default_factory=list)
+    metrics: List[str] = field(default_factory=list)
 
     use_task_mask: bool = False
     unidirectional: bool = False
     max_seq_length: int = 2048
-    source_file_pattern: str = "**/*.json*"
+    file_pattern: str | Dict[str, str] = "**/*.json*"
 
 
 @dataclass

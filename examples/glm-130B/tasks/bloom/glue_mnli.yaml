@@ -1,0 +1,6 @@
+name: 'glue_mnli'
+type: 'mul'
+path: 'bloom/glue_mnli'
+file-pattern:
+  validation-matched: "**/validation_matched.jsonl"
+  validation-mismatched: "**/validation_mismatched.jsonl"

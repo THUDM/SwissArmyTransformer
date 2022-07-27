@@ -1,5 +1,5 @@
 MODEL_TYPE="glm-130B"
-CHECKPOINT_PATH=/thudm/workspace/hanyu/SwissArmyTransformer/data/ckpt
+CHECKPOINT_PATH="/thudm/workspace/hanyu/SwissArmyTransformer/data/ckpt/iter_0049300"
 MODEL_ARGS="--model-parallel-size 8 \
             --num-layers 70 \
             --hidden-size 12288 \
@@ -9,7 +9,6 @@ MODEL_ARGS="--model-parallel-size 8 \
             --max-sequence-length 2048 \
             --tokenizer-type icetk-glm-130B \
             --layernorm-order post \
-            --load ${CHECKPOINT_PATH}/iter_0049300 \
-            --use-gpu-initialization \
+            --load ${CHECKPOINT_PATH} \
             --skip-init \
             --fp16"

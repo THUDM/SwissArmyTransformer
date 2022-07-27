@@ -1,16 +1,10 @@
-import argparse
 import importlib
-import torch
 
 from os.path import join, isdir, isfile, relpath
 from glob import glob
 
-from SwissArmyTransformer import get_args, get_tokenizer
-from SwissArmyTransformer.arguments import initialize_distributed
-from SwissArmyTransformer.training import load_checkpoint
-from SwissArmyTransformer.model import GLM130B
-
 from evaluation import BaseConfig, ModelForEvaluation, DEFAULT_CLASS, print_rank_0
+from initialize import initialize, initialize_model_and_tokenizer
 
 
 def add_evaluation_specific_args(parser):
@@ -42,22 +36,13 @@ def evaluate_all_tasks(data_path, model, tokenizer, all_task_config_path, task_c
 
 
 def main():
-    parser = argparse.ArgumentParser(add_help=False)
-    add_evaluation_specific_args(parser)
-    GLM130B.add_model_specific_args(parser)
-    known, args_list = parser.parse_known_args()
-    sat_args = get_args(args_list)
-    sat_args = argparse.Namespace(**vars(sat_args), **vars(known))
-    sat_args.do_train = False
-    initialize_distributed(sat_args)
-    tokenizer = get_tokenizer(sat_args)
-
-    sat_args.task = find_all_tasks(sat_args.task)
+    args = initialize(extra_args_provider=add_evaluation_specific_args)
+    args.task = find_all_tasks(args.task)
 
     task_classes = []
-    for task_config_path in sat_args.task:
+    print_rank_0("> Loading task configs")
+    for task_config_path in args.task:
         config = BaseConfig.from_yaml_file(task_config_path)
-        print_rank_0("> Loading task configs")
         if config.module:
             path = ".".join(config.module.split(".")[:-1])
             module = importlib.import_module(path)
@@ -66,16 +51,12 @@ def main():
             task_classes.append(task_class)
         else:
             task_classes.append(DEFAULT_CLASS[config.type])
-        print_rank_0(f"  Task {config.name} loaded from config {task_config_path}")
+        print_rank_0(f"    Task {config.name} loaded from config {task_config_path}")
 
-    model = GLM130B(sat_args).half().to(sat_args.device)
-
-    load_checkpoint(model, sat_args)
-    torch.distributed.barrier()
-
+    model, tokenizer = initialize_model_and_tokenizer(args)
     model = ModelForEvaluation(model)
 
-    evaluate_all_tasks(sat_args.data_path, model, tokenizer, sat_args.task, task_classes)
+    evaluate_all_tasks(args.data_path, model, tokenizer, args.task, task_classes)
 
 
 if __name__ == "__main__":

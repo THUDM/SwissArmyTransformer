@@ -1,28 +1,19 @@
-# -*- encoding: utf-8 -*-
-"""
-@File    :   inference_large_scale.py
-@Time    :   2021/10/22 19:41:58
-@Author  :   Ming Ding
-@Contact :   dm18@mails.tsinghua.edu.cn
-"""
-
-# here put the import lib
-from functools import partial
 import os
 import torch
-import argparse
 import stat
 import re
 
+from functools import partial
 
-from SwissArmyTransformer import mpu, get_args, get_tokenizer
-from SwissArmyTransformer.arguments import initialize_distributed
-from SwissArmyTransformer.training import load_checkpoint
-
-from SwissArmyTransformer.model import GLM130B
+from SwissArmyTransformer import mpu
 from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence
 from SwissArmyTransformer.generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
 from SwissArmyTransformer.generation.utils import timed_name, generate_continually
+from initialize import initialize, initialize_model_and_tokenizer
+
+
+def add_generation_specific_args(parser):
+    parser.add_argument("--sampling-strategy", type=str, default="BaseStrategy", help="type name of sampling strategy")
 
 
 def get_masks_and_position_ids_gmask(seq, mask_position, context_length):
@@ -56,18 +47,7 @@ def get_masks_and_position_ids_mask(seq, mask_position, context_length):
 
 
 def main(args):
-    args.do_train = False
-    initialize_distributed(args)
-    tokenizer = get_tokenizer(args)
-    # build model
-    model = GLM130B(args)
-
-    if args.fp16:
-        model = model.half()
-    model = model.to(args.device)
-
-    load_checkpoint(model, args)
-    model.eval()
+    model, tokenizer = initialize_model_and_tokenizer(args)
 
     end_tokens = [tokenizer.get_command("eop"), tokenizer.get_command("eos")]
     # define function for each query
@@ -76,7 +56,7 @@ def main(args):
         strategy = BaseStrategy(temperature=args.temperature, top_k=args.top_k, end_tokens=end_tokens)
     elif args.sampling_strategy == "BeamSearchStrategy":
         strategy = BeamSearchStrategy(
-            args.batch_size,
+            args.num_beams,
             length_penalty=args.length_penalty,
             consider_end=True,
             end_tokens=end_tokens,
@@ -91,11 +71,7 @@ def main(args):
             query_id, raw_text = raw_text.split("\t")
 
         # add MASK
-        generation_mask = "[gMASK]" if args.task_mask else "[MASK]"
-        if args.task_mask:
-            assert "[MASK]" not in raw_text, "should not mix [MASK] and [gMASK]"
-        else:
-            assert "[gMASK]" not in raw_text, "should not mix [MASK] and [gMASK]"
+        generation_mask = "[MASK]" if "[MASK]" in raw_text else "[gMASK]"
 
         mask_pattern = r"\[g?MASK\]"
         text_list = re.split(mask_pattern, raw_text)
@@ -120,8 +96,8 @@ def main(args):
             raise ValueError("text too long.")
 
         # generation
-        mbz = args.max_inference_batch_size
-        assert args.batch_size < mbz or args.batch_size % mbz == 0
+        args.batch_size = 1
+        mbz = 1
         output_list = [seq]
         # continually detect the first mark position
         while True:
@@ -136,7 +112,7 @@ def main(args):
             if mask_position == len(seq):
                 break
 
-            if args.task_mask:
+            if generation_mask == "[gMASK]":
                 get_func = partial(
                     get_masks_and_position_ids_gmask, mask_position=mask_position, context_length=len(seq) + 1
                 )
@@ -155,7 +131,7 @@ def main(args):
                 output = filling_sequence(
                     model,
                     input_seq,
-                    batch_size=min(args.batch_size, mbz),
+                    batch_size=args.num_beams if args.sampling_strategy == "BeamSearchStrategy" else 1,
                     strategy=strategy,
                     log_attention_weights=None,
                     get_masks_and_position_ids=get_func,
@@ -203,14 +179,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    py_parser = argparse.ArgumentParser(add_help=False)
-    py_parser.add_argument(
-        "--sampling-strategy", type=str, default="BaseStrategy", help="type name of sampling strategy"
-    )
-    GLM130B.add_model_specific_args(py_parser)
-    known, args_list = py_parser.parse_known_args()
-    args = get_args(args_list)
-    args = argparse.Namespace(**vars(args), **vars(known))
+    args = initialize(extra_args_provider=add_generation_specific_args)
 
     with torch.no_grad():
         main(args)

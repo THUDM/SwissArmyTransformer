@@ -1,0 +1,5 @@
+name: 'glue_qnli'
+type: 'mul'
+path: 'bloom/glue_qnli'
+file-pattern:
+  validation: "**/validation.jsonl"
