@@ -1,6 +1,7 @@
 MODEL_TYPE="glm-130B"
 CHECKPOINT_PATH="/thudm/workspace/hanyu/SwissArmyTransformer/data/ckpt/iter_0049300"
-MODEL_ARGS="--model-parallel-size 8 \
+MP_SIZE=8
+MODEL_ARGS="--model-parallel-size ${MP_SIZE} \
             --num-layers 70 \
             --hidden-size 12288 \
             --inner-hidden-size 32768 \

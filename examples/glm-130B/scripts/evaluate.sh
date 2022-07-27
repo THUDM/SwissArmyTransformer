@@ -9,23 +9,10 @@ main_dir=$(dirname $script_dir)
 
 source "${main_dir}/config/model_glm_130B.sh"
 
-#SAMPLING ARGS
-TEMP=0.9
-TOPK=40
-TOPP=0
-
-ARGS="${main_dir}/generate.py \
+ARGS="${main_dir}/evaluate.py \
        --mode inference \
-       --sampling-strategy BeamSearchStrategy \
-       --num-beams 4 \
-       --no-repeat-ngram-size 3 \
-       --length-penalty 0.7 \
-       --out-seq-length 256 \
-       --temperature $TEMP \
-       --top_k $TOPK \
-       --top_p $TOPP \
-       --output-path samples_glm \
-       --input-source ./input.txt \
+       --data-path /thudm/LargeScale/data/zeroshot/ \
+       --task $* \
        $MODEL_ARGS"
 
 TIMESTAMP=$(date +'%Y.%m.%d-%H:%M:%S')
@@ -35,4 +22,3 @@ mkdir -p logs
 
 run_cmd="PYTHONPATH=/thudm/LargeScale/SwissArmyTransformer ${OPTIONS_NCCL} python -m torch.distributed.launch --nproc_per_node $MP_SIZE --master_port ${MASTER_PORT} ${ARGS}"
 eval ${run_cmd} 2>&1 | tee logs/${EXP_NAME}.log
-
