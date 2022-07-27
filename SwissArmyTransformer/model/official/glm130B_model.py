@@ -1,6 +1,5 @@
 import math
 import torch
-import torch.nn as nn
 from torch.nn import functional as F
 
 from SwissArmyTransformer.model.base_model import BaseModel, BaseMixin
@@ -9,7 +8,6 @@ from SwissArmyTransformer.mpu.layers import ColumnParallelLinear
 
 from SwissArmyTransformer.model.position_embedding import RotaryEmbedding
 from SwissArmyTransformer.model.position_embedding import \
-apply_rotary_pos_emb_torch, apply_rotary_pos_emb, apply_rotary_pos_emb_fused, \
     apply_rotary_pos_emb_index_torch, apply_rotary_pos_emb_index, apply_rotary_pos_emb_index_fused
 
 from SwissArmyTransformer.transformer_defaults import standard_attention
@@ -21,6 +19,12 @@ torch._C._jit_set_profiling_executor(False)
 torch._C._jit_override_can_fuse_on_cpu(True)
 torch._C._jit_override_can_fuse_on_gpu(True)
 
+try:
+    from apex.transformer.functional import FusedScaleMaskSoftmax
+    from apex.transformer.enums import AttnMaskType
+except ModuleNotFoundError:
+    print('Please install apex to use FusedScaleMaskSoftmax, otherwise the inference efficiency will be greatly reduced')
+    FusedScaleMaskSoftmax = None
 
 
 class RotaryEmbeddingMixin(BaseMixin):
@@ -169,7 +173,23 @@ class SelfAttentionWithFP32SoftmaxMixin(BaseMixin):
     def __init__(self, hidden_size, num_attention_heads, model_parallel_size):
         super().__init__()  
         self.hidden_size_per_attention_head = divide(hidden_size, num_attention_heads)
-        self.hidden_size_per_partition = divide(hidden_size, model_parallel_size) 
+        self.hidden_size_per_partition = divide(hidden_size, model_parallel_size)
+        self.scale_mask_softmax = None
+        if FusedScaleMaskSoftmax is not None:
+            self.scale_mask_softmax = FusedScaleMaskSoftmax(
+                input_in_fp16=True,
+                input_in_bf16=False,
+                attn_mask_type=AttnMaskType.padding,
+                scaled_masked_softmax_fusion=True,
+                mask_func=self.attention_mask_func,
+                softmax_in_fp32=True,
+                scale=1,
+            )
+
+    @staticmethod
+    def attention_mask_func(attention_scores, attention_mask):
+        attention_scores.masked_fill_(attention_mask, -10000.0)
+        return attention_scores
 
     def attention_fn(self, query_layer, key_layer, value_layer, attention_mask, attention_dropout=None, log_attention_weights=None, scaling_attention_score=True, mems=None, **kwargs):
 
@@ -232,20 +252,20 @@ class SelfAttentionWithFP32SoftmaxMixin(BaseMixin):
 
         # if log_attention_weights is not None:
         #     attention_scores += log_attention_weights
+        if self.scale_mask_softmax:
+            self.scale_mask_softmax.scale = query_key_layer_scaling_coeff
+            attention_probs = self.scale_mask_softmax(attention_scores, attention_mask.contiguous())
+        else:
+            if not (attention_mask.shape[-2] == 1 and (attention_mask > 0).all()):
+                # if auto-regressive, skip
+                attention_scores.masked_fill_(attention_mask, -10000.0)
 
-        if not (attention_mask.shape[-2] == 1 and (attention_mask > 0).all()):
-            # if auto-regressive, skip
-            attention_scores = torch.mul(attention_scores, attention_mask) - \
-                            10000.0 * (1.0 - attention_mask)
+            attention_scores = attention_scores.float()
+            attention_scores = attention_scores * query_key_layer_scaling_coeff
 
-    
+            attention_probs = F.softmax(attention_scores, dim=-1)
 
-        attention_scores = attention_scores.float()
-        attention_scores = attention_scores * query_key_layer_scaling_coeff
-
-        attention_probs = F.softmax(attention_scores, dim=-1)
-
-        attention_probs = attention_probs.half()
+            attention_probs = attention_probs.half()
 
 
         if attention_dropout is not None:

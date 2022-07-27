@@ -77,12 +77,12 @@ def build_multiple_choice_sample(text, choices, is_single_token, unified_multita
         "tokens": token,
         "targets": target,
         "position_ids": position_id,
-        "attention_mask": attention_mask > 0.5,
+        "attention_mask": attention_mask < 0.5,
         "choice_target_ids": choice_target_id,
         "is_single_token": is_single_token,
     }
     if is_single_token:
-        item["choices"] = np.array(item["choices"], dtype=dtype).squeeze()
+        item["choices"] = np.array(choices, dtype=dtype).squeeze()
     return item
 
 
@@ -120,7 +120,7 @@ def build_generation_sample(text, max_seq_length, use_task_mask, unidirectional=
     item = {
         "tokens": np.concatenate((token, np.zeros(max_seq_length - len(token), dtype=np.long))),
         "position_ids": position_id,
-        "attention_mask": attention_mask > 0.5,
+        "attention_mask": attention_mask < 0.5,
         "context_length": context_length,
     }
     return item
@@ -187,7 +187,7 @@ class ZeroShotDataset(torch.utils.data.Dataset):
                             "text": text,
                             "choices": choices,
                             "label": label,
-                            "is_single_token": tgt_seq_length == len(choices),
+                            "is_single_token": tgt_seq_length == 1,
                         }
                     )
                 elif self.task_type == "gen":

@@ -55,8 +55,6 @@ def cond_log_prob(model, batch):
     # Get the batch.
     tokens, targets, position_ids, attention_mask = process_data(batch)
 
-    attention_mask = attention_mask.type_as(next(model.parameters()))
-
     # Forward pass through the model.
     logits, *output_per_layers = model(tokens, position_ids, attention_mask, log_attention_weights=None)  # TODO memlen
 
@@ -97,6 +95,7 @@ def generate_text(model, batch, strategy, max_length) -> List[List[int]]:
         get_masks_and_position_ids=get_masks_and_position_ids,
         batch_size=strategy.num_beams if hasattr(strategy, "num_beams") else 1,
         strategy=strategy,
+        attention_dtype=torch.bool
     )[0]
 
     if isinstance(output, torch.Tensor):  # different strategies
