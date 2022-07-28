@@ -1,7 +1,10 @@
-name: "LAMBADA"
+name: "LAMBADA-unidirectional"
 type: "gen"
 module: "tasks.lambada.task.LAMBADA"
-path: "lambada_last_word_format_gmask/lambada"
+path: "lambada/lambada"
+file-pattern:
+  test: "**/test.jsonl"
+  validation: "**/validation.jsonl"
 
 sampling_strategy: "BeamSearchStrategy"
 num_beams: 16

@@ -5,14 +5,14 @@ from functools import partial
 from .strategy import BeamSearchStrategyForLAMBADA
 
 
-def prefix_match_score(prediction, ground_truth):
-    return prediction.startswith(ground_truth)
+def exact_match_score(prediction, ground_truth):
+    return prediction.strip() == ground_truth.strip()
 
 
 class LAMBADA(GenerationTask):
     @property
     def metrics(self):
-        return {"Accuracy": partial(qa_evaluate, metric=prefix_match_score)}
+        return {"Accuracy": partial(qa_evaluate, metric=exact_match_score)}
 
     def __init__(self, model, tokenizer, config_path):
         super(LAMBADA, self).__init__(model, tokenizer, config_path)
@@ -36,11 +36,15 @@ class LAMBADA(GenerationTask):
                 min_tgt_length=self.config.min_tgt_length,
             )
 
+    def get_first_word_tokens(self, tokens):
+        text = self.tokenizer.tokenizer.decode(tokens).strip()
+        return self.tokenizer.tokenize(text.split(" ")[0])
+
     def predict_single_batch(self, batch):
         outputs = self.model.generate_text(batch, self.strategy, max_length=batch["context_length"][0] + 5)
         for output in outputs:
-            text = self.tokenizer.tokenizer.decode(output)
+            text = self.tokenizer.tokenizer.decode(output).strip()
             spl = text.split(" ")
             if len(spl) >= 2 and spl[1] in punctuation:
-                return output
-        return outputs[0]
+                return self.get_first_word_tokens(output)
+        return self.get_first_word_tokens(outputs[0])
