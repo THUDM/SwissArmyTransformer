@@ -16,30 +16,18 @@ def add_generation_specific_args(parser):
     parser.add_argument("--sampling-strategy", type=str, default="BaseStrategy", help="type name of sampling strategy")
 
 
-def get_masks_and_position_ids_gmask(seq, mask_position, context_length):
+def get_masks_and_position_ids(seq, mask_position, context_length, gmask=False):
     tokens = seq.unsqueeze(0)
 
     attention_mask = torch.ones((1, len(seq), len(seq)), device=tokens.device)
     attention_mask.tril_()
     attention_mask[..., : context_length - 1] = 1
     attention_mask.unsqueeze_(1)
+    attention_mask = (attention_mask < 0.5).bool()
 
     position_ids = torch.arange(len(seq), dtype=torch.long, device=tokens.device)
-    position_ids = position_ids.unsqueeze(0)
-
-    return tokens, attention_mask, position_ids
-
-
-def get_masks_and_position_ids_mask(seq, mask_position, context_length):
-    tokens = seq.unsqueeze(0)
-
-    attention_mask = torch.ones((1, len(seq), len(seq)), device=tokens.device)
-    attention_mask.tril_()
-    attention_mask[..., : context_length - 1] = 1
-    attention_mask.unsqueeze_(1)
-
-    position_ids = torch.arange(len(seq), dtype=torch.long, device=tokens.device)
-    position_ids[context_length - 1 :] = mask_position
+    if not gmask:
+        position_ids[context_length - 1 :] = mask_position
 
     position_ids = position_ids.unsqueeze(0)
 
@@ -112,14 +100,10 @@ def main(args):
             if mask_position == len(seq):
                 break
 
-            if generation_mask == "[gMASK]":
-                get_func = partial(
-                    get_masks_and_position_ids_gmask, mask_position=mask_position, context_length=len(seq) + 1
-                )
-            else:
-                get_func = partial(
-                    get_masks_and_position_ids_mask, mask_position=mask_position, context_length=len(seq) + 1
-                )
+            get_func = partial(
+                get_masks_and_position_ids, mask_position=mask_position, context_length=len(seq) + 1,
+                gmask=generation_mask == "[gMASK]"
+            )
 
             output_list = []
 

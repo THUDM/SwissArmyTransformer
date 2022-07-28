@@ -57,7 +57,6 @@ def filling_sequence(
         log_attention_weights=None,
         get_masks_and_position_ids=get_masks_and_position_ids_default,
         mems=None,
-        attention_dtype=None,
         **kw_args
         ):
     '''
@@ -76,10 +75,8 @@ def filling_sequence(
     assert context_length > 0
     tokens, attention_mask, position_ids = get_masks_and_position_ids(seq)
     tokens = tokens[..., :context_length]
-    if attention_dtype is None:
+    if attention_mask.dtype != torch.bool:
         attention_mask = attention_mask.type_as(next(model.parameters())) # if fp16
-    else:
-        attention_mask = attention_mask.to(attention_dtype)
     # initialize generation
     counter = context_length - 1 # Last fixed index is ``counter'' 
     index = 0 if mems is None else mems.shape[2] # Next forward starting index, also the length of cache.
