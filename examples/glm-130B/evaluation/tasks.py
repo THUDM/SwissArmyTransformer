@@ -15,7 +15,7 @@ from SwissArmyTransformer.tokenization.icetk_glm_130B.ice_tokenizer import _IceT
 
 from .configs import BaseConfig, GenerationTaskConfig, MultiChoiceTaskConfig
 from .model import ModelForEvaluation
-from .dataset import ZeroShotDataset
+from .dataset import GenerationTaskDataset, MultiChoiceTaskDataset
 from .utils import build_data_loader, gather_result, print_rank_0
 from .strategies import DeterminedBeamSearchStrategy
 from .metrics import qa_exact_match, qa_f1, accuracy_metric
@@ -60,13 +60,9 @@ class BaseTask(ABC):
             for name, pattern in pattern_group.items()
         }
 
-    def build_dataset(self, file):
-        return ZeroShotDataset(
-            join(self.config.path, file),
-            max_seq_length=self.config.max_seq_length,
-            use_task_mask=self.config.use_task_mask,
-            unidirectional=self.config.unidirectional,
-        )
+    @abstractmethod
+    def build_dataset(self, relative_path: str):
+        pass
 
     def evaluate(self):
         dist.barrier()
@@ -164,6 +160,9 @@ class GenerationTask(BaseTask, ABC):
     def config_class(cls):
         return GenerationTaskConfig
 
+    def build_dataset(self, relative_path):
+        return GenerationTaskDataset(join(self.config.path, relative_path), self.config)
+
     def __init__(self, model: ModelForEvaluation, tokenizer: _IceTokenizer, config: GenerationTaskConfig):
         super(GenerationTask, self).__init__(model, tokenizer, config)
 
@@ -193,6 +192,9 @@ class MultiChoiceTask(BaseTask, ABC):
     @classmethod
     def config_class(cls):
         return MultiChoiceTaskConfig
+
+    def build_dataset(self, relative_path):
+        return MultiChoiceTaskDataset(join(self.config.path, relative_path), self.config)
 
     def predict_single_batch(self, batch):
         return np.argmax(self.model.cond_log_prob(batch))

@@ -21,15 +21,21 @@ class BaseConfig(YAMLWizard):
     metrics: List[str] = field(default_factory=list)
 
     use_task_mask: bool = False
+    use_multitask_encoding: bool = False
     unidirectional: bool = False
     max_seq_length: int = 2048
     file_pattern: str | Dict[str, str] = "**/*.json*"
+
+    def __post_init__(self):
+        assert not self.use_task_mask and self.unidirectional, "[MASK] doesn't support unidirectional attention"
 
 
 @dataclass
 class MultiChoiceTaskConfig(BaseConfig):
     module = "evaluation.MultiChoiceTask"
     metrics: list[str] = field(default_factory=lambda: ["Accuracy"])
+
+    micro_batch_size: int = 1
 
 
 @dataclass
