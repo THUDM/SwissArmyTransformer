@@ -27,7 +27,7 @@ class BaseConfig(YAMLWizard):
     file_pattern: str | Dict[str, str] = "**/*.json*"
 
     def __post_init__(self):
-        assert not self.use_task_mask and self.unidirectional, "[MASK] doesn't support unidirectional attention"
+        assert self.use_task_mask or not self.unidirectional, "[MASK] doesn't support unidirectional attention"
 
 
 @dataclass
