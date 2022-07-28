@@ -1,3 +1,4 @@
+import time
 import importlib
 
 from os.path import join, isdir, isfile, relpath
@@ -52,11 +53,14 @@ def main():
         else:
             task_classes.append(DEFAULT_CLASS[config.type])
         print_rank_0(f"    Task {config.name} loaded from config {task_config_path}")
+    print_rank_0(f"> Successfully load {len(task_classes)} task{'s' if len(task_classes) > 1 else ''}")
 
     model, tokenizer = initialize_model_and_tokenizer(args)
     model = ModelForEvaluation(model)
 
+    start = time.time()
     evaluate_all_tasks(args.data_path, model, tokenizer, args.task, task_classes)
+    print_rank_0(f"Finish {len(task_classes)} task{'s' if len(task_classes) > 1 else ''} in {time.time() - start:.1f}s")
 
 
 if __name__ == "__main__":
