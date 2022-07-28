@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclass_wizard import YAMLWizard
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict
 
 
 class TaskType(Enum):
@@ -26,6 +26,8 @@ class BaseConfig(YAMLWizard):
     max_seq_length: int = 2048
     file_pattern: str | Dict[str, str] = "**/*.json*"
 
+    micro_batch_size: int = 1
+
     def __post_init__(self):
         assert self.use_task_mask or not self.unidirectional, "[MASK] doesn't support unidirectional attention"
 
@@ -34,8 +36,6 @@ class BaseConfig(YAMLWizard):
 class MultiChoiceTaskConfig(BaseConfig):
     module = "evaluation.MultiChoiceTask"
     metrics: list[str] = field(default_factory=lambda: ["Accuracy"])
-
-    micro_batch_size: int = 1
 
 
 @dataclass
@@ -47,3 +47,6 @@ class GenerationTaskConfig(BaseConfig):
     length_penalty: float = 0.0
     no_repeat_ngram_size: int = 0
     min_tgt_length: int = 0
+
+    def __post_init__(self):
+        assert self.micro_batch_size == 1, "Only support micro batch size = 1 for generation task"

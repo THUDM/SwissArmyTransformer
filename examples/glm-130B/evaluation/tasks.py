@@ -3,19 +3,18 @@ import time
 import numpy as np
 import torch.distributed as dist
 
-from typing import Dict, Callable, Type, Tuple, List
+from typing import Dict, Callable, Type, Tuple, List, Any
 from abc import ABC, abstractmethod
 from glob import glob
 from os.path import join, relpath
 from collections import defaultdict
-from functools import reduce
 
 from SwissArmyTransformer.generation.sampling_strategies import BaseStrategy
 from SwissArmyTransformer.tokenization.icetk_glm_130B.ice_tokenizer import _IceTokenizer
 
 from .configs import BaseConfig, GenerationTaskConfig, MultiChoiceTaskConfig
 from .model import ModelForEvaluation
-from .dataset import GenerationTaskDataset, MultiChoiceTaskDataset
+from .dataset import EvaluationDataset, GenerationTaskDataset, MultiChoiceTaskDataset
 from .utils import build_data_loader, gather_result, print_rank_0
 from .strategies import DeterminedBeamSearchStrategy
 from .metrics import qa_exact_match, qa_f1, accuracy_metric
@@ -60,10 +59,6 @@ class BaseTask(ABC):
             for name, pattern in pattern_group.items()
         }
 
-    @abstractmethod
-    def build_dataset(self, relative_path: str):
-        pass
-
     def evaluate(self):
         dist.barrier()
         start = time.time()
@@ -79,14 +74,20 @@ class BaseTask(ABC):
             result_dict_group = {}
             for file in filelist:
                 dataset = self.build_dataset(file)
-                dataloader = build_data_loader(dataset, micro_batch_size=1, num_workers=1, drop_last=False)
+                dataloader = build_data_loader(
+                    dataset,
+                    micro_batch_size=self.config.micro_batch_size,
+                    num_workers=1,
+                    drop_last=False,
+                    collate_fn=dataset.collate_fn if dataset.has_collate_fn else None,
+                )
 
                 prediction = []
                 with torch.no_grad():
                     for _, batch in enumerate(dataloader):
                         prediction.append(self.predict_single_batch(batch))
 
-                prediction = gather_result(prediction, len(dataset))
+                prediction = gather_result(prediction, len(dataset), self.config.micro_batch_size)
                 result_dict = {key: metric(prediction, dataset.data) for key, metric in self.metrics.items()}
                 result_dict_group[file] = (result_dict, len(dataset))
 
@@ -149,7 +150,11 @@ class BaseTask(ABC):
         pass
 
     @abstractmethod
-    def predict_single_batch(self, batch):
+    def predict_single_batch(self, batch) -> List[Any]:
+        pass
+
+    @abstractmethod
+    def build_dataset(self, relative_path: str) -> EvaluationDataset:
         pass
 
 
@@ -181,9 +186,11 @@ class GenerationTask(BaseTask, ABC):
         else:
             raise ValueError(f"unknown strategy {self.config.sampling_strategy}")
 
-    def predict_single_batch(self, batch):
+    def predict_single_batch(self, batch) -> List[List[int]]:
+        # micro batch size = 1 for generation task,
+        # but we still need to return a list of predictions for consistency
         outputs = self.model.generate_text(batch, self.strategy, max_length=self.config.max_seq_length)
-        return outputs[0]
+        return [outputs[0]]
 
 
 class MultiChoiceTask(BaseTask, ABC):
@@ -196,5 +203,10 @@ class MultiChoiceTask(BaseTask, ABC):
     def build_dataset(self, relative_path):
         return MultiChoiceTaskDataset(join(self.config.path, relative_path), self.config)
 
-    def predict_single_batch(self, batch):
-        return np.argmax(self.model.cond_log_prob(batch))
+    def predict_single_batch(self, batch) -> List[int]:
+        log_probs = self.model.cond_log_prob(batch)
+        from SwissArmyTransformer import mpu
+
+        # if mpu.get_model_parallel_rank() == 0:
+        #     print(mpu.get_data_parallel_rank(), log_probs)
+        return np.argmax(log_probs, axis=-1).tolist()

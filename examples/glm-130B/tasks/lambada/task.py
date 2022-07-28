@@ -41,10 +41,11 @@ class LAMBADA(GenerationTask):
         return self.tokenizer.tokenize(text.split(" ")[0])
 
     def predict_single_batch(self, batch):
+        # micro batch size = 1 here, but we still need to return a list of predictions for consistency
         outputs = self.model.generate_text(batch, self.strategy, max_length=batch["context_length"][0] + 5)
         for output in outputs:
             text = self.tokenizer.tokenizer.decode(output).strip()
             spl = text.split(" ")
             if len(spl) >= 2 and spl[1] in punctuation:
-                return self.get_first_word_tokens(output)
-        return self.get_first_word_tokens(outputs[0])
+                return [self.get_first_word_tokens(output)]
+        return [self.get_first_word_tokens(outputs[0])]

@@ -2,8 +2,6 @@ import torch
 
 from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence
 
-from .utils import process_data
-
 
 class ModelForEvaluation(torch.nn.Module):
     def __init__(self, model):
@@ -11,48 +9,62 @@ class ModelForEvaluation(torch.nn.Module):
 
         self.model = model
 
-    def cond_log_prob(self, batch) -> list[float]:
+    @staticmethod
+    def process_data(batch):
+        return (
+            batch["tokens"].to(device=torch.cuda.current_device()).long(),
+            batch["position_ids"].to(device=torch.cuda.current_device()).long(),
+            batch["attention_mask"].to(device=torch.cuda.current_device()).bool().unsqueeze(1),
+        )
+
+    def cond_log_prob(self, batch) -> list[list[float]]:
         """
         @return: Conditional log probability of each option
         """
-        tokens, targets, position_ids, attention_mask = process_data(batch)
+        tokens, position_ids, attention_mask = self.process_data(batch)
+        choices_batch, choice_target_ids_batch = batch["choices"], batch["choice_target_ids"]
+        is_single_token = batch["is_single_token"]
+
+        # if torch.distributed.get_rank() == 0:
+        #     import pdb
+        #
+        #     pdb.set_trace()
+        #
+        # torch.distributed.barrier()
 
         self.model.eval()
         with torch.no_grad():
             logits, *output_per_layers = self.model(tokens, position_ids, attention_mask, log_attention_weights=None)
+            logits_batch = torch.nn.functional.log_softmax(logits, dim=-1)
 
         # output: [b, sq, vocab]
-        output = torch.nn.functional.log_softmax(logits, dim=-1)
-        batch_ids = torch.arange(tokens.size(0), dtype=tokens.dtype, device=tokens.device).unsqueeze(1)
+        log_probs = []
 
-        choice_logits = []
+        if is_single_token:  # Single token
+            for logits, choices, choice_target_ids in zip(logits_batch, choices_batch, choice_target_ids_batch):
+                log_probs.append(logits[choice_target_ids[0], choices].tolist())
+        else:  # Multi token
+            for output, choices, choice_target_ids in zip(logits_batch, choices_batch, choice_target_ids_batch):
+                log_probs_single = []
+                for choice, choice_target_id in zip(choices, choice_target_ids):
+                    tmp = output[choice_target_id, choice]
+                    log_probs_single.append(tmp.sum().tolist())
 
-        # Single token
-        if batch["is_single_token"].any():
-            target_ids = batch["choice_target_ids"][0]
-            logits = output[batch_ids, target_ids, batch["choices"]]
-            choice_logits = logits.squeeze(0).tolist()
-        # Multi token
-        else:
-            for target_ids in batch["choice_target_ids"]:
-                logits = output[batch_ids, target_ids, targets[batch_ids, target_ids]]
-                choice_logits.append(logits.squeeze(0).sum(dim=-1).tolist())
+        return log_probs
 
-        return choice_logits
-
-    def generate_text(self, batch, strategy, max_length) -> list[list[int]]:
+    def generate_text(self, sample, strategy, max_length) -> list[list[int]]:
         """
         @return: A list of text model generated, sorted by score in descending order
         """
 
-        seq = torch.squeeze(batch["tokens"].to(device=torch.cuda.current_device()).long())[:max_length]
-        context_length = batch["context_length"].to(device=torch.cuda.current_device()).long()
+        seq = torch.squeeze(sample["tokens"].to(device=torch.cuda.current_device()).long())[:max_length]
+        context_length = sample["context_length"].to(device=torch.cuda.current_device()).long()
         seq[context_length:] = -1
 
         def get_masks_and_position_ids(seq):
             tokens = seq.unsqueeze(0)
-            attention_mask = batch["attention_mask"].to(device=torch.cuda.current_device()).bool().unsqueeze(1)
-            position_ids = batch["position_ids"].to(device=torch.cuda.current_device()).long()
+            attention_mask = sample["attention_mask"].to(device=torch.cuda.current_device()).bool().unsqueeze(1)
+            position_ids = sample["position_ids"].to(device=torch.cuda.current_device()).long()
             return tokens, attention_mask, position_ids
 
         self.model.eval()

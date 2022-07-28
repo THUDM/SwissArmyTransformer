@@ -1,5 +1,6 @@
 import os
 import json
+
 import numpy as np
 import torch
 
@@ -11,13 +12,16 @@ from SwissArmyTransformer import get_tokenizer
 from .configs import BaseConfig, MultiChoiceTaskConfig, GenerationTaskConfig
 
 
-def pad_batch(tokens, targets, position_ids, attention_mask, max_seq_length=None):
-    assert len(tokens) <= max_seq_length
-    attention_mask.append(np.zeros((max_seq_length - len(tokens), max_seq_length - len(tokens)), dtype=np.long))
-    tokens = np.concatenate((tokens, np.zeros(max_seq_length - len(tokens), dtype=np.long)))
-    targets = np.concatenate((targets, np.zeros(max_seq_length - len(targets), dtype=np.long)))
-    position_ids = np.concatenate((position_ids, np.zeros(max_seq_length - len(position_ids), dtype=np.long)))
-    return tokens, targets, position_ids, attention_mask
+def pad_batch(tokens, position_ids, attention_mask, max_seq_length):
+    attention_mask = np.pad(
+        attention_mask,
+        pad_width=((0, max_seq_length - len(tokens)),),
+        mode="constant",
+        constant_values=0,
+    )
+    tokens = np.concatenate((tokens, np.zeros(max_seq_length - len(tokens), dtype=np.int64)))
+    position_ids = np.concatenate((position_ids, np.zeros(max_seq_length - len(position_ids), dtype=np.int64)))
+    return tokens, position_ids, attention_mask
 
 
 class EvaluationDataset(torch.utils.data.Dataset, ABC):
@@ -34,7 +38,7 @@ class EvaluationDataset(torch.utils.data.Dataset, ABC):
         self.path = path
         self.config = config
         self.max_seq_length = self.config.max_seq_length
-        self.dtype = np.long
+        self.dtype = np.int64
 
         tokenizer = get_tokenizer(tokenizer_type="icetk-glm-130B")
         self.mask_id = tokenizer.get_command("[MASK]")
@@ -45,6 +49,13 @@ class EvaluationDataset(torch.utils.data.Dataset, ABC):
             for line in file:
                 item = json.loads(line)
                 self.data.append(self.process_single_item(item))
+
+    @property
+    def has_collate_fn(self) -> bool:
+        return False
+
+    def collate_fn(self, samples):
+        return None
 
     @abstractmethod
     def process_single_item(self, item) -> dict:
@@ -69,11 +80,10 @@ class GenerationTaskDataset(EvaluationDataset):
     def build_generation_sample(text, max_seq_length, use_task_mask, unidirectional=True):
         tokenizer = get_tokenizer()
 
-        dtype = np.int64
         sop_id = tokenizer.get_command("sop")
         mask_id = tokenizer.get_command("[gMASK]") if use_task_mask else tokenizer.get_command("[MASK]")
 
-        token = np.array(text, dtype=dtype)
+        token = np.array(text, dtype=np.int64)
 
         blank_filling = mask_id in text
         if blank_filling:
@@ -89,16 +99,16 @@ class GenerationTaskDataset(EvaluationDataset):
                 token = np.concatenate((token, [mask_id, sop_id]))
         context_length = len(token)
 
-        position_id = np.arange(0, max_seq_length, dtype=dtype)
+        position_id = np.arange(0, max_seq_length, dtype=np.int64)
         if not use_task_mask:
             position_id[context_length - 1 :] = mask_position
 
-        attention_mask = np.tril(np.ones((max_seq_length, max_seq_length), dtype=np.long))
+        attention_mask = np.tril(np.ones((max_seq_length, max_seq_length), dtype=np.int64))
         if not unidirectional:
             attention_mask[: context_length - 1, : context_length - 1] = 1
 
         item = {
-            "tokens": np.concatenate((token, np.zeros(max_seq_length - len(token), dtype=np.long))),
+            "tokens": np.concatenate((token, np.zeros(max_seq_length - len(token), dtype=np.int64))),
             "position_ids": position_id,
             "attention_mask": attention_mask < 0.5,
             "context_length": context_length,
@@ -120,6 +130,40 @@ class GenerationTaskDataset(EvaluationDataset):
 class MultiChoiceTaskDataset(EvaluationDataset):
     config: MultiChoiceTaskConfig
 
+    def __init__(self, path, config: MultiChoiceTaskConfig):
+        self.is_single_token = True  # set to False later in process_single_item func
+        super().__init__(path, config)
+
+    @property
+    def has_collate_fn(self) -> bool:
+        return True
+
+    def collate_fn(self, samples):
+        TILE = 32
+        length_to_pad = (max(map(lambda spl: len(spl["token"]), samples)) + TILE - 1) // TILE * TILE
+
+        token_batch, position_id_batch, attention_mask_batch = [], [], []
+        choices_batch, choice_target_ids_batch = [], []
+
+        for sample in samples:
+            token, position_id, attention_mask = pad_batch(
+                sample["token"], sample["position_id"], sample["attention_mask"], length_to_pad
+            )
+            token_batch.append(token)
+            position_id_batch.append(position_id)
+            attention_mask_batch.append(attention_mask)
+            choices_batch.append(sample["choices"])
+            choice_target_ids_batch.append(sample["choice_target_ids"])
+
+        return {
+            "tokens": torch.tensor(np.array(token_batch), dtype=torch.int64),
+            "position_ids": torch.tensor(np.array(position_id_batch), dtype=torch.int64),
+            "attention_mask": torch.tensor(np.array(attention_mask_batch), dtype=torch.int64) < 0.5,
+            "choices": choices_batch,
+            "choice_target_ids": choice_target_ids_batch,
+            "is_single_token": self.is_single_token,
+        }
+
     def process_single_item(self, item):
         text, choices, label = item["inputs"], item["choices"], item["label"]
 
@@ -134,27 +178,28 @@ class MultiChoiceTaskDataset(EvaluationDataset):
             text = text[len(text) - text_length : len(text)]
 
         assert not (
-            self.mask_id in text and self.unified_multitask_encoding
+            self.mask_id in text and self.config.use_multitask_encoding
         ), "Unified multitask encoding don't support blank filling"
+
+        if tgt_seq_length != 1:
+            self.is_single_token = False
 
         return {
             "text": text,
             "choices": choices,
             "label": label,
-            "is_single_token": tgt_seq_length == 1,
         }
 
     @staticmethod
     def build_multiple_choice_sample(text, choices, is_single_token, unified_multitask_encoding=False):
         tokenizer = get_tokenizer()
 
-        dtype = np.int64
         sop_id = tokenizer.get_command("sop")
         mask_id = tokenizer.get_command("[MASK]")
 
-        token = np.array(text, dtype=dtype)
-        target = np.array(text, dtype=dtype)
-        position_id = np.arange(len(text), dtype=dtype)
+        token = np.array(text, dtype=np.int64)
+        target = np.array(text, dtype=np.int64)
+        position_id = np.arange(len(text), dtype=np.int64)
         choice_target_id = []
 
         blank_filling = mask_id in text
@@ -167,7 +212,7 @@ class MultiChoiceTaskDataset(EvaluationDataset):
             mask_position = text.index(mask_id)
 
         division = len(token)
-        attention_mask = [np.ones((len(token), len(token)), dtype=dtype)]
+        attention_mask = [np.ones((len(token), len(token)), dtype=np.int64)]
 
         for choice in choices:
             position_id = np.concatenate(
@@ -175,37 +220,31 @@ class MultiChoiceTaskDataset(EvaluationDataset):
                     position_id,
                     [mask_position] * len(choice)
                     if blank_filling or not unified_multitask_encoding
-                    else np.arange(mask_position, mask_position + len(choice), dtype=dtype),
+                    else np.arange(mask_position, mask_position + len(choice), dtype=np.int64),
                 )
             )
-            choice_target_id.append(np.arange(len(token), len(token) + len(choice), dtype=dtype))
-            attention_mask.append(np.tril(np.ones((len(choice), len(choice)), dtype=np.long)))
+            choice_target_id.append(np.arange(len(token), len(token) + len(choice), dtype=np.int64))
+            attention_mask.append(np.tril(np.ones((len(choice), len(choice)), dtype=np.int64)))
             token = np.concatenate((token, [sop_id], choice[:-1]))
             target = np.concatenate((target, choice))
 
             if is_single_token:
                 break
 
-        # pad batch
-        seq_length = len(token)
-        TILE = 32
-        token, target, position_id, attention_mask = pad_batch(
-            token, target, position_id, attention_mask, ((seq_length + TILE - 1) // TILE) * TILE
-        )
-
         attention_mask = block_diag(*attention_mask)
-        attention_mask[:seq_length, :division] = 1
+        attention_mask[: len(token), :division] = 1
+
+        choices = np.array(choices, dtype=np.int64)
+        if is_single_token:
+            choices = choices.squeeze()
 
         item = {
-            "tokens": token,
-            "targets": target,
-            "position_ids": position_id,
-            "attention_mask": attention_mask < 0.5,
-            "choice_target_ids": choice_target_id,
-            "is_single_token": is_single_token,
+            "token": token,
+            "position_id": position_id,
+            "attention_mask": attention_mask,
+            "choices": choices,
+            "choice_target_ids": choice_target_id[0] if is_single_token else choice_target_id,
         }
-        if is_single_token:
-            item["choices"] = np.array(choices, dtype=dtype).squeeze()
         return item
 
     def __getitem__(self, idx):
@@ -213,7 +252,7 @@ class MultiChoiceTaskDataset(EvaluationDataset):
         sample = self.build_multiple_choice_sample(
             item["text"],
             item["choices"],
-            item["is_single_token"],
+            is_single_token=self.is_single_token,
             unified_multitask_encoding=self.config.use_multitask_encoding,
         )
         sample["label"] = item["label"]
