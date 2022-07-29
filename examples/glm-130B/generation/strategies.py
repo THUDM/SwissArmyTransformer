@@ -111,7 +111,11 @@ class BeamSearchStrategy:
         self.cached_beam_ngram_bans = bans_continue
         self.length_generated += 1
 
-        if len(self.end_beams) == self.num_beams:
+        if (
+            len(self.end_beams) == self.num_beams
+            and self.end_beams_penalized_scores[-1]
+            >= self.cached_beam_scores.max() / ((5.0 + (seq_len + 1)) / 6) ** self.length_penalty
+        ):  # We're done if none of current tokens will better than the worst in end_beams
             self.is_done = True
 
         return tokens, mems

@@ -6,6 +6,7 @@ main_dir=$(dirname $script_dir)
 
 source "${main_dir}/config/model_glm_130B.sh"
 
+SEED=1234
 MAX_OUTPUT_LENGTH=256
 MIN_GEN_LENGTH=0
 # BeamSearchStrategy args
@@ -18,6 +19,7 @@ TOPK=40
 TOPP=0
 
 ARGS="${main_dir}/generate.py \
+       --seed $SEED \
        --mode inference \
        --sampling-strategy BeamSearchStrategy \
        --out-seq-length $MAX_OUTPUT_LENGTH \
