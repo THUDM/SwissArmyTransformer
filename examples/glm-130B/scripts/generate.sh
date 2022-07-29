@@ -8,11 +8,11 @@ source "${main_dir}/config/model_glm_130B.sh"
 
 MAX_OUTPUT_LENGTH=256
 MIN_GEN_LENGTH=0
-# BeamSearch args
+# BeamSearchStrategy args
 NUM_BEAMS=4
 LENGTH_PENALTY=1.0
 NO_REPEAT_NGRAM=3
-# Greedy args
+# BaseStrategy args
 TEMP=0.9
 TOPK=40
 TOPP=0
