@@ -109,6 +109,9 @@ class BeamSearchStrategy:
         self.cached_beam_scores = torch.tensor(scores_continue, device=logits.device)
         self.cached_beam_ngram_bans = bans_continue
 
+        if len(self.end_beams) == self.num_beams:
+            self.is_done = True
+
         # TODO is_done
         return tokens, mems
 

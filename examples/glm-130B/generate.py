@@ -7,7 +7,8 @@ from functools import partial
 
 from SwissArmyTransformer import mpu
 from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence
-from SwissArmyTransformer.generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
+from SwissArmyTransformer.generation.sampling_strategies import BaseStrategy
+from generation import BeamSearchStrategy
 from SwissArmyTransformer.generation.utils import timed_name, generate_continually
 from initialize import initialize, initialize_model_and_tokenizer
 
@@ -101,8 +102,10 @@ def main(args):
                 break
 
             get_func = partial(
-                get_masks_and_position_ids, mask_position=mask_position, context_length=len(seq) + 1,
-                gmask=generation_mask == "[gMASK]"
+                get_masks_and_position_ids,
+                mask_position=mask_position,
+                context_length=len(seq) + 1,
+                gmask=generation_mask == "[gMASK]",
             )
 
             output_list = []
