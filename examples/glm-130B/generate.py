@@ -80,7 +80,7 @@ def main(args):
         if not raw_text.endswith("MASK]"):
             seq = seq + [tokenizer.get_command("eos")]
         if mpu.get_model_parallel_rank() == 0:
-            print("raw text: {}\n".format(raw_text))
+            print("\nInput: {}\n".format(raw_text))
         if len(seq) > args.max_sequence_length:
             raise ValueError("text too long.")
 
@@ -122,9 +122,7 @@ def main(args):
                     strategy=strategy,
                     log_attention_weights=None,
                     get_masks_and_position_ids=get_func,
-                )[
-                    0
-                ]  # we don't use mems, fill back
+                )[0]  # we don't use mems, fill back
                 if isinstance(output, torch.Tensor):  # different strategies
                     output = list(output)
 
@@ -154,12 +152,12 @@ def main(args):
         else:
             prefix = raw_text.replace("/", "")[:20]
             full_path = timed_name(prefix, ".txt", args.output_path)
-            if mpu.get_model_parallel_rank() == 0:
-                print("answer", txts)  # print the first.
-        with open(full_path, "w", encoding="utf-8") as fout:
-            for txt in txts:
-                fout.write(txt + "\n")
-        os.chmod(full_path, stat.S_IRWXO + stat.S_IRWXG + stat.S_IRWXU)
+        if mpu.get_model_parallel_rank() == 0:
+            print("Output:", txts[0])  # print the first.
+            with open(full_path, "w", encoding="utf-8") as fout:
+                for txt in txts:
+                    fout.write(txt + "\n")
+            os.chmod(full_path, stat.S_IRWXO + stat.S_IRWXG + stat.S_IRWXU)
 
     os.makedirs(args.output_path, exist_ok=True)
     generate_continually(process, args.input_source)

@@ -60,22 +60,16 @@ def generate_continually(func, input_source='interactive'):
     else:
         with open(input_source, 'r') as fin:
             inputs = fin.readlines()
-        err_linenos = []
         for line_no, raw_text in enumerate(inputs):
             if line_no % get_data_parallel_world_size() != get_data_parallel_rank():
                 continue
             rk = dist.get_rank()
             if get_model_parallel_rank() == 0:
-                print(f'Working on No. {line_no} on {rk}... ')
+                print(f'Working on No. {line_no} on model group {rk}... ')
             raw_text = raw_text.strip()
             if len(raw_text) == 0:
                 continue
-            # try:
             start_time = time.time()
             func(raw_text)
             if get_model_parallel_rank() == 0:
                 print("\nTaken time {:.2f}\n".format(time.time() - start_time), flush=True)
-            # except (ValueError, FileNotFoundError) as e:
-            #     err_linenos.append(line_no)
-            #     print(e)
-            #     continue

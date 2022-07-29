@@ -112,7 +112,6 @@ class BeamSearchStrategy:
         if len(self.end_beams) == self.num_beams:
             self.is_done = True
 
-        # TODO is_done
         return tokens, mems
 
     def finalize(self, tokens, mems):
