@@ -13,7 +13,7 @@ source "${main_dir}/config/model_glm_130B.sh"
 
 ARGS="${main_dir}/evaluate.py \
        --mode inference \
-       --data-path /thudm/LargeScale/data/zeroshot/ \
+       --data-path /thudm/LargeScale/data/zeroshot \
        --task $* \
        $MODEL_ARGS"
 

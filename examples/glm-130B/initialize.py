@@ -43,6 +43,15 @@ def initialize_model_and_tokenizer(args):
 
     load_checkpoint(model, args)
     model.eval()
+
+    # generate rotary embedding cache
+    with torch.no_grad():
+        _, *_ = model(
+            torch.ones(1, 1, device=torch.cuda.current_device(), dtype=torch.int64),
+            torch.ones(1, 1, device=torch.cuda.current_device(), dtype=torch.int64) * args.max_sequence_length,
+            torch.ones(1, 1, 1, 1, device=torch.cuda.current_device(), dtype=torch.bool),
+        )
+
     torch.distributed.barrier()
 
     return model, tokenizer
