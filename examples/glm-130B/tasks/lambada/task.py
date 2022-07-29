@@ -34,6 +34,7 @@ class LAMBADA(GenerationTask):
                 banned_prefix=banned_prefix,
                 no_repeat_ngram_size=self.config.no_repeat_ngram_size,
                 min_tgt_length=self.config.min_tgt_length,
+                deterministic=True,
             )
 
     def get_first_word_tokens(self, tokens):

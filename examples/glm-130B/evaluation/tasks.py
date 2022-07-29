@@ -12,11 +12,11 @@ from collections import defaultdict
 from SwissArmyTransformer.generation.sampling_strategies import BaseStrategy
 from SwissArmyTransformer.tokenization.icetk_glm_130B.ice_tokenizer import _IceTokenizer
 
+from generation import BeamSearchStrategy
 from .configs import BaseConfig, GenerationTaskConfig, MultiChoiceTaskConfig
 from .model import ModelForEvaluation
 from .dataset import EvaluationDataset, GenerationTaskDataset, MultiChoiceTaskDataset
 from .utils import build_data_loader, gather_result, print_rank_0
-from .strategies import DeterminedBeamSearchStrategy
 from .metrics import qa_exact_match, qa_f1, accuracy_metric
 
 DEFAULT_METRICS = {"EM": qa_exact_match, "F1": qa_f1, "Accuracy": accuracy_metric}
@@ -175,13 +175,14 @@ class GenerationTask(BaseTask, ABC):
         if self.config.sampling_strategy == "BaseStrategy":
             self.strategy = BaseStrategy(temperature=1.0, top_k=1, end_tokens=end_tokens)
         elif self.config.sampling_strategy == "BeamSearchStrategy":
-            self.strategy = DeterminedBeamSearchStrategy(
+            self.strategy = BeamSearchStrategy(
                 self.config.num_beams,
                 length_penalty=self.config.length_penalty,
                 consider_end=True,
                 end_tokens=end_tokens,
                 no_repeat_ngram_size=self.config.no_repeat_ngram_size,
                 min_tgt_length=self.config.min_tgt_length,
+                deterministic=True,  # For evaluation, we need a determined generation strategy
             )
         else:
             raise ValueError(f"unknown strategy {self.config.sampling_strategy}")
@@ -205,8 +206,4 @@ class MultiChoiceTask(BaseTask, ABC):
 
     def predict_single_batch(self, batch) -> List[int]:
         log_probs = self.model.cond_log_prob(batch)
-        from SwissArmyTransformer import mpu
-
-        # if mpu.get_model_parallel_rank() == 0:
-        #     print(mpu.get_data_parallel_rank(), log_probs)
         return np.argmax(log_probs, axis=-1).tolist()

@@ -1,7 +1,7 @@
-from evaluation import DeterminedBeamSearchStrategy
+from generation import BeamSearchStrategy
 
 
-class BeamSearchStrategyForLAMBADA(DeterminedBeamSearchStrategy):
+class BeamSearchStrategyForLAMBADA(BeamSearchStrategy):
     def __init__(self, *args, banned_prefix=[], **kwargs):
         super().__init__(*args, **kwargs)
         self.banned_prefix = banned_prefix
