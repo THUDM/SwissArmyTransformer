@@ -7,3 +7,4 @@ file-pattern:
   social_sciences: "social_sciences/*.json"
   humanities: "humanities/*.json"
   other: "other/*.json"
+micro-batch-size: 1

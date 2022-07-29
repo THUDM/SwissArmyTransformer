@@ -3,3 +3,4 @@ type: 'mul'
 path: 'bloom/glue_cola'
 file-pattern:
   validation: "**/validation.jsonl"
+micro-batch-size: 8
