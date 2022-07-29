@@ -11,14 +11,14 @@ class BeamSearchStrategy:
         end_tokens=[],
         invalid_slices=[],
         no_repeat_ngram_size=0,
-        min_tgt_length=0,
+        min_gen_length=0,
         deterministic=False,
     ):
         self.num_beams = num_beams
         self.length_penalty = length_penalty
         self.end_tokens = end_tokens
         self.ngram = no_repeat_ngram_size
-        self.min_tgt_length = min_tgt_length
+        self.min_gen_length = min_gen_length
         self.invalid_slices = invalid_slices
         self.consider_end = consider_end
         self.deterministic = deterministic
@@ -29,6 +29,7 @@ class BeamSearchStrategy:
         self.end_beams_penalized_scores = []  # list of LongTensors
         self.cached_beam_scores = 0  # [batch_size]
         self.cached_beam_ngram_bans = [{} for i in range(self.num_beams)]
+        self.length_generated = 0
         self.is_done = False
 
     def _add_end_beams(self, score, beam):
@@ -48,7 +49,7 @@ class BeamSearchStrategy:
         logits = logits.float()
         for invalid_slice in self.invalid_slices:
             logits[..., invalid_slice] = -65504
-        if self.min_tgt_length > seq_len:
+        if self.min_gen_length > self.length_generated:
             for end_token in self.end_tokens:
                 logits[..., end_token] = -65504
         if self.ngram > 0 and seq_len > self.ngram:
@@ -108,6 +109,7 @@ class BeamSearchStrategy:
         mems = torch.stack(mems_contiue, dim=1)
         self.cached_beam_scores = torch.tensor(scores_continue, device=logits.device)
         self.cached_beam_ngram_bans = bans_continue
+        self.length_generated += 1
 
         if len(self.end_beams) == self.num_beams:
             self.is_done = True

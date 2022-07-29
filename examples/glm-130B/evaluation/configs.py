@@ -43,10 +43,10 @@ class GenerationTaskConfig(BaseConfig):
     module = "evaluation.GenerationTask"
     metrics: list[str] = field(default_factory=lambda: ["EM", "F1"])
     sampling_strategy: str = "BaseStrategy"
-    num_beams: int = 1
-    length_penalty: float = 0.0
-    no_repeat_ngram_size: int = 0
-    min_tgt_length: int = 0
+    num_beams: int = 4
+    length_penalty: float = 1.0
+    no_repeat_ngram_size: int = 3
+    min_gen_length: int = 0
 
     def __post_init__(self):
         assert self.micro_batch_size == 1, "Only support micro batch size = 1 for generation task"

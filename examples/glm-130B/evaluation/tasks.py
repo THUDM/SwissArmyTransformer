@@ -181,7 +181,7 @@ class GenerationTask(BaseTask, ABC):
                 consider_end=True,
                 end_tokens=end_tokens,
                 no_repeat_ngram_size=self.config.no_repeat_ngram_size,
-                min_tgt_length=self.config.min_tgt_length,
+                min_gen_length=self.config.min_gen_length,
                 deterministic=True,  # For evaluation, we need a determined generation strategy
             )
         else:

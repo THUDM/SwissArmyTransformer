@@ -7,6 +7,7 @@ main_dir=$(dirname $script_dir)
 source "${main_dir}/config/model_glm_130B.sh"
 
 MAX_OUTPUT_LENGTH=256
+MIN_GEN_LENGTH=0
 # BeamSearch args
 NUM_BEAMS=4
 LENGTH_PENALTY=1.0
@@ -19,10 +20,11 @@ TOPP=0
 ARGS="${main_dir}/generate.py \
        --mode inference \
        --sampling-strategy BeamSearchStrategy \
-       --num-beams $NUM_BEAMS \
-       --no-repeat-ngram-size $NO_REPEAT_NGRAM \
-       --length-penalty $LENGTH_PENALTY \
        --out-seq-length $MAX_OUTPUT_LENGTH \
+       --min-gen-length $MIN_GEN_LENGTH \
+       --num-beams $NUM_BEAMS \
+       --length-penalty $LENGTH_PENALTY \
+       --no-repeat-ngram-size $NO_REPEAT_NGRAM \
        --temperature $TEMP \
        --top_k $TOPK \
        --top_p $TOPP \

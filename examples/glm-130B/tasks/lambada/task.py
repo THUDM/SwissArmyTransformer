@@ -33,7 +33,7 @@ class LAMBADA(GenerationTask):
                 invalid_slices=invalid_slices,
                 banned_prefix=banned_prefix,
                 no_repeat_ngram_size=self.config.no_repeat_ngram_size,
-                min_tgt_length=self.config.min_tgt_length,
+                min_gen_length=self.config.min_gen_length,
                 deterministic=True,
             )
 
