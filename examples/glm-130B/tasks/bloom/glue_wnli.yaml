@@ -1,5 +1,0 @@
-name: 'glue_wnli'
-type: 'mul'
-path: 'bloom/glue_wnli'
-file-pattern:
-  validation: "**/validation.jsonl"

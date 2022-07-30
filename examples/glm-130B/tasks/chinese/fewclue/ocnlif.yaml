@@ -1,6 +1,0 @@
-name: 'OCNLIF'
-type: 'mul'
-path: 'CLUE/ocnli-fc'
-file-pattern:
-  dev: "**/dev_few_all.jsonl"
-  test: "**/test_public.jsonl"

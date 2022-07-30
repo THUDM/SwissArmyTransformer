@@ -1,6 +1,0 @@
-name: 'TNEWSF'
-type: 'mul'
-path: 'CLUE/tnews-fc'
-file-pattern:
-  dev: "**/dev_few_all.jsonl"
-  test: "**/test_public.jsonl"

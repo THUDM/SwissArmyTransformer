@@ -1,3 +1,0 @@
-apex
-scipy
-dataclass_wizard
