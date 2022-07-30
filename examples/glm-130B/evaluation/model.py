@@ -49,7 +49,7 @@ class ModelForEvaluation(torch.nn.Module):
                 for choice, choice_target_id in zip(choices, choice_target_ids):
                     tmp = output[choice_target_id, choice]
                     log_probs_single.append(tmp.sum().tolist())
-
+                log_probs.append(log_probs_single)
         return log_probs
 
     def generate_text(self, sample, strategy, max_length) -> list[list[int]]:

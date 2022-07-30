@@ -234,9 +234,8 @@ class MultiChoiceTaskDataset(EvaluationDataset):
         attention_mask = block_diag(*attention_mask)
         attention_mask[: len(token), :division] = 1
 
-        choices = np.array(choices, dtype=np.int64)
         if is_single_token:
-            choices = choices.squeeze()
+            choices = np.array(choices, dtype=np.int64).squeeze().tolist()
 
         item = {
             "token": token,

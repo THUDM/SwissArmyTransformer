@@ -206,4 +206,4 @@ class MultiChoiceTask(BaseTask, ABC):
 
     def predict_single_batch(self, batch) -> List[int]:
         log_probs = self.model.cond_log_prob(batch)
-        return np.argmax(log_probs, axis=-1).tolist()
+        return [np.argmax(log_probs_single).item() for log_probs_single in log_probs]
