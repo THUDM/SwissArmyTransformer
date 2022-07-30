@@ -43,17 +43,27 @@ def save_multiple_images(imgs, path, debug=True):
 def generate_continually(func, input_source='interactive'):
     if input_source == 'interactive':
         while True:
-            raw_text = input("\nPlease Input Query (stop to exit) >>> ") 
-            raw_text = raw_text.strip()
-            if not raw_text:
-                print('Query should not be empty!')
-                continue
-            if raw_text == "stop":
-                return 
+            raw_text, is_stop = "", False
+            if torch.distributed.get_rank() == 0:
+                raw_text = input("\nPlease Input Query (stop to exit) >>> ")
+                raw_text = raw_text.strip()
+                if not raw_text:
+                    print('Query should not be empty!')
+                    continue
+                if raw_text == "stop":
+                    is_stop = True
+                torch.distributed.broadcast_object_list([raw_text, is_stop])
+            else:
+                info = [raw_text, is_stop]
+                torch.distributed.broadcast_object_list(info)
+                raw_text, is_stop = info
+            if is_stop:
+                return
             try:
                 start_time = time.time()
                 func(raw_text)
-                print("\nTaken time {:.2f}\n".format(time.time() - start_time), flush=True)
+                if torch.distributed.get_rank() == 0:
+                    print("\nTaken time {:.2f}\n".format(time.time() - start_time), flush=True)
             except (ValueError, FileNotFoundError) as e:
                 print(e)
                 continue
