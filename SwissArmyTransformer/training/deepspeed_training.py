@@ -55,7 +55,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     if args.load and args.mode == 'pretrain':  # continue training
         args.experiment_name = os.path.basename(os.path.normpath(args.load))
     else:
-        args.experiment_name = args.experiment_name + datetime.now().strftime("%m-%d-%H-%M")
+        args.experiment_name = args.experiment_name + '-' +datetime.now().strftime("%m-%d-%H-%M")
 
     # Pytorch distributed. must before seed. ALREADY MOVED TO arguments.py!
     # if isinstance(model_cls, type):
@@ -107,8 +107,6 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
             print('Finetuning Model...')
         print_args(args)
         summary_writer = get_sample_writer(base=args.summary_dir, name=args.experiment_name, iteration=args.iteration)
-        if hasattr(summary_writer, 'add_hparams'): # old version does not have this api
-            summary_writer.add_hparams(vars(args), {'_dump':0}, name=args.experiment_name, global_step=0)
 
     # Resume data loader if necessary.
     if args.resume_dataloader:
