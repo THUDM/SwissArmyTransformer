@@ -8,3 +8,7 @@ from .mae_model import MAE
 from .distill_model import DistillModel
 from .glm130B_model import GLM130B
 from .clip_model import CLIP
+from .gptneo_model import GPTNeoModel
+from .dpr_model import DPRQuestionEncoder
+from .dpr_model import DPRContextEncoder
+from .dpr_model import DPRReader
