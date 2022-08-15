@@ -21,6 +21,7 @@ MODEL_ULRS = {
     'glm-10b-zh': 'https://lfs.aminer.cn/misc/cogview/glm/glm-10b-zh.zip',
     # 'glm-large-zh': 'https://cloud.tsinghua.edu.cn/f/df21f6d4109b4285bfd9/?dl=1',
     # 'glm-large-en-blank': 'https://cloud.tsinghua.edu.cn/f/df21f6d4109b4285bfd9/?dl=1',
+    'gpt-neo-1.3b': 'https://cloud.tsinghua.edu.cn/f/22e87976b5b745ad90af/?dl=1',
 
     # CogView2
     'coglm': 'https://lfs.aminer.cn/misc/cogview/cogview2/coglm.zip',
@@ -30,4 +31,9 @@ MODEL_ULRS = {
     # CogVideo
     'cogvideo-stage1': 'https://lfs.aminer.cn/misc/cogvideo/cogvideo-stage1.zip', 
     'cogvideo-stage2': 'https://lfs.aminer.cn/misc/cogvideo/cogvideo-stage2.zip',
+    
+    # DPR
+    'dpr-ctx_encoder-single-nq-base': 'https://cloud.tsinghua.edu.cn/f/e5475f1211a948708baa/?dl=1',
+    'dpr-question_encoder-single-nq-base': 'https://cloud.tsinghua.edu.cn/f/5c4aae7d11fc4c45a5bd/?dl=1',
+    'dpr-reader-single-nq-base': 'https://cloud.tsinghua.edu.cn/f/e169889ab40d4615a34d/?dl=1',
 }
