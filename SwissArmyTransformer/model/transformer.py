@@ -111,7 +111,8 @@ class CrossAttention(torch.nn.Module):
     """Parallel cross-attention layer for Transformer"""
 
     def __init__(self, hidden_size, num_attention_heads, attention_dropout_prob, output_dropout_prob, init_method,
-                 layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, hooks={},transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
+                 layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, hooks={},
+                 transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
         super().__init__()
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
@@ -583,5 +584,5 @@ class BaseTransformer(torch.nn.Module):
 
         outputs = [logits_parallel]
         outputs.extend(output_per_layers)
-
+        
         return outputs

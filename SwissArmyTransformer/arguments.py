@@ -303,11 +303,19 @@ def get_args(args_list=None):
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
     if args.local_rank is None:
         args.local_rank = int(os.getenv("LOCAL_RANK", '0')) # torchrun
-    
+   
     if args.device == -1: # not set manually
         args.device = args.rank % torch.cuda.device_count()
         if args.local_rank is not None:
             args.device = args.local_rank
+
+    # local rank should be consistent with device in DeepSpeed
+    if args.local_rank != args.device and args.mode != 'inference':
+        raise ValueError(
+            'LOCAL_RANK (default 0) and args.device inconsistent. '
+            'This can only happens in inference mode. '
+            'Please use CUDA_VISIBLE_DEVICES=x for single-GPU training. '
+            )
 
     # args.model_parallel_size = min(args.model_parallel_size, args.world_size)
     if args.rank == 0:
@@ -429,9 +437,9 @@ def set_random_seed(seed):
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
-        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.enabled = False
+        torch.backends.cudnn.enabled = True # False
         torch.backends.cuda.matmul.allow_tf32 = False # if set it to True will be much faster but not accurate
         if deepspeed.checkpointing.is_configured():
             mpu.model_parallel_cuda_manual_seed(seed)

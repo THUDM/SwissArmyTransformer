@@ -186,7 +186,7 @@ def load_checkpoint(model, args, load_path=None, prefix=''):
         if args.mode == 'inference':
             raise ValueError(f'Missing keys for inference: {missing_keys}.')
         else: # new params
-            assert all(name.find('mixins')>=0 for name in missing_keys)
+            assert all(name.find('mixins')>=0 for name in missing_keys), missing_keys
             assert args.mode == 'finetune'
             # list all mixin names
             mixin_names = []
