@@ -206,6 +206,7 @@ def add_data_args(parser):
     group.add_argument('--train-data-weights', nargs='+', default=None, type=int,
                         help='scaling factors for different train-data, must the same number of'
                         '--train-data or None(==1).')
+    group.add_argument('--iterable-dataset', action='store_true', help='iterable')
 
     # Validation and Test dataset.
     group.add_argument('--valid-data', nargs='*', default=None,
@@ -431,7 +432,8 @@ def initialize_distributed(args):
 
 def set_random_seed(seed):
     """Set random seed for reproducability."""
-    if seed is not None and seed > 0:
+    if seed is not None:
+        assert seed > 0
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)

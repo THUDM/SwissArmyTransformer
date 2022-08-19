@@ -7,6 +7,7 @@
 '''
 
 # here put the import lib
+from functools import partial
 import os
 import sys
 import math
@@ -15,6 +16,7 @@ import random
 import numpy as np
 import pickle
 
+import torch
 from torch.utils.data import Dataset
 
 class LMDBDataset(Dataset):
@@ -80,3 +82,18 @@ class TSVDataset(Dataset):
     
     def __getitem__(self, index):
         return self.process_fn(self.items[index])
+
+try:
+    from webdataset import ResampledShards, DataPipeline
+    from webdataset.utils import pytorch_worker_seed
+    def worker_seed_sat(group=None, seed=0):
+        return pytorch_worker_seed(group=group) + seed * 23
+    
+    class ConfiguredResampledShards(ResampledShards):
+        def __init__(self, urls, seed, nshards=sys.maxsize, deterministic=True):
+            from SwissArmyTransformer.mpu import get_data_parallel_group
+            worker_seed_sat_this = partial(worker_seed_sat, group=get_data_parallel_group(), seed=seed)
+            super().__init__(urls, nshards, worker_seed_sat_this, deterministic)
+
+except ModuleNotFoundError: # webdataset not install, use pip to install
+    pass

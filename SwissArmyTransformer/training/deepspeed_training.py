@@ -110,11 +110,14 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
 
     # Resume data loader if necessary.
     if args.resume_dataloader:
-        if train_data is not None:
-            train_data.batch_sampler.start_iter = args.iteration % len(train_data)
-        if val_data is not None:
-            start_iter_val = (args.train_iters // args.save_interval) * args.eval_interval
-            val_data.batch_sampler.start_iter = start_iter_val % len(val_data)
+        if not args.iterable_dataset:
+            if train_data is not None:
+                train_data.batch_sampler.start_iter = args.iteration % len(train_data)
+            if val_data is not None:
+                start_iter_val = (args.train_iters // args.save_interval) * args.eval_interval
+                val_data.batch_sampler.start_iter = start_iter_val % len(val_data)
+        else:
+            print('Warning: we cannot resume iterable dataloader. skipping...')
 
     # training 
     iteration = 0

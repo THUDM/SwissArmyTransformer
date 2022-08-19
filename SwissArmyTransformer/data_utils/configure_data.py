@@ -20,15 +20,26 @@ from functools import partial
 
 from torch.utils import data
 from .samplers import DistributedBatchSampler
+from torch.utils.data import ChainDataset, IterableDataset
 
 from SwissArmyTransformer import mpu
+    
 
-# class ExDataLoader(torch.utils.data.DataLoader)
 def make_data_loader(dataset, batch_size, args, split):
+
     world_size = torch.distributed.get_world_size(
         group=mpu.get_data_parallel_group())
     rank = torch.distributed.get_rank(group=mpu.get_data_parallel_group())
     distributed = world_size > 1
+
+    # if IterableDataset, assume everything is properly configured. (pre-sharded) 
+    if isinstance(dataset, IterableDataset):
+        return torch.utils.data.DataLoader(
+            dataset,
+            batch_size=batch_size//world_size,
+            num_workers=args.num_workers,
+            pin_memory=True
+            )
 
     sampler = torch.utils.data.SequentialSampler(dataset)
     # drop_last = distributed
@@ -77,11 +88,27 @@ def make_dataset_full(path, split, args, create_dataset_function,
         dataset_weights=None, random_mapping=True, is_train_data=False, **kwargs):
     """function to create datasets+tokenizers for common options"""
     print('make dataset ...', path)
-    if split is None:
-        split = [1.]
-
     assert isinstance(path, list)
-    
+
+    if args.iterable_dataset: # cannot indexed
+        # the random mapping is flexible and efficient, but sometimes we have pratical issue
+        # For instance, someone just gives you a iterable dataset, e.g. webdataset
+        from .datasets import ConfiguredResampledShards, DataPipeline
+        valid_types = (ConfiguredResampledShards, DataPipeline)
+        
+        assert split[0] == 1, 'Iterable dataset cannot auto split.'
+        assert dataset_weights is None
+        for p in path:
+            ds = []
+            for p in path:
+                d = create_dataset_function(p, args)
+                assert isinstance(d, valid_types)
+                ds.append(d)
+            ds = ChainDataset(ds)
+        return ds
+
+    if split is None:
+        split = [1.] 
     if not should_split(split):
         ds = []
         for p in path:
@@ -89,7 +116,7 @@ def make_dataset_full(path, split, args, create_dataset_function,
             ds.append(d)
         ds = ConcatDataset(ds, weights=dataset_weights)
         if random_mapping:
-            if args.epochs is not None:
+            if args.epochs is not None: # not auto-scale, but use a given number of epoches.
                 ds = RandomDataset(ds, scale=args.epochs, seed=args.seed)
             else:
                 world_size = torch.distributed.get_world_size(
