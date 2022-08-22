@@ -116,7 +116,6 @@ class DeepNormWithGLUMixin(BaseMixin):
                 module=self,
                 name="dense_h_to_4h",
                 skip_init=True,
-                device=torch.cuda.current_device(),
             )
             del layer.mlp.activation_func
             layer.mlp.activation_func = GEGLU()
