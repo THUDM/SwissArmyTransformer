@@ -416,11 +416,16 @@ def initialize_distributed(args):
     init_method = 'tcp://'
     args.master_ip = os.getenv('MASTER_ADDR', 'localhost')
     args.master_port = os.getenv('MASTER_PORT', '6000')
+    os.environ['MASTER_ADDR'] = args.master_ip
+    os.environ['MASTER_PORT'] = args.master_port
     init_method += args.master_ip + ':' + args.master_port
+    # sometimes the MASTER_ADDR has strange format, cannot parse init_method.
+    # expect Pytorch of new versions can directly use the environ vars.
     torch.distributed.init_process_group(
         backend=args.distributed_backend,
         world_size=args.world_size, rank=args.rank,
-        init_method=init_method)
+        # init_method=init_method
+        )
 
     # Set the model-parallel / data-parallel communicators.
     mpu.initialize_model_parallel(args.model_parallel_size)
