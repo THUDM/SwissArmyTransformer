@@ -1,10 +1,4 @@
 # -*- encoding: utf-8 -*-
-'''
-@File    :   prompt_tuning.py
-@Time    :   2021/12/12 20:45:18
-@Author  :   Ming Ding 
-@Contact :   dm18@mails.tsinghua.edu.cn
-'''
 
 # here put the import lib
 import os

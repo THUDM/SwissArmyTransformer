@@ -1,16 +1,3 @@
-# -*- encoding: utf-8 -*-
-# @File    :   PET.py
-# @Time    :   2022/5/12
-# @Author  :   Zhuoyi Yang
-# @Contact :   yangzhuo18@mails.tsinghua.edu.cn
-import torch
-import torch.nn as nn
-import math
-from SwissArmyTransformer.mpu.transformer import standard_attention
-from SwissArmyTransformer.model.base_model import BaseMixin, non_conflict
-from SwissArmyTransformer import mpu
-from SwissArmyTransformer.mpu.utils import split_tensor_along_last_dim
-import torch.nn.functional as F
 
 class CollectorMixin(BaseMixin):
     def __init__(self, number_layers, hidden_size_per_attention_head, num_attention_heads, collect_len):
