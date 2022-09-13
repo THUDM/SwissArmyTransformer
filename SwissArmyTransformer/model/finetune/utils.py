@@ -26,7 +26,7 @@ tokenizers['roberta-large-addprefix'] = RobertaTokenizer.from_pretrained(os.path
 # tokenizers['bert-large'] = BertTokenizer.from_pretrained(os.path.join(pretrain_path, 'bert-large-uncased'), local_files_only=False)
 # tokenizers['bert-large-addprefix'] = BertTokenizer.from_pretrained(os.path.join(pretrain_path, 'bert-large-uncased'), local_files_only=True, add_prefix_space=False)
 
-tokenizers['deberta-large'] = DebertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'microsoft/deberta-large'), local_files_only=True)
+# tokenizers['deberta-large'] = DebertaTokenizer.from_pretrained(os.path.join(pretrain_path, 'microsoft/deberta-large'), local_files_only=True)
 jishu = [0,0]
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids
 from SwissArmyTransformer.data_utils import load_hf_dataset
@@ -56,7 +56,8 @@ def get_dataset_keys(dataset_name):
         'conll2003':["input_ids", "position_ids", "attention_mask", "label"],
         #emotion
         'emotion':["input_ids", "position_ids", "attention_mask", "label"],
-
+        #semeval2014
+        'semeval2014':["input_ids", "position_ids", "attention_mask", "label", "pos", "pos_e"]
     }
     return dataset_keys[dataset_name]
 
@@ -80,11 +81,50 @@ def get_class_num(dataset_name):
         'emotion':6,
         'multirc':2,
         'wsc':2,
+        'semeval2014':3,
     }
     return dataset_class_num[dataset_name]
 
 def get_batch_function(dataset_name):
-    if dataset_name == "stsb" :
+    if dataset_name == "semeval2014" :
+        def get_batch(data_iterator, args, timers):
+            # Items and their type.
+            keys = ['input_ids', 'position_ids', 'attention_mask', 'label', 'pos', 'pos_e']
+            datatype = torch.int64
+
+            # Broadcast data.
+            timers('data loader').start()
+            if data_iterator is not None:
+                data = next(data_iterator)
+            else:
+                data = None
+            timers('data loader').stop()
+            data_b = mpu.broadcast_data(keys, data, datatype)
+            # Unpack.
+            tokens = data_b['input_ids'].long()
+            labels = data_b['label'].long()
+            position_ids = data_b['position_ids'].long()
+            attention_mask = data_b['attention_mask'][:, None, None, :].float()
+            pos = data_b['pos'].long()
+            pos_e = data_b['pos_e'].long()
+
+            bz = labels.shape[0]
+            word = torch.zeros_like(tokens, dtype=attention_mask.dtype, device=tokens.device)
+            for i in range(bz):
+                len = (pos_e[i] - pos[i] + 1)
+                for j in range(pos[i],pos_e[i]+1):
+                    word[i,j] = 1/len
+
+            bz = tokens.shape[0]
+            for i in range(bz):
+                pos[i] += i * tokens.shape[1]
+            # Convert
+            if args.fp16:
+                attention_mask = attention_mask.half()
+                word = word.half()
+
+            return tokens, labels, attention_mask, position_ids, (tokens!=1), {'pos':pos, 'word':word}
+    elif dataset_name == "stsb":
         def get_batch(data_iterator, args, timers):
             # Items and their type.
             keys = ['input_ids', 'position_ids', 'attention_mask', 'stsb_label']
@@ -303,17 +343,55 @@ def _encode_double_text(text, text_pair, args, truncation='only_first', is_split
 
 def create_dataset_function(path, args):
     dataset_name = args.dataset_name
-    if os.getenv('PLATFORM') == "jinan":
-        cache_dir = '/thudm/workspace/SwissArmyTransformerDatasets'
-    elif os.getenv('PLATFORM') == "wudao":
-        cache_dir = '/sharefs/cogview-new/yzy/SwissArmyTransformerDatasets'
-    else:
-        raise Exception("no PLATFORM")
+    cache_dir = '/zhangpai21/workspace/SwissArmyTransformerDatasets'
     offline = False
-    transformer_name = f"{dataset_name}_{args.name_model}_{args.sample_length}_stsb2"
+    transformer_name = f"{dataset_name}_{args.name_model}_{args.sample_length}"
+    if args.low_resource:
+        transformer_name += "low_resource"
     process_fn = None
     filter_fn = None
-    if dataset_name == "stsb":
+
+    if dataset_name == "semeval2014":
+        def process_fn(rows):
+            split = True
+            pos_list = []
+            pos_e_list = []
+            label_list = []
+            input_ids = []
+            position_ids = []
+            attention_masks = []
+            for i in range(len(rows['text'])):
+                text = rows['text'][i]
+                terms = rows['aspectTerms'][i]
+                for term in terms:
+                    label = term['polarity']
+                    if label == 'negative':
+                        label = 0
+                    elif label == 'positive':
+                        label = 1
+                    else:
+                        label = 2
+                    pack = _encode_single_text(text, args,  is_split_into_words=split)
+                    start1, end1 = int(term['from']), int(term['to'])
+                    pos1 = tokenizers[args.name_model+"-addprefix"](text[:start1], is_split_into_words=split)['input_ids'].__len__() - 2
+                    pos1_e = tokenizers[args.name_model+"-addprefix"](text[:end1], is_split_into_words=split)['input_ids'].__len__() - 2
+                    if pos1 == 0:
+                        pos1 += 1
+                    pos_list.append(pos1)
+                    pos_e_list.append(pos1_e)
+                    label_list.append(label)
+                    input_ids.append(np.array(pack['input_ids'], dtype=np.int64))
+                    position_ids.append(np.array(pack['position_ids'], dtype=np.int64))
+                    attention_masks.append(np.array(pack['attention_mask'], dtype=np.int64))
+            return {
+                'input_ids': input_ids,
+                'position_ids': position_ids,
+                'attention_mask': attention_masks,
+                'label': label_list,
+                'pos': pos_list,
+                'pos_e': pos_e_list
+            }
+    elif dataset_name == "stsb":
         def process_fn(row):
             pack, label = _encode_double_text(row['sentence1'], row['sentence2'], args), float(row['label'])
             label = int(label * 1000)
@@ -651,7 +729,7 @@ def create_dataset_function(path, args):
                 return True
     else:
         raise Exception('Dataset name is wrong.')
-    return load_hf_dataset(path, process_fn, filter_fn = filter_fn, columns = get_dataset_keys(dataset_name), cache_dir=cache_dir, offline=offline, transformer_name=transformer_name)
+    return load_hf_dataset(path, process_fn, filter_fn = filter_fn, columns = get_dataset_keys(dataset_name), cache_dir=cache_dir, offline=offline, transformer_name=transformer_name, low_resource=args.low_resource)
 
 
 def get_loss_metrics(logits, labels, dataset_name, **extra_data):
@@ -700,7 +778,7 @@ def get_loss_metrics(logits, labels, dataset_name, **extra_data):
         acc = (torch.argmax(pred, dim=1).long() == labels).sum() / labels.numel()
         eval_acc = (torch.argmax(pred, dim=1).long() == labels).float()
         return loss, {'acc': acc, 'eval_acc':eval_acc}
-    elif dataset_name in ['cb', 'emotion']:
+    elif dataset_name in ['cb', 'emotion', 'semeval2014']:
         pred = logits.contiguous().float()
         loss = torch.nn.functional.cross_entropy(pred, labels)
         acc = (torch.argmax(pred, dim=-1).long() == labels).sum() / labels.numel()
@@ -785,13 +863,16 @@ def get_loss_metrics(logits, labels, dataset_name, **extra_data):
         return loss, {'acc':acc, 'loss1':loss1.data, 'em':em, 'f1':f1, 'eval_em': eval_em, 'eval_f1':eval_f1}
 
 from datasets import load_metric
+metric_max = {'acc':torch.tensor([0]), 'f1':torch.tensor([0]), 'mc':torch.tensor([0]), 'pearson':torch.tensor([0]), 'spearmanr':torch.tensor([0])}
 def handle_metrics(metrics):
     if 'eval_stsb_labels' in metrics.keys():
         pred = metrics['eval_stsb_pred']
         labels = metrics['eval_stsb_labels']
         metric = load_metric('glue', 'stsb')
         results = metric.compute(predictions=pred, references=labels)
-        return {"pearson": torch.tensor(results["pearson"]), "spearmanr": torch.tensor(results["spearmanr"])}
+        metric_max['pearson'] = torch.max(metric_max['pearson'], torch.tensor(results["pearson"]))
+        metric_max['spearmanr'] = torch.max(metric_max['spearmanr'], torch.tensor(results["spearmanr"]))
+        return {"pearson": torch.tensor(results["pearson"]), "spearmanr": torch.tensor(results["spearmanr"]), "max_pear": metric_max['pearson'], "max_spear":metric_max['spearmanr']}
     elif 'eval_pred' in metrics.keys():
         pred = metrics['eval_pred']
         labels = metrics['eval_labels']
@@ -809,7 +890,8 @@ def handle_metrics(metrics):
             true_labels.append(label)
         metric = load_metric('seqeval')
         results = metric.compute(predictions=true_predictions, references=true_labels)
-        return {"f1": torch.tensor(results["overall_f1"])}
+        metric_max['f1'] = torch.max(metric_max['f1'], torch.tensor(results["overall_f1"]))
+        return {"f1": torch.tensor(results["overall_f1"]), 'max_f1': metric_max['f1']}
     elif 'em' in metrics.keys():
         eval_em = sum(metrics['eval_em'].split(1,0))/len(metrics['eval_em'])
         eval_f1 = sum(metrics['eval_f1'].split(1,0))/len(metrics['eval_f1'])
@@ -824,10 +906,16 @@ def handle_metrics(metrics):
         Recall = TP/(TP+FN)
         F1 = 2*(Precision*Recall)/(Precision+Recall)
         MC = (TP*TN-FP*FN)/torch.sqrt((TP+FP)*(FN+TP)*(FN+TN)*(FP+TN))
-        return {'acc': acc, 'f1': F1, 'mc':MC}
+        metric_max['acc'] = torch.max(metric_max['acc'], acc)
+        metric_max['f1'] = torch.max(metric_max['f1'], F1)
+        metric_max['mc'] = torch.max(metric_max['mc'], MC)
+        # print(metric_max)
+        # input()
+        return {'acc': acc, 'f1': F1, 'mc':MC, 'acc_max': metric_max['acc'], 'f1_max': metric_max['f1'], 'mc_max': metric_max['mc']}
     else:
         acc = sum(metrics['eval_acc'].split(1,0))/len(metrics['eval_acc'])
-        return {'acc': acc}
+        metric_max['acc'] = torch.max(metric_max['acc'], acc)
+        return {'acc': acc, 'acc_max': metric_max['acc']}
 
 class ChildTuningAdamW(Optimizer):
     def __init__(
@@ -878,7 +966,7 @@ class ChildTuningAdamW(Optimizer):
                     raise RuntimeError("Adam does not support sparse gradients, please consider SparseAdam instead")
 
                 # =================== HACK BEGIN =======================
-                if self.mode is not None:
+                if self.mode is not None and self.gradient_mask is not None:
                     if self.mode == 'ChildTuning-D':
                         if p in self.gradient_mask:
                             grad *= self.gradient_mask[p]
@@ -923,9 +1011,9 @@ class ChildTuningAdamW(Optimizer):
 
 def calc_mask(model, args, train_data, forward_step):
     timers = Timers()
-    N = len(train_data)//100
-    if N > 200:
-        N = 200
+    N = len(train_data)//args.epochs
+    # if N > 200:
+    #     N = 200
     print(f"{N} samples to calc mask")
 
     model.train()
@@ -958,18 +1046,18 @@ def calc_mask(model, args, train_data, forward_step):
 
     print('Polar => {}'.format(polar))
 
-    for name, params in model.named_parameters():
-        if 'transformer.layers' in name:
-            cnt = gradient_mask[params].sum()
-            sz = gradient_mask[params].size()
-            cnt2 = 1
-            for szz in sz:
-                cnt2 *= szz
-            print(name[18:], f"{cnt}/{cnt2}", (cnt/cnt2).cpu().numpy().tolist())
+    # for name, params in model.named_parameters():
+    #     if 'transformer.layers' in name:
+    #         cnt = gradient_mask[params].sum()
+    #         sz = gradient_mask[params].size()
+    #         cnt2 = 1
+    #         for szz in sz:
+    #             cnt2 *= szz
+    #         print(name[18:], f"{cnt}/{cnt2}", (cnt/cnt2).cpu().numpy().tolist())
     return gradient_mask
 
 def set_optimizer_mask(model, args, train_data, optimizer, forward_step):
     train_data = iter(train_data)
     if args.child_type == "ChildTuning-D":
         grad_mask = calc_mask(model, args, train_data, forward_step)
-        optimizer.set_gradient_mask(grad_mask)
+        optimizer.optimizer.set_gradient_mask(grad_mask)

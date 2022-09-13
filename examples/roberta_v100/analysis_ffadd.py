@@ -36,12 +36,15 @@ class MLPHeadMixin(BaseMixin):
             self.layers.append(this_layer)
 
     def final_forward(self, logits, **kw_args):
-        logits = logits[:,1:2].sum(1)
-        return logits
+        logits = logits[:,0]
+        # return logits
+        # return logits
+        # return logits
         #直接返回模型输出
         for i, layer in enumerate(self.layers):
             if i > 0:
                 logits = self.activation_func(logits)
+                return logits
             logits = layer(logits)
         return logits
 
@@ -50,7 +53,7 @@ class ClassificationModel(RobertaModel):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)
         self.del_mixin('roberta-final')
         # self.add_mixin('ffadd', FFADDMixin(args.hidden_size, args.num_layers, args.ffadd_r))
-        self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
+        self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 3))
         # self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
 
 
@@ -93,7 +96,7 @@ def solve_ffadd(args):
     dataset_name = args.dataset_name
 
     args.train_data=None
-    args.valid_data=[f"hf://glue/{dataset_name}/validation"]
+    args.valid_data=[f"hf://superglue/{dataset_name}/validation"]
 
     train_data, val_data, test_data = make_loaders(args, create_dataset_function)
     # print("hahahahh")
@@ -162,8 +165,15 @@ def solve_tsne_head(args):
     model_head = ClassificationModel(args)
     # args.load = '/thudm/workspace/yzy/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-ffadd-lr0.0005-seed944257842-05-16-14-17'
     # args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed123284720-new2-05-23-21-39' #rte
-    args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-cb-2step+bitfit-lr1e-05-seed467940855-new2-05-23-21-39"
+    # args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-copa-2step+bitfit-lr1e-05-seed327021031-new-05-22-21-02'
+    # args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-mrpc-2step+bitfit-lr1e-05-seed879204830-new-pretype-2step+bitfit-05-22-21-09"
+    # args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-cb-2step+bitfit-lr1e-05-seed467940855-new2-05-23-21-39"
+    args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-cb-2step+lora-lr1e-05-seed887685520-05-30-16-40"
+    # args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-cb-2step+pt-lr1e-05-seed121780002-new2-05-23-23-29"
+    # finetune-roberta-large-cb-2step+pt-lr1e-05-seed121780002-new2-05-23-23-29
     _ = load_checkpoint(model_head, args) #头对但是bias不对
+    # args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-mrpc-pt-lr0.005-seed183117484-05-01-14-17"
+    # args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-pt-lr0.005-seed872258565-06-18-16-17"
     # args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-pt[0-0]-lr0.007-seed765780494-05-16-17-55' #rte
     args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-cb-2step+pt-lr1e-05-seed516608503-new2-05-23-23-29"
     model_new = ClassificationModel(args)
@@ -181,11 +191,12 @@ def solve_tsne_head(args):
         torch.nn.init.normal_(model_new.mixins["classification_head"].layers[i].weight, mean=0, std=0.005)
 
     args.train_data= None
-    args.valid_data=[f"hf://super_glue/{args.dataset_name}/train"]
+    args.valid_data=[f"hf://super_glue/{args.dataset_name}/validation"]
 
     train_data, val_data, test_data = make_loaders(args, create_dataset_function)
     timers = Timers()
     data_num = len(val_data)
+    # data_num = 250
     val_data = iter(val_data)
     cls_list = []
     label_list = []
@@ -199,8 +210,12 @@ def solve_tsne_head(args):
     from sklearn.manifold import TSNE
     import matplotlib.pyplot as plt
     good_embedding = TSNE(n_components=2).fit_transform(cls_list)
-    plt.scatter(good_embedding[:, 0], good_embedding[:, 1], s=20, c=label_list)
-    plt.savefig(f'images/bad_head_train_{args.dataset_name}.jpg')
+    plt.scatter(good_embedding[:, 0], good_embedding[:, 1], s=15, c=label_list)
+    # plt.scatter(good_embedding[:, 0], good_embedding[:, 1], s=20, c=[numpy.array([1]) for i in range(250)], label="Contradiction")
+    # plt.scatter(good_embedding[:, 0], good_embedding[:, 1], s=20, c=[numpy.array([2]) for i in range(250)], label="Neutral")
+
+    # plt.legend()
+    plt.savefig(f'images/pt_train_{args.dataset_name}_valid.jpg')
     plt.clf()
 
 def solve_draw_diff(args):
@@ -255,7 +270,7 @@ def draw_hist():
     # plt.title('模型初始状态下梯度绝对值分布')
     # plt.text(60, .025, r'$\mu=100,\ \sigma=15$')
     # plt.axis([40, 160, 0, 0.03])
-    plt.savefig("2step+bitfit-hist.jpg")
+    plt.savefig("2step+head-hist.jpg")
     breakpoint()
 
 def calc_mask(model, args, train_data, forward_step):
@@ -293,7 +308,7 @@ def calc_mask(model, args, train_data, forward_step):
 
     numpy.save("para_list_random", para_list)
 
-    # draw_hist()
+    draw_hist()
     # print(total_sum)
 
 def forward_step(data_iterator, model, args, timers):
@@ -314,22 +329,19 @@ def forward_step(data_iterator, model, args, timers):
     return loss, None
 
 def calc_gradient(args):
-    model_head = ClassificationModel(args)
+    # model_head = ClassificationModel(args)
     # args.load = '/thudm/workspace/yzy/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-ffadd-lr0.0005-seed944257842-05-16-14-17'
-    args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed123284720-new2-05-23-21-39' #rte
+    # args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed123284720-new2-05-23-21-39' #rte
 
     # args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-cb-2step+bitfit-lr1e-05-seed467940855-new2-05-23-21-39"
-    _ = load_checkpoint(model_head, args) #头对但是bias不对
-    args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-all-lr1e-05-seed495704012-savemore-05-30-21-37' #rte
+    # _ = load_checkpoint(model_head, args) #头对但是bias不对
+    args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+head-lr1e-05-seed783883675-06-18-16-07' #rte
     # args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-cb-2step+pt-lr1e-05-seed516608503-new2-05-23-23-29"
-
-
-
     model_new = ClassificationModel(args)
     _ = load_checkpoint(model_new, args) #bias对但是头不对
 
     model_new.to('cuda:0')
-    model_head.to('cuda:0')
+    # model_head.to('cuda:0')
 
     # for i in range(2):
     #     old_weights = model_head.mixins["classification_head"].layers[i].weight.data
@@ -360,6 +372,8 @@ def calc_dir(args):
     #calc diff
     total_diff = 0
     para_list = []
+
+
     for name, params in model_new.named_parameters():
         if 'transformer.layers' in name and name in para_1:
             diff = para_1[name] - params.data
@@ -379,10 +393,11 @@ def calc_dir2(args):
     #3e-4 -8.5e-3
     breakpoint()
 
+#finetune-roberta-large-rte-2step+pt-lr1e-05-seed402680077-test2-pretype-2step+pt-06-24-19-45/4669/
 
-
+#checkpoints/finetune-roberta-large-rte-2step+lora-lr1e-05-seed537717017-test2-pretype-2step+lora-06-24-19-48,
 def solve_embedding(args):
-    args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-pt[0-0]-lr0.007-seed784846687-05-16-18-05"
+    args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-pt-lr0.005-seed307602952-06-18-22-50/"
     model_old = ClassificationModel(args)
     _ = load_checkpoint(model_old, args) #原参数
     model_old.requires_grad_(False)
@@ -390,15 +405,22 @@ def solve_embedding(args):
 
     # args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed123284720-new2-05-23-21-39' #rte
     # args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed723826066-ab-06-01-14-22'
-    args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed141965068-90epoch-06-03-21-46/'
+    # args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed141965068-90epoch-06-03-21-46/' #改这两个
     model_2stepbit_step1 = ClassificationModel(args)
+    model_2stepbit_step1.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, 17))
+# model_2stepbit_step1.add_mixin('lora', LoRAMixin(args.hidden_size, args.num_layers, 8, 16))
+    args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+pt-lr1e-05-seed402680077-test2-06-24-19-30'
+    # args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+lora-lr1e-05-seed537717017-test2-06-24-19-30'
     _ = load_checkpoint(model_2stepbit_step1, args) #bias对但是头不对, 但我就是要bias对的,step1的输出
     model_2stepbit_step1.requires_grad_(False)
     model_2stepbit_step1.to('cuda:0')
 
     # args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed123284720-new2-05-23-21-39/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed123284720-new2-05-23-21-39pretype-2step+bitfit-05-23-21-43'
     # args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed723826066-ab-06-01-14-22/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed723826066-ab-06-01-14-22pretype-2step+bitfit-06-01-14-43'
-    args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed141965068-90epoch-06-03-21-46/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed141965068-90epoch-06-03-21-46pretype-2step+bitfit-06-03-22-02/'
+
+    # args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed141965068-90epoch-06-03-21-46/finetune-roberta-large-rte-2step+bitfit-lr1e-05-seed141965068-90epoch-06-03-21-46pretype-2step+bitfit-06-03-22-02/'#改这两个
+    # args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+lora-lr1e-05-seed537717017-test2-pretype-2step+lora-06-24-19-48'
+    args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-2step+pt-lr1e-05-seed402680077-test2-pretype-2step+pt-06-24-19-45'
     model_2stepbit_step2 = ClassificationModel(args)
     _ = load_checkpoint(model_2stepbit_step2, args)
     model_2stepbit_step2.requires_grad_(False)
@@ -481,7 +503,55 @@ def solve_embedding(args):
     diff_step1_all = torch.norm(diff_step1_all, p=2, dim=-1).sum(dim=0)
     diff_step2_all = torch.norm(diff_step2_all, p=2, dim=-1).sum(dim=0)
     print(diff_step1, diff_step2, diff_all, diff_head, diff_step1_step2, diff_step1_all, diff_step2_all)
+#finetune-roberta-large-rte-2step+pt-lr1e-05-seed402680077-test2-pretype-2step+pt-06-24-19-45
+def solve_embedding_only_PET(args):
+    # args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-pt-lr0.005-seed543053547-06-18-16-17"#rte
+    args.load = "/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-boolq-pt-lr0.005-seed578348846-06-18-22-55"#boolq
+    model_old = ClassificationModel(args)
+    _ = load_checkpoint(model_old, args) #原参数
+    model_old.requires_grad_(False)
+    model_old.to('cuda:0')
 
+    args.load = '/sharefs/cogview-new/yzy/SAT/SwissArmyTransformer/examples/roberta_v100/checkpoints/finetune-roberta-large-rte-pt-lr0.005-seed390887534-06-18-22-50'
+    model_PET = ClassificationModel(args)
+    # model_PET.add_mixin('lora', LoRAMixin(args.hidden_size, args.num_layers, 8, 16))
+    model_PET.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, 17))
+    _ = load_checkpoint(model_PET, args)
+    model_PET.requires_grad_(False)
+    model_PET.to('cuda:0')
+
+
+
+    args.train_data= None
+    args.valid_data=[f"hf://super_glue/{args.dataset_name}/validation"]
+
+    train_data, val_data, test_data = make_loaders(args, create_dataset_function)
+    timers = Timers()
+    data_num = len(val_data)
+    val_data = iter(val_data)
+    data_num = min(data_num, 1000)
+
+    old_list = []
+    PET_list = []
+    from tqdm import tqdm
+    for i in tqdm(range(data_num)):
+        tokens, labels, attention_mask, position_ids, loss_mask = get_batch(val_data, args, timers)
+        attention_output = []
+
+        output_old = model_old(tokens, position_ids, attention_mask, attention_output = attention_output)
+        output_old = output_old[0].data.cpu()
+        old_list.append(output_old)
+
+        output_step1 = model_PET(tokens, position_ids, attention_mask, attention_output = attention_output)
+        output_step1 = output_step1[0].data.cpu()
+        PET_list.append(output_step1)
+    breakpoint()
+    old_list = torch.cat(old_list, dim=0)
+    PET_list = torch.cat(PET_list, dim=0)
+    # head_list = torch.cat(head_list, axis=0)
+    diff_PET = PET_list - old_list
+    diff_PET = torch.norm(diff_PET, p=2, dim=-1).sum(dim=0)
+    print(diff_PET)
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
@@ -501,8 +571,11 @@ if __name__ == '__main__':
     initialize_distributed(args)
     args.do_train = False
 
+    # solve_tsne_head(args)
     # solve_ffadd(args)
     # solve_draw_diff(args)
     # calc_gradient(args)
-    solve_embedding(args)
+    # solve_embedding(args)
     # draw_hist()
+    # solve_tsne_head(args)
+    solve_tsne_head(args)

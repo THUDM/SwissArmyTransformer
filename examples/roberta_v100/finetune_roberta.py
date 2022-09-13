@@ -109,7 +109,7 @@ class ClassificationModel(RobertaModel):
 
     def get_optimizer(self, args, train_data):
         optimizer_kwargs = {
-            "betas": (0.9, 0.98),
+            "betas": (0.9, 0.999),
             "eps": 1e-6,
         }
         optimizer_kwargs["lr"] = args.lr
@@ -241,6 +241,12 @@ if __name__ == '__main__':
     #ffadd
     py_parser.add_argument('--ffadd-r', type=int, default=32)
 
+    #low-resource
+    py_parser.add_argument('--low-resource', action="store_true")
+
+    #mixout
+    py_parser.add_argument('--mix-p', type=float, default=0.9)
+
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
@@ -273,6 +279,8 @@ if __name__ == '__main__':
     args.final_input = args.hidden_size
     if args.dataset_name == 'wic':
         args.final_input = 5 * args.hidden_size
+    if args.dataset_name == 'semeval2014':
+        args.final_input = 2 * args.hidden_size
     args.get_optimizer_group = None
     args.old_model = None
     
@@ -338,9 +346,13 @@ if __name__ == '__main__':
             training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, already_init=True, handle_metrics=handle_metrics)
 
     elif 'child' in args.finetune_type:
-        if args.child_load is not None:
-            args.load = args.child_load
+        # if args.child_load is not None:
+        #     args.load = args.child_load
         training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step, create_dataset_function=create_dataset_function, get_optimizer_from_model=True, set_optimizer_mask=set_optimizer_mask, handle_metrics=handle_metrics)
+    elif 'mix' in args.finetune_type:
+        training_main(args, model_cls=ClassificationModel, forward_step_function=forward_step,
+                      create_dataset_function=create_dataset_function, handle_metrics=handle_metrics,
+                      Mix=True)
     elif args.head_load:
         if args.body_path:
             args.load = args.body_path

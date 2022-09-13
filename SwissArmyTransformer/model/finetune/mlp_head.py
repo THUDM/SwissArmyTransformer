@@ -63,6 +63,19 @@ class NEW_MLPHeadMixin(BaseMixin):
 
     def final_forward(self, logits, **kw_args):
         cls_logits = logits[:,:self.cls_number].sum(1)
+        if 'pos' in kw_args.keys():
+            word = kw_args['word'].unsqueeze(-1)
+            pos1_embedding = torch.sum(logits * word, dim=1)
+            # breakpoint()
+            # logits = logits.reshape([-1, logits.shape[-1]])
+
+            # pos1_embedding = logits[kw_args['pos1']] #32 * hidden
+            #
+            # pos2_embedding = logits[kw_args['pos2']]
+            #
+            # cls_logits = pos1_embedding - pos2_embedding
+            # cls_logits = torch.abs(pos1_embedding - pos2_embedding)
+            cls_logits = torch.cat([cls_logits, pos1_embedding], dim=-1)
         if 'pos1' in kw_args.keys():
             word1 = kw_args['word1'].unsqueeze(-1)
             pos1_embedding = torch.sum(logits * word1, dim=1)

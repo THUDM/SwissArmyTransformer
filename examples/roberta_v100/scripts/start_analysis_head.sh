@@ -64,7 +64,7 @@ gpt_options=" \
        --eval-interval 100 \
        --save checkpoints/ \
        --split 1 \
-       --eval-batch-size 32 \
+       --eval-batch-size 1 \
        --warmup 0.1 \
        --valid-data ${eval_data} \
        --strict-eval \

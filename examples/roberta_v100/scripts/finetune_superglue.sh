@@ -2,11 +2,8 @@
 
 # Change for multinode config
 
-if [[ "$PLATFORM" ==  "wudao" ]]; then
-  CHECKPOINT_PATH=/sharefs/cogview-new/yzy/roberta
-else
-  CHECKPOINT_PATH=/thudm/workspace/yzy/roberta
-fi
+CHECKPOINT_PATH=/zhangpai21/workspace/data
+
 
 NUM_WORKERS=1
 NUM_GPUS_PER_WORKER=1
@@ -25,6 +22,8 @@ lr=$4
 epochs=$5
 step1_epochs=$6
 type=$7
+child_p=$8
+step1=$9
 
 OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
@@ -60,6 +59,12 @@ fi
 en_data="hf://${hf_path}/${dataset_name}/train"
 eval_data="hf://${hf_path}/${dataset_name}/validation"
 
+if [[ "$task_name" == "semeval2014" ]]; then
+  en_data="hf://Yaxin!SemEval2014Task4Raw/laptops/train"
+  eval_data="hf://Yaxin!SemEval2014Task4Raw/restaurants/train"
+fi
+
+
 config_json="$script_dir/ds_config_${seed}.json"
 
 finetune_type="$type"
@@ -67,7 +72,8 @@ finetune_type="$type"
 gpt_options=" \
        --finetune-type ${finetune_type} \
        --name-model $MODEL_TYPE \
-       --experiment-name finetune-$MODEL_TYPE-${task_name}-${finetune_type}-lr${lr}-seed${seed}- \
+       --lora-r 8 \
+       --experiment-name finetune-$MODEL_TYPE-${task_name}-${finetune_type}-lr${lr}-seed${seed}--lora-8 \
        --summary-dir runs/finetune-$MODEL_TYPE-${task_name}-${finetune_type} \
        --cls-number 1 \
        --collect-len 2 \
@@ -109,7 +115,7 @@ gpt_options="${gpt_options}
         --ffadd-r 32 \
 "
 
-#2step
+#2step xxx
 STEP1LR="5e-4"
 if [[ "$finetune_type" == "2step+lora" || "$finetune_type" == "2step+ffadd" ]]; then
   STEP1LR="5e-4"
@@ -117,6 +123,10 @@ fi
 
 if [[ "$finetune_type" == "2step+pt" ]]; then
   STEP1LR="5e-3"
+fi
+
+if [[ "$finetune_type" == "2step+head" ]]; then
+  STEP1LR="1e-3"
 fi
 
 echo $STEP1LR
@@ -130,7 +140,7 @@ gpt_options="${gpt_options}
 #child part
 gpt_options="${gpt_options}
        --child-type ChildTuning-D \
-       --reserve-p 0.3 \
+       --reserve-p ${child_p} \
        --max-grad-norm 1.0 \
 "
 

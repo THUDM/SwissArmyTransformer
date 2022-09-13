@@ -47,14 +47,18 @@ def run(gpu, seed_per_gpu, dataset, log_dir, lr, batch_size, gradient_accumulati
     os.makedirs(log_dir, exist_ok=True)
     f = open(log_dir + str(gpu) + ".txt", "w")
     for i in range(seed_per_gpu):
+        tmp_epochs = epochs
         seed = random.randint(1, 1000000000)
         change_ds_config(lr, seed, batch_size, gradient_accumulation_steps)
         f.write(f"{i} run begin")
         new_finetune_type = finetune_type
-        # new_finetune_type = finetune_type + f"[{i}-{i}]"
+        # top_k = [3,6,12]
+        # new_finetune_type = finetune_type + f"[{23-top_k[i]+1}-{23}]"
         # step1_epochs = epochs // 2
-        step1_epochs = epochs //10 * (i+1)
-        os.system(f"bash scripts/finetune_superglue.sh {dataset} {seed} {gpu} {lr} {epochs} {step1_epochs} {new_finetune_type}")
+        # step1_epochs = tmp_epochs //10 * 3
+        # tmp_epochs += step1_epochs - tmp_epochs //10
+        child_p = 0.1
+        os.system(f"bash scripts/finetune_superglue.sh {dataset} {seed} {gpu} {lr} {tmp_epochs} {step1_epochs} {new_finetune_type} {child_p} {-1}")
         f.write(f"{i} run end")
     f.close()
 
@@ -76,12 +80,15 @@ if __name__ == "__main__":
         lr_search = [5e-5, 1e-4, 5e-4, 1e-5]
         assert len(lr_search) == args.number_gpu
     else:
-        lr_search = [1e-5] * args.number_gpu
+        lr_search = [3e-5] * args.number_gpu
         if args.dataset == "wic":
             lr_search = [3e-5] * args.number_gpu
 #单层 all 1e-4
 #lora 1e-3
-    finetune_type = '2step+lora'
+#already run_all: rte boolq mrpc cola copa qnli wic stsb
+#already run_bitfit: rte boolq mrpc cola qnli wic
+#already run_lora: mrpc cola rte boolq qnli wic copa
+    finetune_type = '2step+bitfit'
     batch_size = 32
     gradient_accumulation_steps = 1
     if args.dataset=='wsc':
@@ -92,9 +99,9 @@ if __name__ == "__main__":
     if args.dataset in ["squad", "squad_v2"]:
         epochs = 10
         step1_epochs = 1
-    elif args.dataset in ["rte", "mrpc", 'emotion']:
-        epochs= 90
-        step1_epochs = 30
+    elif args.dataset in ["rte", "mrpc", 'emotion', "semeval2014"]:
+        epochs= 60
+        step1_epochs = 6
     elif args.dataset in ["boolq", 'wic', "multirc"]:
         epochs=40  #测试用，需要改成40
         step1_epochs = 4
