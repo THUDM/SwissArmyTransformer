@@ -23,6 +23,7 @@ import itertools
 
 
 from .tokenization_gpt2 import GPT2Tokenizer
+from .tokenization_wordpiece import BertTokenizer
 from .sp_tokenizer import SentencePieceTokenizer
 
 class Tokenization(object):
@@ -154,7 +155,6 @@ class Tokenizer(object):
         self.text_tokenizer = text_tokenizer
         if not hasattr(self, 'num_text_tokens'):
             self.num_text_tokens = len(self.text_tokenizer)
-        print(command_tokens)
         self._command_tokens = command_tokens
         self.command_name_map = {tok.name: tok for tok in self.command_tokens}
         self.command_token_map = {tok.token: tok for tok in self.command_tokens}
@@ -189,6 +189,12 @@ class Tokenizer(object):
     def __call__(self, text, process_fn=None):
         """run preprocessing and encode text as Ids"""
         return self.EncodeAsIds(text, process_fn=process_fn)
+
+    def tokenize(self, text):
+        return self.EncodeAsIds(text).tokenization
+
+    def detokenize(self, ids):
+        return self.DecodeIds(ids)
 
     def __len__(self):
         """total number of tokens"""
@@ -473,3 +479,106 @@ class ChineseSPTokenizer(Tokenizer):
     def _decode(self, ids):
         text = self.text_tokenizer.decode(ids)
         return text
+
+
+class BertWordPieceTokenizer(Tokenizer):
+    """
+    Loads a pretrained WordPiece tokenizer from `cache_dir` for tokenization
+    in BERT training. Default to bert-large-uncased tokenizer.
+    """
+
+    def __init__(self, tokenizer_model_type=None, cache_dir=None, add_block_symbols=False, add_sentinel_token=0,
+                 add_task_mask=False, add_decoder_mask=False, added_command_tokens=None, **kwargs):
+        # default to bert-large-uncased tokenizer
+        do_lower_case = not ('-cased' in tokenizer_model_type or 'chinese' in tokenizer_model_type)
+        text_tokenizer = BertTokenizer.from_pretrained(tokenizer_model_type, do_lower_case=do_lower_case,
+                                                       cache_dir=cache_dir)
+        # disable max len warnings by increasing max len
+        text_tokenizer.max_len = int(1e12)
+        # set command tokens from wordpiece tokenizer values
+        num_tokens = len(text_tokenizer.vocab)
+
+        command_tokens = [
+            CommandToken('pad', '[PAD]', text_tokenizer.vocab['[PAD]']),
+            CommandToken('ENC', '[CLS]', text_tokenizer.vocab['[CLS]']),
+            CommandToken('MASK', '[MASK]', text_tokenizer.vocab['[MASK]']),
+            CommandToken('unk', '[UNK]', text_tokenizer.vocab['[UNK]']),
+            CommandToken('sep', '[SEP]', text_tokenizer.vocab['[SEP]']),
+            CommandToken('eos', '[PAD]', text_tokenizer.vocab['[PAD]']),
+        ]
+        if add_block_symbols:
+            command_tokens.extend([
+                CommandToken('sop', '<|startofpiece|>', num_tokens),
+                CommandToken('eop', '<|endofpiece|>', num_tokens + 1)
+            ])
+            num_tokens += 2
+            if add_task_mask:
+                command_tokens.extend([
+                    CommandToken('gMASK', '[gMASK]', num_tokens),
+                    CommandToken('sMASK', '[sMASK]', num_tokens + 1)
+                ])
+                num_tokens += 2
+            if add_decoder_mask:
+                command_tokens.extend([
+                    CommandToken('dBLOCK', '[dBLOCK]', num_tokens)
+                ])
+                num_tokens += 1
+        if add_sentinel_token > 0:
+            for i in range(1, add_sentinel_token):
+                command_tokens.extend([CommandToken(f'MASK{i}', f'[MASK{i}]', num_tokens),
+                                       CommandToken(f'sop{i}', f'<|startofpiece{i}|>', num_tokens + 1)])
+                num_tokens += 2
+
+        if added_command_tokens:
+            for name, token in added_command_tokens:
+                command_tokens.extend([
+                    CommandToken(name, token, num_tokens)
+                ])
+                num_tokens += 1
+        super().__init__(text_tokenizer, command_tokens=command_tokens)
+
+    def _encode(self, text):
+        tokens = self.text_tokenizer.tokenize(text)
+        ids = self.text_tokenizer.convert_tokens_to_ids(tokens)
+        return ids
+
+    @staticmethod
+    def clean_up_tokenization(out_string: str) -> str:
+        """
+        Clean up a list of simple English tokenization artifacts like spaces before punctuations and abbreviated forms.
+
+        Args:
+            out_string (:obj:`str`): The text to clean up.
+
+        Returns:
+            :obj:`str`: The cleaned-up string.
+        """
+        out_string = (
+            out_string.replace(" .", ".")
+                .replace(" ?", "?")
+                .replace(" !", "!")
+                .replace(" ,", ",")
+                .replace(" ' ", "'")
+                .replace(" n't", "n't")
+                .replace(" 'm", "'m")
+                .replace(" 's", "'s")
+                .replace(" 've", "'ve")
+                .replace(" 're", "'re")
+        )
+        return out_string
+
+    def _decode(self, ids):
+        Tokens = []
+        for Id in ids:
+            if Id in self.command_id_map:
+                Tokens.append(self.command_id_map[Id].token)
+            elif Id in self.text_tokenizer.tokens:
+                Tokens.append(self.text_tokenizer.tokens[Id])
+        new_tokens = []
+        for token in Tokens:
+            if token.startswith('##') and len(new_tokens) > 0:
+                new_tokens[-1] += token[2:]
+            else:
+                new_tokens.append(token)
+        output = ' '.join(new_tokens)
+        return output

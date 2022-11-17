@@ -72,7 +72,8 @@ class HFT5Tokenizer(HFTokenizer):
         command_tokens = [
             CommandToken('eos', '</s>', self.TokenToId("</s>")),
             CommandToken('pad', '<pad>', self.TokenToId("<pad>")),
-            CommandToken('sop', '<pad>', self.TokenToId("<pad>"))
+            CommandToken('sop', '<pad>', self.TokenToId("<pad>")),
+            CommandToken('eop', '</s>', self.TokenToId("</s>"))
         ]
         for i in range(100):
             command_tokens.append(CommandToken(f'MASK{i}', f'<extra_id_{i}>', self.TokenToId(f'<extra_id_{i}>')))

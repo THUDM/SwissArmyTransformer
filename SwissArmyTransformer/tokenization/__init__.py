@@ -55,6 +55,9 @@ def get_tokenizer(args=None, *, tokenizer_type=None, outer_tokenizer=None):
         elif tokenizer_type == "glm_ChineseSPTokenizer":
             from .glm import ChineseSPTokenizer
             get_tokenizer.tokenizer = ChineseSPTokenizer(args.tokenizer_model_type, **kwargs)
+        elif tokenizer_type == "glm_BertWordPieceTokenizer":
+            from .glm import BertWordPieceTokenizer
+            get_tokenizer.tokenizer = BertWordPieceTokenizer(args.tokenizer_model_type, **kwargs)
     elif tokenizer_type == 'icetk':
         from icetk import icetk
         get_tokenizer.tokenizer = icetk

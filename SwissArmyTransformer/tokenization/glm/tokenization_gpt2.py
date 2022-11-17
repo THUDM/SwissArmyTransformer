@@ -87,6 +87,7 @@ def get_pairs(word):
         prev_char = char
     return pairs
 
+
 class GPT2Tokenizer(object):
     """
     GPT-2 BPE tokenizer. Peculiarities:
