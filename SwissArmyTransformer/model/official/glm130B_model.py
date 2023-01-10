@@ -29,17 +29,21 @@ except ModuleNotFoundError:
 class RotaryEmbeddingMixin(BaseMixin):
     def __init__(
         self,
-        fp16,
-        hidden_size,
-        num_attention_heads,
-        model_parallel_size,
+        fp16: bool,
+        hidden_size: int,
+        num_attention_heads: int,
+        model_parallel_size: int,
+        position_encoding_2d: bool
     ):
         super().__init__()
         hidden_size_per_attention_head = divide(hidden_size, num_attention_heads)
         self.hidden_size_per_attention_head = hidden_size_per_attention_head
         self.num_attention_heads_per_partition = divide(num_attention_heads, model_parallel_size)
+        self.position_encoding_2d = position_encoding_2d
         self.rotary_emb = RotaryEmbedding(
-            hidden_size_per_attention_head,
+            hidden_size_per_attention_head // 2
+            if position_encoding_2d
+            else hidden_size_per_attention_head,
             base=10000,
             precision=torch.half if fp16 else torch.float,
             learnable=False,
@@ -67,11 +71,21 @@ class RotaryEmbeddingMixin(BaseMixin):
 
         dropout_fn = attn.attention_dropout if attn.training else None
 
-        kw_args["position_ids"] = kw_args["position_ids"].transpose(0, 1)
-
-        cos, sin = self.rotary_emb(value_layer, seq_len=kw_args["position_ids"].max() + 1)
-
-        query_layer, key_layer = apply_rotary_pos_emb_index(query_layer, key_layer, cos, sin, kw_args["position_ids"])
+        position_ids = kw_args["position_ids"]
+        if self.position_encoding_2d:
+            q1, q2 = query_layer.chunk(2, dim=(query_layer.ndim - 1))
+            k1, k2 = key_layer.chunk(2, dim=(key_layer.ndim - 1))
+            cos, sin = self.rotary_emb(q1, seq_len=position_ids.max() + 1)
+            position_ids, block_position_ids = position_ids[:, 0, :].transpose(0, 1).contiguous(), \
+                                               position_ids[:, 1, :].transpose(0, 1).contiguous()
+            q1, k1 = apply_rotary_pos_emb_index(q1, k1, cos, sin, position_ids)
+            q2, k2 = apply_rotary_pos_emb_index(q2, k2, cos, sin, block_position_ids)
+            query_layer = torch.concat([q1, q2], dim=(q1.ndim - 1))
+            key_layer = torch.concat([k1, k2], dim=(k1.ndim - 1))
+        else:
+            position_ids = position_ids.transpose(0, 1)
+            cos, sin = self.rotary_emb(value_layer, seq_len=position_ids.max() + 1)
+            query_layer, key_layer = apply_rotary_pos_emb_index(query_layer, key_layer, cos, sin, position_ids)
 
         context_layer = attention_fn(query_layer, key_layer, value_layer, mask, dropout_fn, **kw_args)
 
@@ -104,7 +118,6 @@ class DeepNormWithGLUMixin(BaseMixin):
         self.inner_hidden_size = inner_hidden_size
 
     def reinit(self):
-        del self.transformer.position_embeddings
         for layer in self.transformer.layers:
             del layer.mlp.dense_h_to_4h
             layer.mlp.dense_h_to_4h = ColumnParallelLinear(
@@ -337,6 +350,7 @@ class GLM130B(BaseModel):
         )
         self.add_mixin("final-forward", FinalForwardMixin())
         self.add_mixin("non-position-embedding", NonePositionEmbedding())
+        del self.transformer.position_embeddings
         self.add_mixin("word-embedding", WordEmbedding())
         self.add_mixin(
             "rotary-embedding",
@@ -345,10 +359,13 @@ class GLM130B(BaseModel):
                 args.hidden_size,
                 args.num_attention_heads,
                 args.model_parallel_size,
+                args.position_encoding_2d
             ),
         )
-        self.get_mixin("glu-deepnorm").reinit()
+        if not args.no_glu:
+            self.get_mixin("glu-deepnorm").reinit()
 
     @classmethod
     def add_model_specific_args(cls, parser):
-        pass
+        parser.add_argument('--position-encoding-2d', action='store_true', help='Use 2D rotary embedding.')
+        parser.add_argument('--no-glu', action='store_true', help='Disable GLU.')
