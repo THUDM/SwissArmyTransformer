@@ -12,3 +12,4 @@ from .gptneo_model import GPTNeoModel
 from .dpr_model import DPRQuestionEncoder
 from .dpr_model import DPRContextEncoder
 from .dpr_model import DPRReader
+from .gpt2_model import GPT2Model
