@@ -58,6 +58,9 @@ def save_checkpoint(iteration, model, optimizer,
         if mpu.get_data_parallel_rank() == 0:
             print('Saving Model...')
             save_ds_checkpoint(iteration, model, lr_scheduler, args)
+    elif args.mode == 'inference':
+        os.makedirs(os.path.join(args.save, str(iteration)), exist_ok=True)
+        torch.save({'module': model.state_dict()}, os.path.join(args.save, str(iteration), 'mp_rank_00_model_states.pt'))
     else:
         raise ValueError("training without deepspeed is not supported.")
     # Wait so everyone is done (necessary)
