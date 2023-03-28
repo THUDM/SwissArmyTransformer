@@ -476,7 +476,7 @@ class BaseTransformer(torch.nn.Module):
                         if 'layer_forward' in self.hooks:
                             layer_ret = self.hooks['layer_forward'](
                                 x_, mask, layer_id=layer.layer_id,
-                                **kw_args, **output_cross_layer,
+                                **kw_args, position_ids=position_ids, **output_cross_layer,
                                 output_this_layer=output_this_layer_obj,
                                 output_cross_layer=output_cross_layer_obj
                             )
