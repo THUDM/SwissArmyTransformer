@@ -143,6 +143,14 @@ class ChatGLMAttnMixin(BaseMixin):
         query_layer = torch.concat([q1, q2], dim=(q1.ndim - 1))
         key_layer = torch.concat([k1, k2], dim=(k1.ndim - 1))
 
+        if kw_args.get('past_key_values', None) is not None:
+            pack = kw_args['past_key_values'][kw_args['layer_id']]
+            if pack is not None:
+                past_key, past_value = pack
+                key_layer = torch.cat((past_key, key_layer), dim=0)
+                value_layer = torch.cat((past_value, value_layer), dim=0)
+        kw_args['output_this_layer']['past_key_values'] = (key_layer, value_layer)
+
         query_layer = query_layer.permute(1, 2, 0, 3)
         key_layer = key_layer.permute(1, 2, 0, 3)
         value_layer = value_layer.permute(1, 2, 0, 3)
