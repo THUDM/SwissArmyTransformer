@@ -10,6 +10,7 @@ MODEL_ULRS = {
     'cait-s24-224': 'https://cloud.tsinghua.edu.cn/f/bdfb12396000468b8bb9/?dl=1',
     'gpt2': 'https://cloud.tsinghua.edu.cn/f/4448cff2f1644bd88fa9/?dl=1',
     'chatglm-6b': 'https://cloud.tsinghua.edu.cn/f/26587ca6dd6f45f1ae85/?dl=1',
+    'eva02_L_pt_m38m_p14': 'https://cloud.tsinghua.edu.cn/f/98feef10af4f4ff79764/?dl=1',
     # CLIP
     'clip': 'https://cloud.tsinghua.edu.cn/f/bd29f0537f9949e6a4fb/?dl=1', # vit-base-patch32
     'clip-vit-base-patch16': 'https://lfs.aminer.cn/misc/clip/clip-vit-base-patch16.zip',

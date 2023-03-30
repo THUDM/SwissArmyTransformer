@@ -15,56 +15,7 @@ def gelu_impl(x):
 def gelu(x):
     return gelu_impl(x)
 
-class RotaryEmbedding(torch.nn.Module):
-    def __init__(self, dim, base=10000, precision=torch.half, learnable=False):
-        super().__init__()
-        inv_freq = 1. / (base ** (torch.arange(0, dim, 2).float() / dim))
-        inv_freq = inv_freq.half()
-        self.learnable = learnable
-        if learnable:
-            self.inv_freq = torch.nn.Parameter(inv_freq)
-            self.max_seq_len_cached = None
-        else:
-            self.register_buffer('inv_freq', inv_freq)
-            self.max_seq_len_cached = None
-            self.cos_cached = None
-            self.sin_cached = None
-        self.precision = precision
-
-    def forward(self, x, seq_dim=1, seq_len=None):
-        if seq_len is None:
-            seq_len = x.shape[seq_dim]
-        if self.max_seq_len_cached is None or (seq_len > self.max_seq_len_cached):
-            self.max_seq_len_cached = None if self.learnable else seq_len
-            t = torch.arange(seq_len, device=x.device, dtype=self.inv_freq.dtype)
-            freqs = torch.einsum('i,j->ij', t, self.inv_freq)
-            # Different from paper, but it uses a different permutation in order to obtain the same calculation
-            emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
-            if self.precision == torch.bfloat16:
-                emb = emb.float()
-
-            # [sx, 1 (b * np), hn]
-            cos_cached = emb.cos()[:, None, :]
-            sin_cached = emb.sin()[:, None, :]
-            if self.precision == torch.bfloat16:
-                cos_cached = cos_cached.bfloat16()
-                sin_cached = sin_cached.bfloat16()
-            if self.learnable:
-                return cos_cached, sin_cached
-            self.cos_cached, self.sin_cached = cos_cached, sin_cached
-        return self.cos_cached[:seq_len, ...], self.sin_cached[:seq_len, ...]
-
-def rotate_half(x):
-    x1, x2 = x[..., :x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
-    return torch.cat((-x2, x1), dim=x1.ndim - 1)  # dim=-1 triggers a bug in earlier torch versions
-
-@torch.jit.script
-def apply_rotary_pos_emb_index(q, k, cos, sin, position_id):
-    # position_id: [sq, b], q, k: [sq, b, np, hn], cos: [sq, 1, hn] -> [sq, b, 1, hn]
-    cos, sin = F.embedding(position_id, cos.squeeze(1)).unsqueeze(2), \
-        F.embedding(position_id, sin.squeeze(1)).unsqueeze(2)
-    q, k = (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
-    return q, k
+from SwissArmyTransformer.model.position_embedding.rotary_embeddings import RotaryEmbedding, apply_rotary_pos_emb_index
 
 class ChatGLMFinalMixin(BaseMixin):
     def __init__(self, vocab_size, hidden_size):
@@ -258,7 +209,7 @@ class ChatGLMModel(BaseModel):
         return attention_mask
 
     def get_position_ids(self, seq, mask_position, device, gmask=False):
-        context_length = seq.index(self.bos_token_id) + 1
+        context_length = len(seq)
         seq_length = seq.index(self.bos_token_id)
         position_ids = torch.arange(context_length, dtype=torch.long, device=device)
         if not gmask:
