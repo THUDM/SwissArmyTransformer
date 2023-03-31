@@ -144,11 +144,11 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         test_loss = evaluate_and_print_results(prefix, iter(test_data),
             model, len(test_data) if args.strict_eval else args.eval_iters, args, timers, True, split='test', hooks=hooks)
 
-def get_model(args, model_cls):
+def get_model(args, model_cls, **kwargs):
     """Build the model."""
 
     print_rank_0(f'building {model_cls.__name__} model ...')
-    model = model_cls(args)
+    model = model_cls(args, **kwargs)
 
     if mpu.get_data_parallel_rank() == 0:
         print(' > number of parameters on model parallel rank {}: {}'.format(

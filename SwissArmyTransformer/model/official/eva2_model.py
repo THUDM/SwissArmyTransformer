@@ -46,14 +46,14 @@ class EVA2FinalMixin(BaseMixin):
         return self.lm_head(logits)
 
 class SwiGLUMixin(BaseMixin):
-    def __init__(self, num_layers, in_features, hidden_features, act_layer=nn.SiLU, drop=0.):
+    def __init__(self, num_layers, in_features, hidden_features, act_layer=nn.SiLU, drop=0., eps=1e-6):
         super().__init__()
 
         # self.w1 = nn.Linear(in_features, hidden_features)
         self.w2 = nn.ModuleList([nn.Linear(in_features, hidden_features) for i in range(num_layers)])
 
         self.act = act_layer()
-        self.ffn_ln = nn.ModuleList([LayerNorm(hidden_features) for i in range(num_layers)])
+        self.ffn_ln = nn.ModuleList([LayerNorm(hidden_features, eps=eps) for i in range(num_layers)])
         # self.w3 = nn.Linear(hidden_features, out_features)
         
         self.drop = nn.Dropout(drop)
@@ -131,7 +131,7 @@ class EVA2Model(BaseModel):
         # The old_property of ViTModel is not elegent. However, I don't have time to fix them (including vit, cait, deit, yolos). I can only discard it since eva model for now.
         # self.add_mixin("pos_embedding", InterpolatedPositionEmbeddingMixin(args.hidden_size, self.old_property, self.property))
         self.add_mixin("eva2-final", EVA2FinalMixin(args.predict_feature_dim, args.hidden_size))
-        self.add_mixin("eva2-mlp", SwiGLUMixin(args.num_layers, args.hidden_size, args.inner_hidden_size))
+        self.add_mixin("eva2-mlp", SwiGLUMixin(args.num_layers, args.hidden_size, args.inner_hidden_size, eps=kwargs["layernorm_epsilon"]))
         self.add_mixin("eva2-attn", EVA2AttnMixin(args.hidden_size, args.num_attention_heads, self.property))
 
     def position_embedding_forward(self, position_ids, output_cross_layer, **kw_args):

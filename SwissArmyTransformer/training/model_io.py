@@ -187,7 +187,10 @@ def load_checkpoint(model, args, load_path=None, prefix=''):
             f'Will continue but found unexpected_keys! Check whether you are loading correct checkpoints: {unexpected_keys}.')
     if len(missing_keys) > 0:
         if args.mode == 'inference':
-            raise ValueError(f'Missing keys for inference: {missing_keys}.')
+            if 'force_inference' in args and args.force_inference:
+                print(f'Warning: Missing keys for inference: {missing_keys}.')
+            else:
+                raise ValueError(f'Missing keys for inference: {missing_keys}.')
         else: # new params
             assert all(name.find('mixins')>=0 for name in missing_keys), missing_keys
             assert args.mode == 'finetune'

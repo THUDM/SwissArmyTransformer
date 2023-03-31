@@ -72,7 +72,7 @@ import SwissArmyTransformer.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 from SwissArmyTransformer.model import EVA2Model
 
-model = EVA2Model(args)
+model = EVA2Model(args, layernorm_epsilon=1e-6)
 
 def copy_layer_param(src, dst):
     """
