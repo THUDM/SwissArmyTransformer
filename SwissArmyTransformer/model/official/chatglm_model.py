@@ -212,9 +212,8 @@ class ChatGLMModel(BaseModel):
         batch_size, seq_length = input_ids.shape
         context_lengths = [seq.tolist().index(self.bos_token_id) for seq in input_ids]
         position_ids = torch.arange(seq_length, dtype=torch.long, device=device).expand(batch_size, seq_length)
-        if not gmask:
-            for i, context_length in enumerate(context_lengths):
-                position_ids[i, context_length:] = mask_positions[i]
+        for i, context_length in enumerate(context_lengths):
+            position_ids[i, context_length:] = mask_positions[i]
         block_position_ids = [torch.cat((
             torch.zeros(context_length, dtype=torch.long, device=device),
             torch.arange(seq_length - context_length, dtype=torch.long, device=device) + 1

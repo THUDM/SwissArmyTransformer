@@ -27,14 +27,25 @@ class InvalidScoreLogitsProcessor(LogitsProcessor):
 from transformers import AutoConfig
 
 class ChatModel(nn.Module, GenerationMixin):
-    def __init__(self, args):
+    def __init__(self, args, model=None):
         super().__init__()
         self.position_encoding_2d = True
         self.config = AutoConfig.from_pretrained('THUDM/chatglm-6b', trust_remote_code=True)
         self.generation_config = GenerationConfig.from_model_config(self.config)
-        self.model, args = AutoModel.from_pretrained(args, "chatglm-6b")
+        if model is None:
+            self.model, args = AutoModel.from_pretrained(args, "chatglm-6b")
+        else:
+            self.model = model
         self.device = self.model.parameters().__next__().device
         self.main_input_name = 'input_ids'
+    
+    @classmethod
+    def from_pretrained(cls, args, name, base_cls=None):
+        if base_cls is None:
+            model, args = AutoModel.from_pretrained(args, name)
+        else:
+            model, args = base_cls.from_pretrained(args, name)
+        return cls(args, model), args
     
     def can_generate(self):
         return True
@@ -53,9 +64,8 @@ class ChatModel(nn.Module, GenerationMixin):
         context_lengths = [seq.tolist().index(self.config.bos_token_id) for seq in input_ids]
         if self.position_encoding_2d:
             position_ids = torch.arange(seq_length, dtype=torch.long, device=device).expand(batch_size, seq_length)
-            if not gmask:
-                for i, context_length in enumerate(context_lengths):
-                    position_ids[i, context_length:] = mask_positions[i]
+            for i, context_length in enumerate(context_lengths):
+                position_ids[i, context_length:] = mask_positions[i]
             block_position_ids = [torch.cat((
                 torch.zeros(context_length, dtype=torch.long, device=device),
                 torch.arange(seq_length - context_length, dtype=torch.long, device=device) + 1

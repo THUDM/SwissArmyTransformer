@@ -73,7 +73,7 @@ def get_tokenizer(args=None, *, tokenizer_type=None, outer_tokenizer=None):
         os.environ['TOKENIZERS_PARALLELISM'] = 'true'
         from transformers import AutoTokenizer
         try:
-            get_tokenizer.tokenizer = AutoTokenizer.from_pretrained(tokenizer_type)
+            get_tokenizer.tokenizer = AutoTokenizer.from_pretrained(tokenizer_type, trust_remote_code=True)
         except OSError as e:
             print_rank_0(f'Cannot find {tokenizer_type} from Huggingface or SwissArmyTransformer. Creating a fake tokenizer...')
             assert args.vocab_size > 0

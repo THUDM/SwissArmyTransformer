@@ -40,13 +40,14 @@ from SwissArmyTransformer.data_utils import make_loaders
 from SwissArmyTransformer.ops import LayerNorm
 from SwissArmyTransformer.arguments import set_random_seed, initialize_distributed
 
-def training_main(args, model_cls, forward_step_function, create_dataset_function, handle_metrics_function=None, init_function=None):
+def training_main(args, model_cls, forward_step_function, create_dataset_function, handle_metrics_function=None, init_function=None, collate_fn=None, forward_step_eval=None):
     """Main training program."""
     hooks = {
         'forward_step': forward_step_function,
         'init_function': init_function,
         'create_dataset_function': create_dataset_function,
         'handle_metrics': handle_metrics_function,
+        'forward_step_eval': forward_step_eval
     }
 
     timers = Timers()  # Timer.
@@ -63,7 +64,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     #     set_random_seed(args.seed)  # Random seeds for reproducability.
 
     # Data stuff.
-    train_data, val_data, test_data = make_loaders(args, hooks['create_dataset_function'])
+    train_data, val_data, test_data = make_loaders(args, hooks['create_dataset_function'], collate_fn=collate_fn)
     if args.epochs:
         args.train_iters = len(train_data)
         if args.eval_interval is None:
@@ -436,7 +437,7 @@ def backward_step(optimizer, model, loss, args, timers):
 
 def evaluate(data_iterator, model, eval_iters, args, timers, split, verbose=False, has_last=True, hooks={}):
     """Evaluation."""
-    forward_step = hooks['forward_step']
+    forward_step = hooks['forward_step'] if hooks['forward_step_eval'] is None else hooks['forward_step_eval']
     # Turn on evaluation mode which disables dropout.
     model.eval()
     rank = torch.distributed.get_rank(group=mpu.get_data_parallel_group())

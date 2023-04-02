@@ -25,7 +25,7 @@ from torch.utils.data import ChainDataset, IterableDataset
 from SwissArmyTransformer import mpu
     
 
-def make_data_loader(dataset, batch_size, args, split):
+def make_data_loader(dataset, batch_size, args, split, collate_fn=None):
 
     world_size = torch.distributed.get_world_size(
         group=mpu.get_data_parallel_group())
@@ -80,7 +80,8 @@ def make_data_loader(dataset, batch_size, args, split):
     data_loader = torch.utils.data.DataLoader(dataset,
                                               batch_sampler=batch_sampler,
                                               num_workers=args.num_workers,
-                                              pin_memory=True)
+                                              pin_memory=True,
+                                              collate_fn=collate_fn)
     return data_loader
 
 
@@ -152,7 +153,7 @@ def make_dataset_full(path, split, args, create_dataset_function,
             test_ds = RandomMappingDataset(test_ds)
         return train_ds, valid_ds, test_ds
 
-def make_loaders(args, create_dataset_function):
+def make_loaders(args, create_dataset_function, collate_fn=None):
     """makes training/val/test
     Args:
         args.train_data, args.valid_data, args.test_data: str. Paths to the dataset.
@@ -199,18 +200,18 @@ def make_loaders(args, create_dataset_function):
 
     # wrap datasets with data loader
     if train is not None and args.batch_size > 0:
-        train = make_data_loader(train, batch_size, args, split='train')
+        train = make_data_loader(train, batch_size, args, split='train', collate_fn=collate_fn)
         args.do_train = True
     else:
         args.do_train = False
     eval_batch_size = eval_batch_size if eval_batch_size != 0 else batch_size
     if valid is not None:
-        valid = make_data_loader(valid, eval_batch_size, args, split='val')
+        valid = make_data_loader(valid, eval_batch_size, args, split='val', collate_fn=collate_fn)
         args.do_valid = True
     else:
         args.do_valid = False
     if test is not None:
-        test = make_data_loader(test, eval_batch_size, args, split='test')
+        test = make_data_loader(test, eval_batch_size, args, split='test', collate_fn=collate_fn)
         args.do_test = True
     else:
         args.do_test = False
