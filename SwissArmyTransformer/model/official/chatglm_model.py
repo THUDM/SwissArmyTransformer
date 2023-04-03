@@ -176,24 +176,28 @@ class ChatGLMModel(BaseModel):
     def position_embedding_forward(self, position_ids, output_cross_layer, **kw_args):
         return None
     
-    def get_inputs(self, input_ids):
+    def forward(self, input_ids, attention_mask=None, position_ids=None, **kwargs):
+        attention_mask, position_ids = self.get_inputs(input_ids, attention_mask=attention_mask, position_ids=position_ids)
+        return super().forward(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids, **kwargs)
+    
+    def get_inputs(self, input_ids, attention_mask=None, position_ids=None):
+        if attention_mask is None:
+            attention_mask = self.get_masks(
+                input_ids=input_ids,
+                device=input_ids.device
+            )
+        if position_ids is None:
+            MASK, gMASK = 150000, 150001
+            mask_token = MASK if MASK in input_ids else gMASK
+            use_gmask = False if MASK in input_ids else gMASK
 
-        attention_mask = self.get_masks(
-            input_ids=input_ids,
-            device=input_ids.device
-        )
-
-        MASK, gMASK = 150000, 150001
-        mask_token = MASK if MASK in input_ids else gMASK
-        use_gmask = False if MASK in input_ids else gMASK
-
-        mask_positions = [seq.tolist().index(mask_token) for seq in input_ids]
-        position_ids = self.get_position_ids(
-            input_ids=input_ids,
-            mask_positions=mask_positions,
-            device=input_ids.device,
-            gmask=use_gmask
-        )
+            mask_positions = [seq.tolist().index(mask_token) for seq in input_ids]
+            position_ids = self.get_position_ids(
+                input_ids=input_ids,
+                mask_positions=mask_positions,
+                device=input_ids.device,
+                gmask=use_gmask
+            )
         return attention_mask, position_ids
     
     def get_masks(self, input_ids, device):

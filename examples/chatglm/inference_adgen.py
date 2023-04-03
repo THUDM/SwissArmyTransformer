@@ -5,19 +5,17 @@ import os
 import torch
 import argparse
 from SwissArmyTransformer import get_args
-from SwissArmyTransformer import update_args_with_file
-from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
 
-args = get_args()
+py_parser = argparse.ArgumentParser(add_help=False)
+py_parser.add_argument('--ckpt_path', type=str)
+known, args_list = py_parser.parse_known_args()
+args = get_args(args_list)
+args = argparse.Namespace(**vars(args), **vars(known))
 
-model_path = 'checkpoints/finetune-chatglm-6b-adgen-04-02-04-08/'
-args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
+model_path = args.ckpt_path
 from finetune_chatglm import PTModel
-model = PTModel(args)
 from chat_model import ChatModel
-model = ChatModel(args, model)
-load_checkpoint(model, args, load_path=model_path)
-
+model, args = ChatModel.from_pretrained(args, model_path, PTModel, prefix='model.')
 from transformers import AutoTokenizer
 tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True)
 model = model.eval().cuda()

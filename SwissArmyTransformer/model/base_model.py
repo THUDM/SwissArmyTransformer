@@ -149,7 +149,10 @@ class BaseModel(torch.nn.Module):
 
     @classmethod
     def from_pretrained(cls, args, name, *, home_path=None, url=None, prefix='', **kwargs):
-        model_path = auto_create(name, path=home_path, url=url)
+        if os.path.exists(name) and os.path.isdir(name):
+            model_path = name
+        else:
+            model_path = auto_create(name, path=home_path, url=url)
         args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
         model = get_model(args, cls, **kwargs)
         load_checkpoint(model, args, load_path=model_path, prefix=prefix)
@@ -165,7 +168,10 @@ class AutoModel():
                 path: the parent folder of existing `name` model. Default: SAT_HOME.
                 url: manually specified url for the `name` model.
         '''
-        model_path = auto_create(name, path=home_path, url=url)
+        if os.path.exists(name) and os.path.isdir(name):
+            model_path = name
+        else:
+            model_path = auto_create(name, path=home_path, url=url)
         args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
         if not hasattr(args, 'model_class'):
             raise ValueError('model_config.json must have key "model_class" for AutoModel.from_pretrained.')

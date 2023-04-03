@@ -47,7 +47,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         'init_function': init_function,
         'create_dataset_function': create_dataset_function,
         'handle_metrics': handle_metrics_function,
-        'forward_step_eval': forward_step_eval
+        'forward_step_eval': forward_step_eval or forward_step_function
     }
 
     timers = Timers()  # Timer.
@@ -437,7 +437,7 @@ def backward_step(optimizer, model, loss, args, timers):
 
 def evaluate(data_iterator, model, eval_iters, args, timers, split, verbose=False, has_last=True, hooks={}):
     """Evaluation."""
-    forward_step = hooks['forward_step'] if hooks['forward_step_eval'] is None else hooks['forward_step_eval']
+    forward_step = hooks['forward_step_eval']
     # Turn on evaluation mode which disables dropout.
     model.eval()
     rank = torch.distributed.get_rank(group=mpu.get_data_parallel_group())

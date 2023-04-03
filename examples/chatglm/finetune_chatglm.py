@@ -9,7 +9,6 @@ from SwissArmyTransformer import mpu, get_args, get_tokenizer
 from SwissArmyTransformer.training.deepspeed_training import training_main
 from SwissArmyTransformer.model.official import ChatGLMModel
 from SwissArmyTransformer.model.finetune import PTuningV2Mixin
-# I'm not sure whether prefix tuning can work well for rotary position mechanism. Just have a try.
 
 class PTModel(ChatGLMModel):
     def __init__(self, args, transformer=None, parallel_output=True):
@@ -39,7 +38,7 @@ class PTChat(ChatModel):
 from transformers import DataCollatorForSeq2Seq
 def get_batch(data_iterator, args, timers):
     # Items and their type.
-    keys = ['input_ids', 'labels', 'attention_mask', 'position_ids']
+    keys = ['input_ids', 'labels']
     datatype = torch.int64
 
     # Broadcast data.
@@ -48,20 +47,13 @@ def get_batch(data_iterator, args, timers):
         data = next(data_iterator)
     else:
         data = None
-    data['attention_mask'] = (~data['attention_mask']).long()
     timers('data loader').stop()
     data_b = mpu.broadcast_data(keys, data, datatype)
     # Unpack.
     tokens = data_b['input_ids'].long()
     labels = data_b['labels'].long()
-    position_ids = data_b['position_ids'].long()
-    attention_mask = data_b['attention_mask'].float()
-
-    # Convert
-    if args.fp16:
-        attention_mask = attention_mask.half()
     
-    return tokens, labels, attention_mask, position_ids
+    return tokens, labels
 
 
 from torch.nn import CrossEntropyLoss
@@ -105,7 +97,7 @@ def forward_step_eval(data_iterator, model, args, timers):
     
     # Get the batch.
     timers('batch generator').start()
-    tokens, labels, attention_mask, position_ids = get_batch(
+    tokens, labels = get_batch(
         data_iterator, args, timers)
     timers('batch generator').stop()
 
@@ -120,11 +112,11 @@ def forward_step(data_iterator, model, args, timers):
 
     # Get the batch.
     timers('batch generator').start()
-    tokens, labels, attention_mask, position_ids = get_batch(
+    tokens, labels = get_batch(
         data_iterator, args, timers)
     timers('batch generator').stop()
 
-    logits = model(input_ids=tokens, position_ids=position_ids, attention_mask=attention_mask).logits
+    logits = model(input_ids=tokens).logits
     dtype = logits.dtype
     lm_logits = logits.to(torch.float32)
 
@@ -152,7 +144,7 @@ def create_dataset_function(path, args):
 
         prefix = args.source_prefix if args.source_prefix is not None else ""
         inputs = [prefix + inp for inp in inputs]
-        model_inputs = tokenizer(inputs, max_length=args.max_source_length, truncation=True)
+        model_inputs = tokenizer(inputs, max_length=args.max_source_length, truncation=True, padding=True)
         labels = tokenizer(text_target=targets, max_length=args.max_target_length, truncation=True)
 
         if args.ignore_pad_token_for_loss:
@@ -204,9 +196,9 @@ def create_dataset_function(path, args):
     raw_dataset = load_dataset(extension, data_files={'my_data': path})['my_data']
     column_names = raw_dataset.column_names
     if is_train:
-        dataset = raw_dataset.map(preprocess_function_train, batched=True, remove_columns=column_names, desc="Running tokenizer on train dataset")
+        dataset = raw_dataset.map(preprocess_function_train, batched=True, remove_columns=column_names, load_from_cache_file=True, desc="Running tokenizer on train dataset")
     else:
-        dataset = raw_dataset.map(preprocess_function_eval, batched=True, remove_columns=column_names, desc="Running tokenizer on validation dataset")
+        dataset = raw_dataset.map(preprocess_function_eval, batched=True, remove_columns=column_names, load_from_cache_file=True, desc="Running tokenizer on validation dataset")
     return dataset
 
 
@@ -233,8 +225,6 @@ if __name__ == '__main__':
         model=model,
         label_pad_token_id=label_pad_token_id,
         pad_to_multiple_of=None,
+        padding=False
     )
     training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function, collate_fn=data_collator, forward_step_eval=forward_step_eval)
-    """
-    validation loss at iteration 3000 | loss: 0.000000E+00 | PPL: 1.000000E+00 rouge-1 2.851472E+01 | rouge-2 5.766505E+00 | rouge-l 1.988438E+01 | bleu-4 5.322587E+00 |
-    """
