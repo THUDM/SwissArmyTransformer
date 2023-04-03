@@ -1,3 +1,4 @@
+.hypothesis/
 .idea/
 *_jax*
 events.out*
