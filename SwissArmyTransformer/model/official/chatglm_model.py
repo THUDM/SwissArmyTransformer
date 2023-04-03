@@ -176,9 +176,16 @@ class ChatGLMModel(BaseModel):
     def position_embedding_forward(self, position_ids, output_cross_layer, **kw_args):
         return None
     
-    def forward(self, input_ids, attention_mask=None, position_ids=None, **kwargs):
-        attention_mask, position_ids = self.get_inputs(input_ids, attention_mask=attention_mask, position_ids=position_ids)
-        return super().forward(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids, **kwargs)
+    def forward(self, input_ids, attention_mask=None, position_ids=None, past_key_values=None, **kwargs):
+        if past_key_values is None:
+            attention_mask, position_ids = self.get_inputs(input_ids, attention_mask=attention_mask, position_ids=position_ids)
+        else:
+            input_ids, position_ids = self.only_one_input(input_ids)
+        if attention_mask is None:
+            attention_mask = torch.ones(1, 1, device=input_ids.device)
+        else:
+            attention_mask = attention_mask.to(input_ids.device)
+        return super().forward(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids, past_key_values=past_key_values, **kwargs)
     
     def get_inputs(self, input_ids, attention_mask=None, position_ids=None):
         if attention_mask is None:
@@ -199,6 +206,20 @@ class ChatGLMModel(BaseModel):
                 gmask=use_gmask
             )
         return attention_mask, position_ids
+    
+    def only_one_input(self, input_ids):
+        batch_size, seq_length = input_ids.shape
+        MASK, gMASK = 150000, 150001
+        mask_token = MASK if MASK in input_ids else gMASK
+        use_gmask = False if MASK in input_ids else gMASK
+        seqs = input_ids.tolist()
+        mask_positions = [seq.index(mask_token) for seq in seqs]
+        context_lengths = [seq.index(self.bos_token_id) for seq in seqs]
+        last_token = input_ids[:, -1].unsqueeze(-1)
+        position_ids = torch.tensor(
+                [[mask_position, seq_length - context_length] for mask_position, context_length in
+                    zip(mask_positions, context_lengths)], dtype=torch.long, device=input_ids.device).unsqueeze(-1)
+        return last_token, position_ids
     
     def get_masks(self, input_ids, device):
         batch_size, seq_length = input_ids.shape
