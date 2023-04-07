@@ -34,6 +34,12 @@ def make_data_loader(dataset, batch_size, args, split, collate_fn=None):
 
     # if IterableDataset, assume everything is properly configured. (pre-sharded) 
     if isinstance(dataset, IterableDataset):
+        if split in ['val', 'test'] and args.strict_eval:
+            raise ValueError('IterableDataset cannot be used for validation or testing if `args.strict_eval=True`, because we cannot infer the length of the final batch before reading out them.')
+        args.val_last_shape = [1] * world_size # just fake it, not actually used
+        args.val_drop_number = 0
+        args.test_last_shape = [1] * world_size
+        args.test_drop_number = 0
         return torch.utils.data.DataLoader(
             dataset,
             batch_size=batch_size//world_size,
@@ -62,12 +68,13 @@ def make_data_loader(dataset, batch_size, args, split, collate_fn=None):
                                                       drop_last)
     last_len = len(dataset) % batch_size
     batch_per_worker = batch_size // world_size
-    last_shape = [batch_per_worker] * (last_len//batch_per_worker)
-    if last_len != 0 :
+    last_shape = [batch_per_worker] * (last_len//batch_per_worker) # some processes get full batch
+    if last_len != 0:
         if last_len % batch_per_worker != 0:
-            last_shape.append(last_len % batch_per_worker)
+            last_shape.append(last_len % batch_per_worker) # one process get the rest (<1 batch)
         drop_number = world_size - ((last_len-1)//batch_per_worker + 1)
-        for j in range(drop_number):
+        # other processes get nothing, but append 1 for running. will drop later according to drop_number.
+        for j in range(drop_number): 
             last_shape.append(1)
     else:
         drop_number = 0
