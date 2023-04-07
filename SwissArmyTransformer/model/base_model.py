@@ -13,6 +13,10 @@ import sys
 import math
 import random
 import torch
+import inspect
+import warnings
+
+
 
 from SwissArmyTransformer.model.transformer import BaseTransformer, standard_attention
 from SwissArmyTransformer import update_args_with_file
@@ -22,11 +26,24 @@ from SwissArmyTransformer.transformer_defaults import HOOKS_DEFAULT
 from SwissArmyTransformer.resources import auto_create
 
 def non_conflict(func):
+    '''mark a hook function as non-conflict,
+    so that it can be compatible with any already defined hooks.
+    e.g. PrefixTuningMixin.attention_fn
+    '''
     func.non_conflict = True
+    return func
+
+def replacable(func):
+    '''mark a hook function as replacable,
+    so that it can be replaced by mixins added after it.
+    e.g. FP32AttentionMixin.attention_fn
+    '''
+    func.replacable = True
     return func
 
 class BaseMixin(torch.nn.Module):
     non_conflict = non_conflict
+    replacable = replacable
     def __init__(self):
         super(BaseMixin, self).__init__()
         # define new params
@@ -37,6 +54,9 @@ class BaseMixin(torch.nn.Module):
         pass
 
     # can define hook-functions here
+    # a hook, if default or replacable, can be overrided by mixins added after it.
+    # a hook can be augmented by non_conflict hooks added after it.
+    # default -> 0~n replacable  -> 0~n non_conflict
     # ...
 
     # If the hook is just a pre- or post- transformation,
@@ -125,18 +145,25 @@ class BaseModel(torch.nn.Module):
             for mixin_name, m in self.mixins.items():
                 if hasattr(m, name):
                     if hasattr(getattr(m, name), 'non_conflict'):
+                        # check getattr(m, name), who must accept old_impl as an argument
+                        signature = inspect.signature(getattr(m, name))
+                        if 'old_impl' not in signature.parameters:
+                            raise ValueError(f'Hook {name} at {mixin_name} must accept old_impl as an argument.')
+                        # -------------
                         if name in hooks:
                             old_impl = hooks[name]
                         elif name == 'attention_fn': # the only hook without self
                             old_impl = HOOKS_DEFAULT[name]
                         else:
-                            old_impl = partial(HOOKS_DEFAULT[name], self)
+                            old_impl = partial(HOOKS_DEFAULT[name], self) # relax! `partial` does not affect the signature
                         old_origin = hook_origins.get(name, 'default')
                         hooks[name] = partial(getattr(m, name), old_impl=old_impl)
                         hook_origins[name] = mixin_name + ' -> ' + old_origin
-                    elif name in hooks: # if this hook name is already registered
+                    elif name in hooks and not hasattr(hooks[name], 'replacable'): # if this hook name is already registered
                         raise ValueError(f'Hook {name} conflicts at {mixin_name} and {hook_origins[name]}.')
                     else: # new hook
+                        if hasattr(hooks[name], 'replacable'):
+                            warnings.warn(f'Hook {name} at {mixin_name} replaces {hook_origins[name]}.')
                         hooks[name] = getattr(m, name)
                         hook_origins[name] = mixin_name
 
@@ -184,5 +211,4 @@ class AutoModel():
         model = get_model(args, model_cls, **kwargs)
         load_checkpoint(model, args, load_path=model_path, prefix=prefix)
         return model, args
-
 

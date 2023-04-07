@@ -22,6 +22,7 @@ import deepspeed
 import json
 import random
 import numpy as np
+import warnings
 from SwissArmyTransformer import mpu
 
 
@@ -276,6 +277,28 @@ def _adjust_vocab_size(args):
                  'tokens (new size: {})'.format(
         before, after - before, after))
 
+def _simple_init(model_parallel_size=1):
+    '''Necessary initialization for torch.distributed for model-only mode'''
+    warnings.warn(
+                  'You are using model-only mode.\n\
+                  For torch.distributed users or loading model parallel models, set environment variables RANK, WORLD_SIZE and LOCAL_RANK.'
+                  )
+    args = argparse.Namespace(
+        distributed_backend='nccl',
+        model_parallel_size=model_parallel_size,
+    )
+    args.rank = int(os.getenv('RANK', '0'))
+    args.world_size = int(os.getenv("WORLD_SIZE", '1'))
+    args.local_rank = int(os.getenv("LOCAL_RANK", '0')) # torchrun
+    args.device = args.local_rank
+    args.deepspeed = False
+    if initialize_distributed(args): # first time init model parallel, print warning
+        warnings.warn(
+                  'You are using model-only mode.\n\
+                  For torch.distributed users or loading model parallel models, set environment variables RANK, WORLD_SIZE and LOCAL_RANK.'
+                  )
+        return True
+    return False
 
 def get_args(args_list=None):
     """Parse all the args."""
@@ -409,7 +432,17 @@ def update_args_with_file(args, path):
 def initialize_distributed(args):
     """Initialize torch.distributed."""
     if torch.distributed.is_initialized():
-        return 
+        if mpu.model_parallel_is_initialized():
+            if args.model_parallel_size != mpu.get_model_parallel_world_size():
+                raise ValueError('model_parallel_size is inconsistent with prior configuration.'
+                                 'We currently do not support changing model_parallel_size.')
+            return False
+        else:
+            if args.model_parallel_size > 1:
+                warnings.warn('model_parallel_size > 1 but torch.distributed is not initialized via SAT.'
+                            'Please carefully make sure the correctness on your own.')
+            mpu.initialize_model_parallel(args.model_parallel_size)
+        return True
     # the automatic assignment of devices has been moved to arguments.py 
     torch.cuda.set_device(args.device)
     # Call the init process
@@ -432,6 +465,7 @@ def initialize_distributed(args):
             world_size=args.world_size, rank=args.rank, init_method=init_method)
         # It seems that it has no negative influence to configure it even without using checkpointing.  
         deepspeed.checkpointing.configure(mpu, deepspeed_config=args.deepspeed_config, num_checkpoints=args.num_layers)
+    return True
 
 def set_random_seed(seed):
     """Set random seed for reproducability."""
