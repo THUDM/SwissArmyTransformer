@@ -172,46 +172,48 @@ class ChatGLMModel(BaseModel):
         self.add_mixin("chatglm-attn", ChatGLMAttnMixin(args.hidden_size, args.num_attention_heads))
         self.add_mixin("chatglm-layer", ChatGLMLayerMixin(args.num_layers))
         self.bos_token_id = args.bos_token_id
+        self.mask_token_id = args.mask_token_id
+        self.gmask_token_id = args.gmask_token_id
 
     def position_embedding_forward(self, position_ids, output_cross_layer, **kw_args):
         return None
     
     def forward(self, input_ids, attention_mask=None, position_ids=None, past_key_values=None, **kwargs):
         if past_key_values is None:
-            attention_mask, position_ids = self.get_inputs(input_ids, attention_mask=attention_mask, position_ids=position_ids)
+            attention_mask, position_ids = self.get_inputs(input_ids, attention_mask=attention_mask, position_ids=position_ids, **kwargs)
         else:
-            input_ids, position_ids = self.only_one_input(input_ids)
+            input_ids, position_ids = self.only_one_input(input_ids, **kwargs)
         if attention_mask is None:
             attention_mask = torch.ones(1, 1, device=input_ids.device)
         else:
             attention_mask = attention_mask.to(input_ids.device)
         return super().forward(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids, past_key_values=past_key_values, **kwargs)
     
-    def get_inputs(self, input_ids, attention_mask=None, position_ids=None):
+    def get_inputs(self, input_ids, attention_mask=None, position_ids=None, **kwargs):
         if attention_mask is None:
             attention_mask = self.get_masks(
                 input_ids=input_ids,
-                device=input_ids.device
+                device=input_ids.device, **kwargs
             )
         if position_ids is None:
-            MASK, gMASK = 150000, 150001
-            mask_token = MASK if MASK in input_ids else gMASK
-            use_gmask = False if MASK in input_ids else gMASK
+            MASK, gMASK = self.mask_token_id, self.gmask_token_id
+            mask_token = gMASK if gMASK in input_ids else MASK
+            use_gmask = True if gMASK in input_ids else False
 
             mask_positions = [seq.tolist().index(mask_token) for seq in input_ids]
             position_ids = self.get_position_ids(
                 input_ids=input_ids,
                 mask_positions=mask_positions,
                 device=input_ids.device,
-                gmask=use_gmask
+                gmask=use_gmask, **kwargs
             )
         return attention_mask, position_ids
     
-    def only_one_input(self, input_ids):
+    def only_one_input(self, input_ids, **kwargs):
         batch_size, seq_length = input_ids.shape
-        MASK, gMASK = 150000, 150001
-        mask_token = MASK if MASK in input_ids else gMASK
-        use_gmask = False if MASK in input_ids else gMASK
+        MASK, gMASK = self.mask_token_id, self.gmask_token_id
+        mask_token = gMASK if gMASK in input_ids else MASK
+        use_gmask = True if gMASK in input_ids else False
         seqs = input_ids.tolist()
         mask_positions = [seq.index(mask_token) for seq in seqs]
         context_lengths = [seq.index(self.bos_token_id) for seq in seqs]
@@ -221,7 +223,7 @@ class ChatGLMModel(BaseModel):
                     zip(mask_positions, context_lengths)], dtype=torch.long, device=input_ids.device).unsqueeze(-1)
         return last_token, position_ids
     
-    def get_masks(self, input_ids, device):
+    def get_masks(self, input_ids, device, **kwargs):
         batch_size, seq_length = input_ids.shape
         context_lengths = [seq.tolist().index(self.bos_token_id) for seq in input_ids]
         attention_mask = torch.ones((batch_size, seq_length, seq_length), device=device)
@@ -233,7 +235,7 @@ class ChatGLMModel(BaseModel):
 
         return attention_mask
 
-    def get_position_ids(self, input_ids, mask_positions, device, gmask=False):
+    def get_position_ids(self, input_ids, mask_positions, device, gmask=False, **kwargs):
         batch_size, seq_length = input_ids.shape
         context_lengths = [seq.tolist().index(self.bos_token_id) for seq in input_ids]
         position_ids = torch.arange(seq_length, dtype=torch.long, device=device).expand(batch_size, seq_length)
@@ -252,4 +254,6 @@ class ChatGLMModel(BaseModel):
     def add_model_specific_args(cls, parser):
         group = parser.add_argument_group('ChatGLM', 'ChatGLM Configurations')
         group.add_argument('--bos-token-id', type=int)
+        group.add_argument('--mask-token-id', type=int)
+        group.add_argument('--gmask-token-id', type=int)
         return parser

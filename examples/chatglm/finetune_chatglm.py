@@ -176,9 +176,9 @@ def create_dataset_function(path, args):
                 if len(b_ids) > args.max_target_length - 2:
                     b_ids = b_ids[: args.max_target_length - 2]
 
-                input_ids = a_ids + [150001, 150004] + b_ids + [150005]
+                input_ids = tokenizer.build_inputs_with_special_tokens(a_ids, b_ids)
 
-                context_length = input_ids.index(150004)
+                context_length = input_ids.index(tokenizer.bos_token_id)
                 mask_position = context_length - 1
                 labels = [-100] * context_length + input_ids[mask_position+1:]
                 

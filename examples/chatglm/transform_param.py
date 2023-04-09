@@ -1,15 +1,11 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from transformers import AutoTokenizer, AutoModel, AutoConfig
 
 tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True)
-chatglm = AutoModel.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True) #.half().cuda()
-# model = model.eval()
-# response, history = model.chat(tokenizer, "你好", history=[])
-# print(response)
-# response, history = model.chat(tokenizer, "晚上睡不着应该怎么办", history=history)
-# print(response)
-# breakpoint()
+chatglm = AutoModel.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True).cuda()
 config = AutoConfig.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True)
-# breakpoint()
 
 import argparse
 args = argparse.Namespace(
@@ -18,7 +14,9 @@ args = argparse.Namespace(
     hidden_size=config.hidden_size,
     num_attention_heads=config.num_attention_heads,
     max_sequence_length=config.max_sequence_length,
-    bos_token_id=config.bos_token_id,
+    bos_token_id=tokenizer.bos_token_id,
+    mask_token_id=tokenizer.mask_token_id,
+    gmask_token_id=tokenizer.gmask_token_id,
     hidden_dropout=0.,
     attention_dropout=0.,
     inner_hidden_size=None,
@@ -113,11 +111,9 @@ with torch.no_grad():
     save_checkpoint(1, model, None, None, args)
     text = ["This is a piece of text."]
     encoded_input = tokenizer(text, return_tensors='pt', padding=True)
-    encoded_input['input_ids'] = encoded_input['input_ids'].cuda(0)
-    hugging_output = chatglm.half().cuda(0)(**encoded_input).logits.cpu()
-    # encoded_input['input_ids'] = encoded_input['input_ids'].cuda(1)
-    attention_mask, position_ids = model.get_inputs(encoded_input['input_ids'])
-    dst_output = model.half().cuda(0)(input_ids=encoded_input['input_ids'], position_ids=position_ids, attention_mask=attention_mask)
+    encoded_input = {k:v.cuda() for k, v in encoded_input.items()}
+    hugging_output = chatglm.half()(**encoded_input).logits.cpu()
+    dst_output = model.half().cuda()(input_ids=encoded_input['input_ids'])
     swiss_output = dst_output[0].cpu()
     print("max error:", (hugging_output - swiss_output).abs().max())
     print("max relative error:", ((hugging_output - swiss_output).abs() / torch.max(swiss_output.abs(), hugging_output.abs())).max())
