@@ -91,12 +91,20 @@ class ChatModel(nn.Module, GenerationMixin):
             past: Optional[torch.Tensor] = None,
             past_key_values: Optional[torch.Tensor] = None,
             attention_mask: Optional[torch.Tensor] = None,
+            position_ids: Optional[torch.Tensor] = None,
             **kwargs
     ) -> dict:
         if past is None:
             past = past_key_values
+        attention_mask, position_ids = self.model.get_inputs(input_ids, attention_mask=None, position_ids=None, **kwargs)
+        if past is not None:
+            input_ids = input_ids[:, -1:]
+            position_ids = position_ids[..., -1:]
+            attention_mask = attention_mask[:, :, -1:]
         return {
             "input_ids": input_ids,
+            "position_ids": position_ids,
+            "attention_mask": attention_mask,
             "past_key_values": past
         }
 
