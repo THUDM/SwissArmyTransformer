@@ -224,8 +224,8 @@ class ChatGLMModel(BaseModel):
             attention_mask[i, :, :context_length] = 1
         pad_lengths = [self.get_pad_length(seq.tolist()) for seq in input_ids]
         for i, pad_length in enumerate(pad_lengths):
-            attention_mask[i, :, :pad_length] = 1
-            attention_mask[i, :pad_length, :] = 1
+            attention_mask[i, :, :pad_length] = 0
+            attention_mask[i, :pad_length, :] = 0
         attention_mask.unsqueeze_(1)
         # attention_mask = (attention_mask < 0.5).bool()
 
@@ -233,15 +233,21 @@ class ChatGLMModel(BaseModel):
 
     def get_position_ids(self, input_ids, mask_positions, device, gmask=False, **kwargs):
         batch_size, seq_length = input_ids.shape
+        pad_lengths = [self.get_pad_length(seq.tolist()) for seq in input_ids]
         context_lengths = [seq.tolist().index(self.bos_token_id) for seq in input_ids]
-        position_ids = torch.arange(seq_length, dtype=torch.long, device=device).expand(batch_size, seq_length)
-        for i, context_length in enumerate(context_lengths):
-            position_ids[i, context_length:] = mask_positions[i]
+        position_ids = [torch.arange(seq_length-pad_length, dtype=torch.long, device=device) for pad_length in pad_lengths]
+        for i, (context_length, pad_length) in enumerate(zip(context_lengths, pad_lengths)):
+            position_ids[i][context_length-pad_length:] = mask_positions[i] - pad_length
         block_position_ids = [torch.cat((
             torch.zeros(context_length, dtype=torch.long, device=device),
             torch.arange(seq_length - context_length, dtype=torch.long, device=device) + 1
         )) for context_length in context_lengths]
         block_position_ids = torch.stack(block_position_ids, dim=0)
+        position_ids = [torch.cat((
+            torch.zeros(pad_length, dtype=torch.long, device=device),
+            range_pos
+        )) for pad_length, range_pos in zip(pad_lengths, position_ids)]
+        position_ids = torch.stack(position_ids, dim=0)
         position_ids = torch.stack((position_ids, block_position_ids), dim=1)
 
         return position_ids
