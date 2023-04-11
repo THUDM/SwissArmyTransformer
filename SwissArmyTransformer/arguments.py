@@ -33,7 +33,7 @@ def add_model_config_args(parser):
 
     # --------------- Core hyper-parameters --------------- 
     group.add_argument('--num-layers', type=int, default=24,
-                       help='num decoder layers')
+                       help='num of layers')
     group.add_argument('--hidden-size', type=int, default=1024,
                        help='transformer hidden size')
     group.add_argument('--num-attention-heads', type=int, default=16,
@@ -46,18 +46,20 @@ def add_model_config_args(parser):
     # ---------------  Optional hyper-parameters --------------- 
 
     group.add_argument('--layernorm-order', type=str, default='pre',
+                       help='choose from "pre", "post", "sandwich".',
                        choices=['post', # In the original Transformer.
                                 'pre', # Used by most current frameworks.
                                 'sandwich' # More stable.
                                 ])
     # The inner-hidden-size in MLP, default "None" means 4*hidden-size
-    group.add_argument('--inner-hidden-size', type=int, default=None)
+    group.add_argument('--inner-hidden-size', type=int, default=None,
+                       help='inner hidden size for transformer FFN, None means 4*hidden-size')
     # The hidden-size-per-attention-head in Self and Cross Attention, 
     # default "None" means hidden-size/num-attention-heads.
     group.add_argument('--hidden-size-per-attention-head', type=int, default=None)
     # TODO: fully test it, support the generation.
     group.add_argument('--model-parallel-size', type=int, default=1,
-                       help='size of the model parallel.')
+                       help='size of the model parallel. only use if you are an expert.')
 
     group.add_argument('--skip-init', action='store_true',
                        help='skip model initialization')
@@ -78,8 +80,8 @@ def add_model_config_args(parser):
                        help='Pad the vocab size to be divisible by this value.'
                             'This is added for computational efficieny reasons.')
     # Deprecated. Please use `--layernorm-order sandwich`.
-    group.add_argument('--sandwich-ln', action='store_true',
-                        help='add sandwich ln in cogview.')
+    # group.add_argument('--sandwich-ln', action='store_true',
+    #                     help='add sandwich ln in cogview.')
     
     return parser
 
@@ -279,10 +281,6 @@ def _adjust_vocab_size(args):
 
 def _simple_init(model_parallel_size=1):
     '''Necessary initialization for torch.distributed for model-only mode'''
-    warnings.warn(
-                  'You are using model-only mode.\n\
-                  For torch.distributed users or loading model parallel models, set environment variables RANK, WORLD_SIZE and LOCAL_RANK.'
-                  )
     args = argparse.Namespace(
         distributed_backend='nccl',
         model_parallel_size=model_parallel_size,
@@ -402,8 +400,9 @@ def get_args(args_list=None):
                 args.weight_decay = optimizer_params_config.get("weight_decay", args.weight_decay)
         args.deepspeed_config = deepspeed_config
     
-    if args.sandwich_ln:
-        args.layernorm_order = 'sandwich'
+    # if args.sandwich_ln: # removed in v0.3
+    #     args.layernorm_order = 'sandwich'
+    
     # initialize distributed and random seed because it always seems to be necessary.
     initialize_distributed(args)
     set_random_seed(args.seed)

@@ -1,7 +1,44 @@
 from SwissArmyTransformer.model.base_model import BaseModel
+import torch
+
+def test_list_avail_args():
+    a = BaseModel.list_avail_args()
+    assert a.parse_args([]).num_layers == 24
+    from SwissArmyTransformer.model import GLMModel
+    a = GLMModel.list_avail_args()
+    assert hasattr(a.parse_args([]), 'gpt_infill_prob')
+    
+def test_model_get_args():
+    from SwissArmyTransformer.model import GLMModel
+    args = GLMModel.get_args()
+    assert args.num_layers == 24
+    print(args)
+    args = GLMModel.get_args(num_layers=2)
+    assert args.num_layers == 2
+
+def test_model_from_pretrained():
+    from SwissArmyTransformer.model import RobertaModel, AutoModel
+    model, args1 = RobertaModel.from_pretrained('roberta-base')
+    print(args1)
+
+    model, args2 = AutoModel.from_pretrained('roberta-base')
+    # compare args one by one 
+    for k, v in args1.__dict__.items():
+        assert getattr(args2, k) == v
+        
+def test_auto_init_model_only():
+    # check not torch.distributed.is_initialized()
+    assert not torch.distributed.is_initialized()
+    from SwissArmyTransformer.model import AutoModel
+    model, args = AutoModel.from_pretrained('roberta-base')
+    print(args)
+
+    
+    
 if __name__ == '__main__':
-    from argparse import Namespace
-    from SwissArmyTransformer.arguments import _simple_init
+    from argparse import Namespace, ArgumentParser
+    from SwissArmyTransformer.arguments import _simple_init, get_args
+    args_full = get_args([])
     args = Namespace(
         num_layers=2,
         vocab_size=100,
@@ -20,6 +57,9 @@ if __name__ == '__main__':
         use_gpu_initialization=False,
         model_parallel_size=1,
     )
-    _simple_init(args.model_parallel_size)
-
-    m1 = BaseModel(args)
+    md = BaseModel(args)
+    # _simple_init(args.model_parallel_size)
+    # test_list_avail_args()
+    # test_model_get_args()
+    # test_model_from_pretrained()
+    # test_auto_init_model_only()

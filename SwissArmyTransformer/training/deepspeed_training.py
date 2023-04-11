@@ -156,12 +156,12 @@ def get_model(args, model_cls, **kwargs):
             mpu.get_model_parallel_rank(),
             sum([p.nelement() for p in model.parameters()])), flush=True)
 
-    if args.fp16:
-        model.half()
-    elif args.bf16:
-        model.bfloat16()
     model.cuda(torch.cuda.current_device())
-
+    if hasattr(args, 'fp16') and args.fp16:
+        model.half()
+    elif hasattr(args, 'bf16') and args.bf16:
+        model.bfloat16()
+    
     return model
 
 

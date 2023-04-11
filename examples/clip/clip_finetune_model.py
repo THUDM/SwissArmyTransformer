@@ -30,4 +30,4 @@ class CLIP_wp(CLIP):
     def add_model_specific_args(cls, parser):
         group = parser.add_argument_group('CLIP-ft', 'CLIP-ft')
         group.add_argument("--num-finetune-classes", type=int, default=None)
-        return parser
+        return super().add_model_specific_args(parser)

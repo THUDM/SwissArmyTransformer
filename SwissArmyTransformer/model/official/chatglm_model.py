@@ -252,4 +252,4 @@ class ChatGLMModel(BaseModel):
     def add_model_specific_args(cls, parser):
         group = parser.add_argument_group('ChatGLM', 'ChatGLM Configurations')
         group.add_argument('--bos-token-id', type=int)
-        return parser
+        return super().add_model_specific_args(parser)

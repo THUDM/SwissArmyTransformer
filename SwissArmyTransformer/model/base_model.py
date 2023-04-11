@@ -15,6 +15,7 @@ import random
 import torch
 import inspect
 import warnings
+import argparse
 
 
 
@@ -80,6 +81,10 @@ class BaseModel(torch.nn.Module):
         if transformer is not None:
             self.transformer = transformer
         else:
+            # check if model-only mode
+            from SwissArmyTransformer.arguments import _simple_init
+            success = _simple_init(model_parallel_size=args.model_parallel_size)
+
             self.transformer = BaseTransformer(
                 num_layers=args.num_layers,
                 vocab_size=args.vocab_size,
@@ -91,8 +96,8 @@ class BaseModel(torch.nn.Module):
                 output_dropout_prob=args.hidden_dropout,
                 inner_hidden_size=args.inner_hidden_size,
                 hidden_size_per_attention_head=args.hidden_size_per_attention_head,
-                checkpoint_activations=args.checkpoint_activations,
-                checkpoint_num_layers=args.checkpoint_num_layers,
+                checkpoint_activations=args.checkpoint_activations if hasattr(args, 'checkpoint_activations') else False,
+                checkpoint_num_layers=args.checkpoint_num_layers if hasattr(args, 'checkpoint_num_layers') else 1,
                 layernorm_order=args.layernorm_order,
                 hooks=self.hooks,
                 params_dtype=params_dtype,
@@ -162,7 +167,7 @@ class BaseModel(torch.nn.Module):
                     elif name in hooks and not hasattr(hooks[name], 'replacable'): # if this hook name is already registered
                         raise ValueError(f'Hook {name} conflicts at {mixin_name} and {hook_origins[name]}.')
                     else: # new hook
-                        if hasattr(hooks[name], 'replacable'):
+                        if name in hooks and hasattr(hooks[name], 'replacable'):
                             warnings.warn(f'Hook {name} at {mixin_name} replaces {hook_origins[name]}.')
                         hooks[name] = getattr(m, name)
                         hook_origins[name] = mixin_name
@@ -175,23 +180,74 @@ class BaseModel(torch.nn.Module):
         pass
 
     @classmethod
-    def from_pretrained(cls, args, name, *, home_path=None, url=None, prefix='', **kwargs):
+    def add_model_specific_args(cls, parser):
+        # recorded in arguments.py: add_model_config_args
+        return parser
+
+    @classmethod
+    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', **kwargs):
+        '''Load a pretrained checkpoint of the current model.
+            Args:
+                name: The identifier of the pretrained model.
+                args: NameSpace. will add the loaded args into it. None will create a new model-only one with defaults.
+                path: the parent folder of existing `name` model. Default: SAT_HOME.
+                url: the url of the model. Default: SAT_URL.
+                prefix: the prefix of the checkpoint. Default: ''.
+            Returns:
+                model: the loaded model.
+                args: the loaded args.
+        '''
         if os.path.exists(name) and os.path.isdir(name):
             model_path = name
         else:
             model_path = auto_create(name, path=home_path, url=url)
+        # create a new args if not provided
+        if args is None:
+            args = cls.get_args()
         args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
         model = get_model(args, cls, **kwargs)
         load_checkpoint(model, args, load_path=model_path, prefix=prefix)
         return model, args
+    
+    @classmethod
+    def list_avail_args(cls, print=True):
+        '''List all available args of the current model.'''
+        parser = argparse.ArgumentParser()
+        from SwissArmyTransformer.arguments import add_model_config_args
+        add_model_config_args(parser)
+        # add args of the current model
+        if hasattr(cls, 'add_model_specific_args'):
+            cls.add_model_specific_args(parser)
+        if print:
+            from SwissArmyTransformer.helpers import print_parser
+            print_parser(parser)
+        return parser
+
+    @classmethod
+    def get_args(cls, **kwargs):
+        '''Get the parsed args of the current model.
+            Args:
+                **kwargs: will override the default args.
+            Returns:
+                args: the parsed args.
+        '''
+        parser = cls.list_avail_args(print=False)
+        # use parser to parse kwargs
+        args = parser.parse_args([])
+        for k, v in kwargs.items():
+            if hasattr(args, k):
+                setattr(args, k, v)
+            else:
+                raise ValueError(f'Unknown arg {k}.')
+        return args
 
 class AutoModel():
     @classmethod
-    def from_pretrained(cls, args, name, *, home_path=None, url=None, prefix='', **kwargs):
+    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', **kwargs):
         '''Automatically find the class and instantiate it. Auto-download.
             Args:
-                args: NameSpace. will add the loaded args into it.
                 name: The identifier of the pretrained model.
+                args: NameSpace. will add the loaded args into it.
                 path: the parent folder of existing `name` model. Default: SAT_HOME.
                 url: manually specified url for the `name` model.
         '''
@@ -199,6 +255,11 @@ class AutoModel():
             model_path = name
         else:
             model_path = auto_create(name, path=home_path, url=url)
+        if args is None:
+            args = argparse.Namespace() # null, fill later
+            null_args = True
+        else:
+            null_args = False
         args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
         if not hasattr(args, 'model_class'):
             raise ValueError('model_config.json must have key "model_class" for AutoModel.from_pretrained.')
@@ -208,7 +269,12 @@ class AutoModel():
             raise ValueError(f'model_class {args.model_class} not found.')
         else:
             model_cls = getattr(SwissArmyTransformer.model, args.model_class)
+        if null_args:
+            # fill args with default values, if not provided
+            model_default_args = model_cls.get_args()
+            for k, v in model_default_args.__dict__.items():
+                if not hasattr(args, k):
+                    setattr(args, k, v)
         model = get_model(args, model_cls, **kwargs)
         load_checkpoint(model, args, load_path=model_path, prefix=prefix)
         return model, args
-

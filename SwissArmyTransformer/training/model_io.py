@@ -157,6 +157,12 @@ def load_checkpoint(model, args, load_path=None, prefix=''):
     if load_path is None:
         load_path = args.load
 
+    # If model-only mode, set necessary args.
+    if not hasattr(args, 'mode'):
+        from copy import deepcopy
+        args = deepcopy(args)
+        args.mode = 'inference'
+
     iteration, release, success = get_checkpoint_iteration(load_path)
     if not success:
         return 0

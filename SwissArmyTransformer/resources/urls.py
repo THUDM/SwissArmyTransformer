@@ -1,4 +1,4 @@
-MODEL_ULRS = {
+MODEL_URLS = {
     'bert-base-uncased': 'https://cloud.tsinghua.edu.cn/f/f45fff1a308846cfa63a/?dl=1',
     'bert-large-uncased': 'https://cloud.tsinghua.edu.cn/f/6d4f38c96e8c4c16917e/?dl=1',
     'roberta-base': 'https://cloud.tsinghua.edu.cn/f/307fd141932440bc92da/?dl=1',

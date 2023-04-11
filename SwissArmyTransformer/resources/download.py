@@ -14,7 +14,7 @@ import random
 import requests
 from tqdm import tqdm
 from filelock import FileLock
-from .urls import MODEL_ULRS
+from .urls import MODEL_URLS
 
 def download_with_progress_bar(save_path, url):
     with requests.get(url, stream=True) as r:
@@ -40,7 +40,7 @@ def auto_create(name, *, path=None, url=None):
             pass
         else:
             if url is None:
-                url = MODEL_ULRS[name]
+                url = MODEL_URLS[name]
             print(f'Downloading models {url} into {file_path} ...')
             download_with_progress_bar(file_path, url)
         # unzip
