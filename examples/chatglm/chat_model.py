@@ -91,12 +91,20 @@ class ChatModel(nn.Module, GenerationMixin):
             past: Optional[torch.Tensor] = None,
             past_key_values: Optional[torch.Tensor] = None,
             attention_mask: Optional[torch.Tensor] = None,
+            position_ids: Optional[torch.Tensor] = None,
             **kwargs
     ) -> dict:
         if past is None:
             past = past_key_values
+        attention_mask, position_ids = self.model.get_inputs(input_ids, attention_mask=None, position_ids=None, **kwargs)
+        if past is not None:
+            input_ids = input_ids[:, -1:]
+            position_ids = position_ids[..., -1:]
+            attention_mask = attention_mask[:, :, -1:]
         return {
             "input_ids": input_ids,
+            "position_ids": position_ids,
+            "attention_mask": attention_mask,
             "past_key_values": past
         }
 
@@ -173,10 +181,10 @@ class ChatModel(nn.Module, GenerationMixin):
             for i, (old_query, response) in enumerate(history):
                 prompt += "[Round {}]\n问：{}\n答：{}\n".format(i, old_query, response)
             prompt += "[Round {}]\n问：{}\n答：".format(len(history), query)
-        input_ids = tokenizer([prompt], return_tensors="pt")
-        input_ids = input_ids.to(self.device)
-        outputs = self.generate(**input_ids, **gen_kwargs)
-        outputs = outputs.tolist()[0][len(input_ids["input_ids"][0]):]
+        inputs = tokenizer([prompt], return_tensors="pt")
+        inputs = inputs.to(self.device)
+        outputs = self.generate(**inputs, **gen_kwargs)
+        outputs = outputs.tolist()[0][len(inputs["input_ids"][0]):]
         response = tokenizer.decode(outputs)
         response = self.process_response(response)
         history = history + [(query, response)]

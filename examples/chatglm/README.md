@@ -1,14 +1,17 @@
 # ChatGLM
 
-This folder provides inference for [ChatGLM-6B](https://github.com/THUDM/ChatGLM-6B) model in SAT.
+This folder provides inference and fineuning for [ChatGLM-6B](https://github.com/THUDM/ChatGLM-6B) model in SAT.
+
+If you want to inference or chat with ChatGLM-6B:
 
 ```
-python transform_param.py
-python inference_chatglm.py --mode inference --fp16 --device 1 --skip-init
+python inference_chatglm.py --mode inference --fp16 --device 0 --skip-init
 python chat.py --mode inference --fp16 --skip-init
 ```
 
-For finetune ChatGLM-6B, we adapt the [official finetune code](https://github.com/THUDM/ChatGLM-6B/tree/main/ptuning) to SAT:
+Models will be downloaded and cached automatically into `~/.sat_models`.
+
+For finetuning 0 ChatGLM-6B, we adapt the [official finetune code](https://github.com/THUDM/ChatGLM-6B/tree/main/ptuning) to SAT:
 
 ```
 bash scripts/finetune_adgen.sh
@@ -26,4 +29,10 @@ Examples of finetuned model:
 
 输入：类型#裙*裙下摆#弧形*裙腰型#高腰*裙长#半身裙*裙款式#不规则*裙款式#收腰
 输出：非常时髦的半身裙,弧形的高腰设计,修饰腰身,凸显身材曲线美,同时收腰的设计,修饰腰部,尽显女性的优美曲线美。不规则裙摆的设计,增添了几分灵动感和时尚感,让整件裙子更加有层次感,又带着几分设计感。
+```
+
+Here is the parameter transformation script (from huggingface/chatglm-6b to sat/chatglm-6b):
+
+```
+python transform_param.py
 ```
