@@ -22,7 +22,7 @@ from sat.generation.utils import generate_continually
 
 
 def main(args):
-    model, args = BaseModel.from_pretrained(args, 'cogview-base')
+    model, args = BaseModel.from_pretrained('cogview-base', args)
     tokenizer = get_tokenizer(args=args)
     
     # define function for each query

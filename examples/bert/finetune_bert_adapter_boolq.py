@@ -115,7 +115,7 @@ if __name__ == '__main__':
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
     
-    model, args = AdapterModel.from_pretrained(args, args.md_type)
+    model, args = AdapterModel.from_pretrained(args.md_type, args)
     
     get_tokenizer(args)
     training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function)

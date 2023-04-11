@@ -6,7 +6,7 @@ from sat import get_args, AutoModel
 args = get_args()
 
 model_type = 'gpt2'
-model, args = AutoModel.from_pretrained(args, model_type)
+model, args = AutoModel.from_pretrained(model_type, args)
 
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 

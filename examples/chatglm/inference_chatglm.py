@@ -9,7 +9,7 @@ from sat import get_args, AutoModel
 args = get_args()
 
 model_type = 'chatglm-6b'
-model, args = AutoModel.from_pretrained(args, model_type)
+model, args = AutoModel.from_pretrained(model_type, args)
 device = model.parameters().__next__().device
 from transformers import AutoTokenizer, AutoModel
 

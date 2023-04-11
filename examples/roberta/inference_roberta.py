@@ -7,7 +7,7 @@ from sat import get_args, AutoModel
 args = get_args()
 
 model_type = 'roberta-base'
-model, args = AutoModel.from_pretrained(args, model_type)
+model, args = AutoModel.from_pretrained(model_type, args)
 
 pretrain_path = ''
 from transformers.models.roberta.modeling_roberta import create_position_ids_from_input_ids

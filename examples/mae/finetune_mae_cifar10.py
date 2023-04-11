@@ -89,7 +89,7 @@ if __name__ == '__main__':
     # from sat.training.deepspeed_training import initialize_distributed, set_random_seed
     # initialize_distributed(args)
     # set_random_seed(args.seed)
-    model, args = MAE.from_pretrained(args, args.md_type)
+    model, args = MAE.from_pretrained(args.md_type, args)
 
     swiss_model = model.encoder
     swiss_model = MAE_finetune(swiss_model, args.hidden_size, args.num_finetune_classes)

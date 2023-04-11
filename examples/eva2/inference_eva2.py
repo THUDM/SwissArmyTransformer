@@ -6,7 +6,7 @@ from sat import get_args, AutoModel
 args = get_args()
 
 model_type = 'eva02_L_pt_m38m_p14'
-model, args = AutoModel.from_pretrained(args, model_type, layernorm_epsilon=1e-6)
+model, args = AutoModel.from_pretrained(model_type, args, layernorm_epsilon=1e-6)
 
 x = torch.randn(2, 3, 224, 224).half().cuda()
 bool_mask = torch.ones(2, 256, dtype=torch.bool).cuda()

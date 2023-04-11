@@ -99,8 +99,8 @@ if __name__ == '__main__':
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
     
-    student_model, student_args = ClassificationModel.from_pretrained(args, args.st_type)
-    teacher_model, teacher_args = ClassificationModel.from_pretrained(args, args.teacher)
+    student_model, student_args = ClassificationModel.from_pretrained(args.st_type, args)
+    teacher_model, teacher_args = ClassificationModel.from_pretrained(args.teacher, args)
     model = DistillModel(teacher_model, student_model)
     
     get_tokenizer(student_args)

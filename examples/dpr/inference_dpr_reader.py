@@ -6,7 +6,7 @@ args = get_args()
 
 model_type = 'dpr-reader-single-nq-base'
 print(model_type)
-model, args = AutoModel.from_pretrained(args, model_type)
+model, args = AutoModel.from_pretrained(model_type, args)
 
 from transformers import DPRReader, DPRReaderTokenizer
 dpr = DPRReader.from_pretrained(os.path.join('', model_type), output_hidden_states=True)

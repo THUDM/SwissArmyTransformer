@@ -15,7 +15,7 @@ args = argparse.Namespace(**vars(args), **vars(known))
 model_path = args.ckpt_path
 from finetune_chatglm import PTModel
 from chat_model import ChatModel
-model, args = ChatModel.from_pretrained(args, model_path, PTModel, prefix='model.')
+model, args = ChatModel.from_pretrained(model_path, args, PTModel, prefix='model.')
 from transformers import AutoTokenizer
 tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True)
 model = model.eval().cuda()

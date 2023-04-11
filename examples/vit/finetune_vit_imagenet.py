@@ -88,5 +88,5 @@ if __name__ == '__main__':
     # from sat.training.deepspeed_training import initialize_distributed, set_random_seed
     # initialize_distributed(args)
     # set_random_seed(args.seed)
-    model, args = ViTFinetuneModel.from_pretrained(args, args.md_type)
+    model, args = ViTFinetuneModel.from_pretrained(args.md_type, args)
     training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function, init_function=init_function)

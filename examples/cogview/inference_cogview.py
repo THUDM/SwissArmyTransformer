@@ -29,7 +29,7 @@ def main(args):
     Modify load_checkpoint to from_pretraind
     '''
     # initialize_distributed(args)
-    model, args = CachedAutoregressiveModel.from_pretrained(args, 'cogview-base')
+    model, args = CachedAutoregressiveModel.from_pretrained('cogview-base', args)
     tokenizer = get_tokenizer(args=args)
 
     # define function for each query

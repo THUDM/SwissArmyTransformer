@@ -16,7 +16,7 @@ if model_type == 'clip':
 
 import os
 import torch
-model, args = CLIP.from_pretrained(args, args.md_type)
+model, args = CLIP.from_pretrained(args.md_type, args)
 # from sat.training.deepspeed_training import load_checkpoint
 
 # model = CLIP(args)

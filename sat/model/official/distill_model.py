@@ -25,9 +25,9 @@ class DistillModel(nn.Module):
     
     @classmethod
     def from_pretrained(cls, args, teacher_cls, student_name, student_cls):
-        student, args = student_cls.from_pretrained(args, student_name, prefix='student.')
+        student, args = student_cls.from_pretrained(student_name, args, prefix='student.')
         if isinstance(teacher_cls, type):
-            teacher, t_args = teacher_cls.from_pretrained(args, args.teacher)
+            teacher, t_args = teacher_cls.from_pretrained(args.teacher, args)
         else:
             teacher = teacher_cls
         model = DistillModel(teacher, student)

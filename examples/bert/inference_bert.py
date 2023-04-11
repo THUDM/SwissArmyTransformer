@@ -7,7 +7,7 @@ from sat import get_args, AutoModel
 args = get_args()
 
 model_type = 'bert-base-uncased'
-model, args = AutoModel.from_pretrained(args, model_type)
+model, args = AutoModel.from_pretrained(model_type, args)
 
 from transformers import BertTokenizer, BertForMaskedLM
 tokenizer = BertTokenizer.from_pretrained(os.path.join('', model_type))

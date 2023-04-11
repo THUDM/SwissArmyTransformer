@@ -26,7 +26,7 @@
     - GPT and other auto-regressive models act differently during training and inference. During inference, text is generated token-by-token and we need to cache previous states for efficiency. With our lib, you only need to consider the behavior during training (teacher-forcing) and transform it to a cached auto-regressive model via adding a mixin:
 
     ```python
-        model, args = AutoModel.from_pretrained(args, 'glm-10b-chinese')
+        model, args = AutoModel.from_pretrained('glm-10b-chinese', args)
         model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
         # Generate a sequence with beam search
         from sat.generation.autoregressive_sampling import filling_sequence
@@ -86,7 +86,7 @@ from sat import get_args, get_tokenizer, AutoModel
 # Parse args, initialize the environment. This is necessary.
 args = get_args() 
 # Automatically download and load model. Will also dump model-related hyperparameters to args.
-model, args = AutoModel.from_pretrained(args, 'bert-base-uncased') 
+model, args = AutoModel.from_pretrained('bert-base-uncased', args) 
 # Get the BertTokenizer according to args.tokenizer_type (automatically set).
 tokenizer = get_tokenizer(args) 
 # Here to use bert as you want!
@@ -117,7 +117,7 @@ def forward_step(data_iterator, model, args, timers):
     
 # Parse args, initialize the environment. This is necessary.
 args = get_args() 
-model, args = AutoModel.from_pretrained(args, 'bert-base-uncased') 
+model, args = AutoModel.from_pretrained('bert-base-uncased', args) 
 tokenizer = get_tokenizer(args) 
 # Here to use bert as you want!
 model.del_mixin('bert-final')

@@ -8,7 +8,7 @@ args = get_args()
 # to pretrain from scratch, give a class obj
 model = BaseModel
 # to finetuned from a given model, give a torch.nn.Module
-model = AutoModel.from_pretrained(args, 'bert-base-uncased')
+model = AutoModel.from_pretrained('bert-base-uncased', args)
 
 training_main(args, 
     model_cls=model,
@@ -90,4 +90,4 @@ The `--save` controls the path (under which folder) to store the saved checkpoin
 ## Load 
 There two ways to load an existing model: 
 
-The first is `ModelClass.from_pretrained(args, name, url=None, home_path=None)`. It will create an object of `ModelClass` and load the checkpoint in `home_path/name`.
+The first is `ModelClass.from_pretrained(name, args, url=None, home_path=None)`. It will create an object of `ModelClass` and load the checkpoint in `home_path/name`.

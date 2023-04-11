@@ -6,7 +6,7 @@ args = get_args()
 
 model_type = 'dpr-question_encoder-single-nq-base'
 print(model_type)
-model, args = AutoModel.from_pretrained(args, model_type)
+model, args = AutoModel.from_pretrained(model_type, args)
 
 from transformers import DPRQuestionEncoder, DPRQuestionEncoderTokenizer
 dpr = DPRQuestionEncoder.from_pretrained(os.path.join('', model_type), output_hidden_states=True)
