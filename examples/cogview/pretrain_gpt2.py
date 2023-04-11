@@ -15,11 +15,11 @@ import torch
 import argparse
 import numpy as np
 
-from SwissArmyTransformer import mpu, get_args, get_tokenizer
-from SwissArmyTransformer.model.base_model import BaseModel
-from SwissArmyTransformer.training.deepspeed_training import training_main
-from SwissArmyTransformer.data_utils import BinaryDataset
-from SwissArmyTransformer.tokenization.cogview import TextCodeTemplate
+from sat import mpu, get_args, get_tokenizer
+from sat.model.base_model import BaseModel
+from sat.training.deepspeed_training import training_main
+from sat.data_utils import BinaryDataset
+from sat.tokenization.cogview import TextCodeTemplate
 
 def get_masks_and_position_ids(data,
                             loss_mask=None,

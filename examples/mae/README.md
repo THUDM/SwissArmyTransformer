@@ -4,7 +4,7 @@
 
 You can download pretrained weights from [facebookresearch/mae](https://github.com/facebookresearch/mae/issues/8).
 
-Then use `transform_param.py` to transform weights into `SwissArmyTransformer`.
+Then use `transform_param.py` to transform weights into `sat`.
 
 ```bash
 python transform_param.py

@@ -7,10 +7,10 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 import torch.nn.functional as F
-from SwissArmyTransformer import mpu, get_args
-from SwissArmyTransformer.model.official.clip_model import CLIP, ImageEncoder
+from sat import mpu, get_args
+from sat.model.official.clip_model import CLIP, ImageEncoder
 from clip_finetune_model import CLIP_finetune
-from SwissArmyTransformer.training.deepspeed_training import training_main
+from sat.training.deepspeed_training import training_main
 
 def get_batch(data_iterator, args, timers):
     # Items and their type.
@@ -62,7 +62,7 @@ def forward_step(data_iterator, model, args, timers):
     acc = (torch.argmax(logits, dim=-1) == labels).sum() / labels.numel()
     return loss, {'acc': acc}
 
-#/dataset/fd5061f6/SwissArmyTransformerDatasets/
+#/dataset/fd5061f6/satDatasets/
 def create_dataset_function(path, args):
     transform = transforms.Compose(
         [transforms.ToTensor(),
@@ -86,7 +86,7 @@ if __name__ == '__main__':
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
-    # from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
+    # from sat.training.deepspeed_training import initialize_distributed, set_random_seed
     # initialize_distributed(args)
     # set_random_seed(args.seed)
     swiss_model, args = CLIP.from_pretrained(args, args.md_type)

@@ -10,7 +10,7 @@ logger = logging.get_logger(__name__)
 import torch
 import torch.nn as nn
 from transformers import GenerationMixin
-from SwissArmyTransformer import AutoModel
+from sat import AutoModel
 from typing import Optional, Tuple, Union, List, Callable, Dict, Any
 from transformers.generation.utils import LogitsProcessorList, StoppingCriteriaList, GenerationConfig, ModelOutput
 from transformers.modeling_outputs import (

@@ -9,10 +9,10 @@ import torch
 import argparse
 import numpy as np
 
-from SwissArmyTransformer import mpu, get_args
-from SwissArmyTransformer.training.deepspeed_training import training_main
+from sat import mpu, get_args
+from sat.training.deepspeed_training import training_main
 from roberta_model import RobertaModel
-from SwissArmyTransformer.model.mixins import PrefixTuningMixin, MLPHeadMixin, BaseMixin
+from sat.model.mixins import PrefixTuningMixin, MLPHeadMixin, BaseMixin
 
 class WSC_MLPHeadMixin(BaseMixin):
     def __init__(self, hidden_size, *output_sizes, bias=True, activation_func=torch.nn.functional.relu, init_mean=0, init_std=0.005):
@@ -121,7 +121,7 @@ def _encode(text):
     position_ids = create_position_ids_from_input_ids(torch.tensor([encoded_input['input_ids']]), 1, 0)
     return dict(input_ids=encoded_input['input_ids'], position_ids=position_ids[0].numpy(), attention_mask=encoded_input['attention_mask'])
 
-from SwissArmyTransformer.data_utils import load_hf_dataset
+from sat.data_utils import load_hf_dataset
 def create_dataset_function(path, args):
     def process_fn(row):
         pack = _encode(row['text'])
@@ -141,7 +141,7 @@ def create_dataset_function(path, args):
             'start2': start2,
             'end1': end1
         }
-    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label", "start1", "start2", "end1"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="wsc_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["input_ids", "position_ids", "attention_mask", "label", "start1", "start2", "end1"], cache_dir='/dataset/fd5061f6/satDatasets', offline=True, transformer_name="wsc_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)

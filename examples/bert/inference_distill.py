@@ -1,8 +1,8 @@
 import os
 import torch
 import argparse
-from SwissArmyTransformer import get_args
-from SwissArmyTransformer.model.official.distill_model import DistillModel
+from sat import get_args
+from sat.model.official.distill_model import DistillModel
 from bert_ft_model import ClassificationModel
 args = get_args()
 

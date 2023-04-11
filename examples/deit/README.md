@@ -1,6 +1,6 @@
 # DeiT
 
-DeiT shares the same architecture with ViTModel. Therefore, you can use `transform_param.py` to transform pretrained DeiT into `SwissArmyTransformer`, and then use it in a same way as in [examples/vit](../vit).
+DeiT shares the same architecture with ViTModel. Therefore, you can use `transform_param.py` to transform pretrained DeiT into `sat`, and then use it in a same way as in [examples/vit](../vit).
 
 For now, we support three deit types, i.e., deit-tiny, deit-small and deit-base.
 

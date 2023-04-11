@@ -4,7 +4,7 @@ load_dotenv()
 import os
 import torch
 import argparse
-from SwissArmyTransformer import get_args
+from sat import get_args
 
 py_parser = argparse.ArgumentParser(add_help=False)
 py_parser.add_argument('--ckpt_path', type=str)

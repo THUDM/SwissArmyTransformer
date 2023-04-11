@@ -1,7 +1,7 @@
 import os
 import torch
 import argparse
-from SwissArmyTransformer import get_args, AutoModel
+from sat import get_args, AutoModel
 
 args = get_args()
 

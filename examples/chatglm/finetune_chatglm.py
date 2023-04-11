@@ -5,10 +5,10 @@ import os
 import torch
 import argparse
 
-from SwissArmyTransformer import mpu, get_args, get_tokenizer
-from SwissArmyTransformer.training.deepspeed_training import training_main
-from SwissArmyTransformer.model.official import ChatGLMModel
-from SwissArmyTransformer.model.finetune import PTuningV2Mixin
+from sat import mpu, get_args, get_tokenizer
+from sat.training.deepspeed_training import training_main
+from sat.model.official import ChatGLMModel
+from sat.model.finetune import PTuningV2Mixin
 
 class PTModel(ChatGLMModel):
     def __init__(self, args, transformer=None, parallel_output=True):

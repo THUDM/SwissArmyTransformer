@@ -10,10 +10,10 @@ import torch.nn.functional as F
 import argparse
 import numpy as np
 from functools import partial
-from SwissArmyTransformer import mpu, get_args
-from SwissArmyTransformer.training.deepspeed_training import training_main
+from sat import mpu, get_args
+from sat.training.deepspeed_training import training_main
 from roberta_model import RobertaModel
-from SwissArmyTransformer.model.mixins import PrefixTuningMixin, MLPHeadMixin, BaseMixin
+from sat.model.mixins import PrefixTuningMixin, MLPHeadMixin, BaseMixin
 
 class ClassificationModel(RobertaModel):
     def __init__(self, args, transformer=None, parallel_output=True):
@@ -140,7 +140,7 @@ def _encode(text):
 
 import spacy
 
-from SwissArmyTransformer.data_utils import load_hf_dataset
+from sat.data_utils import load_hf_dataset
 import en_core_web_sm
 
 def create_dataset_function(path, args):
@@ -231,7 +231,7 @@ def create_dataset_function(path, args):
             'cand_mask': cand_mask
         }
 
-    return load_hf_dataset(path, process_fn, columns = ["label", "query_tokens", "query_mask", "cand_tokens", "cand_mask"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="wsc_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["label", "query_tokens", "query_mask", "cand_tokens", "cand_mask"], cache_dir='/dataset/fd5061f6/satDatasets', offline=True, transformer_name="wsc_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)

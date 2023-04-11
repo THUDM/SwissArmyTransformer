@@ -11,18 +11,18 @@ import sys
 import math
 import random
 
-from SwissArmyTransformer.data_utils.datasets import TSVDataset
+from sat.data_utils.datasets import TSVDataset
 import torch
 import argparse
 import numpy as np
 
-from SwissArmyTransformer import mpu, get_args, get_tokenizer
-from SwissArmyTransformer.model.base_model import BaseModel, BaseMixin, non_conflict
-from SwissArmyTransformer.training.deepspeed_training import training_main
-from SwissArmyTransformer.data_utils import TSVDataset
-from SwissArmyTransformer.model import GLMModel
-from SwissArmyTransformer.model.transformer import standard_attention
-from SwissArmyTransformer.model.mixins import MLPHeadMixin, PrefixTuningMixin
+from sat import mpu, get_args, get_tokenizer
+from sat.model.base_model import BaseModel, BaseMixin, non_conflict
+from sat.training.deepspeed_training import training_main
+from sat.data_utils import TSVDataset
+from sat.model import GLMModel
+from sat.model.transformer import standard_attention
+from sat.model.mixins import MLPHeadMixin, PrefixTuningMixin
 
 class ClassificationModel(GLMModel):
     def __init__(self, args, transformer=None, parallel_output=True):
@@ -85,7 +85,7 @@ def forward_step(data_iterator, model, args, timers):
     return loss, {'acc': acc}
 
 
-from SwissArmyTransformer.data_utils import load_hf_dataset
+from sat.data_utils import load_hf_dataset
 def create_dataset_function(path, args):
     tokenizer = get_tokenizer()
     def process_fn(row):
@@ -98,7 +98,7 @@ def create_dataset_function(path, args):
             sentence = sentence2 + sentence1 
             sentence.extend([-1] * (args.sample_length-len(sentence)))
         return {'sentence': np.array(sentence, dtype=np.int64), 'label': label}
-    return load_hf_dataset(path, process_fn, columns = ["sentence", "label"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True)
+    return load_hf_dataset(path, process_fn, columns = ["sentence", "label"], cache_dir='/dataset/fd5061f6/satDatasets', offline=True)
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)

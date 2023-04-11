@@ -1,7 +1,7 @@
 import torch
-from SwissArmyTransformer.model.base_model import BaseMixin, non_conflict
-from SwissArmyTransformer.model.official.vit_model import ViTModel, ClsMixin
-from SwissArmyTransformer.model.mixins import PrefixTuningMixin
+from sat.model.base_model import BaseMixin, non_conflict
+from sat.model.official.vit_model import ViTModel, ClsMixin
+from sat.model.mixins import PrefixTuningMixin
 
 class ViTFinetuneModel(ViTModel):
     def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-6):

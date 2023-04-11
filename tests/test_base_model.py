@@ -1,15 +1,15 @@
-from SwissArmyTransformer.model.base_model import BaseModel
+from sat.model.base_model import BaseModel
 import torch
 
 def test_list_avail_args():
     a = BaseModel.list_avail_args()
     assert a.parse_args([]).num_layers == 24
-    from SwissArmyTransformer.model import GLMModel
+    from sat.model import GLMModel
     a = GLMModel.list_avail_args()
     assert hasattr(a.parse_args([]), 'gpt_infill_prob')
     
 def test_model_get_args():
-    from SwissArmyTransformer.model import GLMModel
+    from sat.model import GLMModel
     args = GLMModel.get_args()
     assert args.num_layers == 24
     print(args)
@@ -17,7 +17,7 @@ def test_model_get_args():
     assert args.num_layers == 2
 
 def test_model_from_pretrained():
-    from SwissArmyTransformer.model import RobertaModel, AutoModel
+    from sat.model import RobertaModel, AutoModel
     model, args1 = RobertaModel.from_pretrained('roberta-base')
     print(args1)
 
@@ -29,7 +29,7 @@ def test_model_from_pretrained():
 def test_auto_init_model_only():
     # check not torch.distributed.is_initialized()
     assert not torch.distributed.is_initialized()
-    from SwissArmyTransformer.model import AutoModel
+    from sat.model import AutoModel
     model, args = AutoModel.from_pretrained('roberta-base')
     print(args)
 
@@ -37,8 +37,8 @@ def test_auto_init_model_only():
     
 if __name__ == '__main__':
     from argparse import Namespace, ArgumentParser
-    from SwissArmyTransformer.arguments import _simple_init, get_args
-    args_full = get_args([])
+    from sat.arguments import _simple_init, get_args
+    # args_full = get_args([])
     args = Namespace(
         num_layers=2,
         vocab_size=100,
@@ -57,9 +57,9 @@ if __name__ == '__main__':
         use_gpu_initialization=False,
         model_parallel_size=1,
     )
-    md = BaseModel(args)
+    # md = BaseModel(args)
     # _simple_init(args.model_parallel_size)
     # test_list_avail_args()
     # test_model_get_args()
     # test_model_from_pretrained()
-    # test_auto_init_model_only()
+    test_auto_init_model_only()

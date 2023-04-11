@@ -14,13 +14,13 @@ import random
 import torch
 import argparse
 
-# from SwissArmyTransformer import get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
-from SwissArmyTransformer import get_args, get_tokenizer
-from SwissArmyTransformer.model import CachedAutoregressiveModel
-from SwissArmyTransformer.generation.sampling_strategies import BaseStrategy
-from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence
-from SwissArmyTransformer.generation.utils import timed_name, save_multiple_images, generate_continually
-from SwissArmyTransformer.tokenization.cogview import UnifiedTokenizer
+# from sat import get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
+from sat import get_args, get_tokenizer
+from sat.model import CachedAutoregressiveModel
+from sat.generation.sampling_strategies import BaseStrategy
+from sat.generation.autoregressive_sampling import filling_sequence
+from sat.generation.utils import timed_name, save_multiple_images, generate_continually
+from sat.tokenization.cogview import UnifiedTokenizer
 
 def main(args):
 

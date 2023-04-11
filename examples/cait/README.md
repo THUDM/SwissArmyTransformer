@@ -10,7 +10,7 @@ CaiT is different from original ViT in the following aspects:
 
 You can download pretrained weights from [CaiT in deit](https://github.com/facebookresearch/deit/blob/main/README_cait.md) and set configuration referring to [CaiT in timm](https://github.com/rwightman/pytorch-image-models/blob/ef72ad417709b5ba6404d85d3adafd830d507b2a/timm/models/cait.py#L329).
 
-Then use `transform_param.py` to transform weights into `SwissArmyTransformer`.
+Then use `transform_param.py` to transform weights into `sat`.
 
 ```bash
 python transform_param.py

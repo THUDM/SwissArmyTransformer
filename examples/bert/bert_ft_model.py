@@ -1,5 +1,5 @@
-from SwissArmyTransformer.model.official.bert_model import BertModel
-from SwissArmyTransformer.model.mixins import MLPHeadMixin
+from sat.model.official.bert_model import BertModel
+from sat.model.mixins import MLPHeadMixin
 
 class ClassificationModel(BertModel):
     def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-12, **kwargs):

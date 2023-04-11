@@ -4,8 +4,8 @@ import torch
 import argparse
 import numpy as np
 
-from SwissArmyTransformer import mpu, get_args, get_tokenizer
-from SwissArmyTransformer.training.deepspeed_training import training_main
+from sat import mpu, get_args, get_tokenizer
+from sat.training.deepspeed_training import training_main
 from bert_ft_model import ClassificationModel
 
 def get_batch(data_iterator, args, timers):
@@ -62,7 +62,7 @@ def _encode(text, text_pair):
     position_ids = torch.arange(seq_len)
     return dict(input_ids=encoded_input['input_ids'], position_ids=position_ids.numpy(), token_type_ids=encoded_input['token_type_ids'], attention_mask=encoded_input['attention_mask'])
 
-from SwissArmyTransformer.data_utils import load_hf_dataset
+from sat.data_utils import load_hf_dataset
 def create_dataset_function(path, args):
     def process_fn(row):
         pack, label = _encode(row['passage'], row['question']), int(row['label'])

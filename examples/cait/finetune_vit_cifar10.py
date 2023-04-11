@@ -10,10 +10,10 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 import torch.nn.functional as F
-from SwissArmyTransformer import mpu, get_args
+from sat import mpu, get_args
 from cait_ft_model import CaiTFinetuneModel
-from SwissArmyTransformer.model.official.cait_model import CaiTEncoder
-from SwissArmyTransformer.training.deepspeed_training import training_main
+from sat.model.official.cait_model import CaiTEncoder
+from sat.training.deepspeed_training import training_main
 
 
 def get_batch(data_iterator, args, timers):
@@ -66,7 +66,7 @@ def forward_step(data_iterator, model, args, timers):
     acc = (torch.argmax(decoder_outputs, dim=-1) == labels).sum() / labels.numel()
     return loss, {'acc': acc}
 
-#/dataset/fd5061f6/SwissArmyTransformerDatasets/
+#/dataset/fd5061f6/satDatasets/
 def create_dataset_function(path, args):
     transform = transforms.Compose(
         [transforms.ToTensor(),
@@ -89,7 +89,7 @@ if __name__ == '__main__':
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
-    # from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
+    # from sat.training.deepspeed_training import initialize_distributed, set_random_seed
     # initialize_distributed(args)
     # set_random_seed(args.seed)
     model, args = CaiTFinetuneModel.from_pretrained(args, args.md_type)

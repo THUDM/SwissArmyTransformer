@@ -59,10 +59,10 @@ torch.distributed.init_process_group(
         backend='nccl',
         world_size=args.world_size, rank=args.rank, init_method=init_method)
 
-import SwissArmyTransformer.mpu as mpu
+import sat.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
-from SwissArmyTransformer.model.official.roberta_model import RobertaModel
+from sat.model.official.roberta_model import RobertaModel
 model = RobertaModel(args)
 
 def copy_layer_param(src, dst):

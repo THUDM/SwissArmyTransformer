@@ -12,18 +12,18 @@ import sys
 import math
 import random
 
-from SwissArmyTransformer.data_utils.datasets import TSVDataset
+from sat.data_utils.datasets import TSVDataset
 import torch
 import argparse
 import numpy as np
 
-from SwissArmyTransformer import mpu, get_args, get_tokenizer
-from SwissArmyTransformer.model.base_model import BaseModel, BaseMixin, non_conflict
-from SwissArmyTransformer.training.deepspeed_training import training_main
-from SwissArmyTransformer.data_utils import TSVDataset
-from SwissArmyTransformer.model import GLMModel
-from SwissArmyTransformer.model.transformer import standard_attention
-from SwissArmyTransformer.model.mixins import MLPHeadMixin, PrefixTuningMixin
+from sat import mpu, get_args, get_tokenizer
+from sat.model.base_model import BaseModel, BaseMixin, non_conflict
+from sat.training.deepspeed_training import training_main
+from sat.data_utils import TSVDataset
+from sat.model import GLMModel
+from sat.model.transformer import standard_attention
+from sat.model.mixins import MLPHeadMixin, PrefixTuningMixin
 
 class ClassificationModel(GLMModel):
     def __init__(self, args, transformer=None, parallel_output=True):

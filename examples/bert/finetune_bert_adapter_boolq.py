@@ -4,11 +4,11 @@ import torch
 import argparse
 import numpy as np
 
-from SwissArmyTransformer import mpu, get_args, get_tokenizer
-from SwissArmyTransformer.training.deepspeed_training import training_main
-from SwissArmyTransformer.model.official.bert_model import BertModel
-from SwissArmyTransformer.model.mixins import MLPHeadMixin, AdapterMixin
-from SwissArmyTransformer.model.base_model import BaseMixin
+from sat import mpu, get_args, get_tokenizer
+from sat.training.deepspeed_training import training_main
+from sat.model.official.bert_model import BertModel
+from sat.model.mixins import MLPHeadMixin, AdapterMixin
+from sat.model.base_model import BaseMixin
 import torch.nn as nn
         
 
@@ -91,7 +91,7 @@ def _encode(text, text_pair):
     position_ids = torch.arange(seq_len)
     return dict(input_ids=encoded_input['input_ids'], position_ids=position_ids.numpy(), token_type_ids=encoded_input['token_type_ids'], attention_mask=encoded_input['attention_mask'])
 
-from SwissArmyTransformer.data_utils import load_hf_dataset
+from sat.data_utils import load_hf_dataset
 def create_dataset_function(path, args):
     def process_fn(row):
         pack, label = _encode(row['passage'], row['question']), int(row['label'])
