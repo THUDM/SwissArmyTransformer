@@ -68,9 +68,9 @@ deepspeed.init_distributed(
         dist_backend='nccl',
         world_size=args.world_size, rank=args.rank, init_method=init_method)
 
-import SwissArmyTransformer.mpu as mpu
+import sat.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
-from SwissArmyTransformer.model import EVA2Model
+from sat.model import EVA2Model
 
 model = EVA2Model(args, layernorm_epsilon=1e-6)
 
@@ -138,7 +138,7 @@ def transform_weight(hugging_model, swiss_model):
         copy_transformer_layer_wo_ln(src_l, dst_l, w2)
     copy_layer_param(hugging_model.lm_head, swiss_model.mixins['eva2-final'].lm_head)
 
-from SwissArmyTransformer.training.model_io import save_checkpoint
+from sat.training.model_io import save_checkpoint
 eva.eval().cuda()
 model.eval()
 with torch.no_grad():

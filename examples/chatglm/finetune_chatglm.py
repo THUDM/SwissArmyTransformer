@@ -5,10 +5,10 @@ import os
 import torch
 import argparse
 
-from SwissArmyTransformer import mpu, get_args, get_tokenizer
-from SwissArmyTransformer.training.deepspeed_training import training_main
-from SwissArmyTransformer.model.official import ChatGLMModel
-from SwissArmyTransformer.model.finetune import PTuningV2Mixin
+from sat import mpu, get_args, get_tokenizer
+from sat.training.deepspeed_training import training_main
+from sat.model.official import ChatGLMModel
+from sat.model.finetune import PTuningV2Mixin
 
 class PTModel(ChatGLMModel):
     def __init__(self, args, transformer=None, parallel_output=True):
@@ -219,7 +219,7 @@ if __name__ == '__main__':
     args = argparse.Namespace(**vars(args), **vars(known))
 
     model_type = 'chatglm-6b'
-    model, args = PTChat.from_pretrained(args, model_type, PTModel)
+    model, args = PTChat.from_pretrained(model_type, args, PTModel)
     tokenizer = get_tokenizer(args)
     label_pad_token_id = -100 if args.ignore_pad_token_for_loss else tokenizer.pad_token_id
     data_collator = DataCollatorForSeq2Seq(

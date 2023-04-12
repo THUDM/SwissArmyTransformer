@@ -10,9 +10,9 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 import torch.nn.functional as F
-from SwissArmyTransformer import mpu, get_args
-from SwissArmyTransformer.model.official.yolos_model import YOLOS
-from SwissArmyTransformer.training.deepspeed_training import training_main
+from sat import mpu, get_args
+from sat.model.official.yolos_model import YOLOS
+from sat.training.deepspeed_training import training_main
 from util.misc import nested_tensor_from_tensor_list
 from torchvision.transforms import ToPILImage
 

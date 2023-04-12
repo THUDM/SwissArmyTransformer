@@ -1,13 +1,13 @@
 import os
 import torch
 import argparse
-from SwissArmyTransformer import get_args, AutoModel
-# from SwissArmyTransformer.model.official.bert_model import BertModel
+from sat import get_args, AutoModel
+# from sat.model.official.bert_model import BertModel
 
 args = get_args()
 
 model_type = 'bert-base-uncased'
-model, args = AutoModel.from_pretrained(args, model_type)
+model, args = AutoModel.from_pretrained(model_type, args)
 
 from transformers import BertTokenizer, BertForMaskedLM
 tokenizer = BertTokenizer.from_pretrained(os.path.join('', model_type))

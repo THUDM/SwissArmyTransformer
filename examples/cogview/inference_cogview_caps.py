@@ -14,15 +14,15 @@ import random
 import torch
 import argparse
 
-from SwissArmyTransformer import get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
-from SwissArmyTransformer.model import BaseModel
-from SwissArmyTransformer.generation.sampling_strategies import BaseStrategy
-from SwissArmyTransformer.generation.autoregressive_sampling import get_masks_and_position_ids_default
-from SwissArmyTransformer.generation.utils import generate_continually
+from sat import get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
+from sat.model import BaseModel
+from sat.generation.sampling_strategies import BaseStrategy
+from sat.generation.autoregressive_sampling import get_masks_and_position_ids_default
+from sat.generation.utils import generate_continually
 
 
 def main(args):
-    model, args = BaseModel.from_pretrained(args, 'cogview-base')
+    model, args = BaseModel.from_pretrained('cogview-base', args)
     tokenizer = get_tokenizer(args=args)
     
     # define function for each query

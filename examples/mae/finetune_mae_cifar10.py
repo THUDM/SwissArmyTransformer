@@ -7,10 +7,10 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 import torch.nn.functional as F
-from SwissArmyTransformer import mpu, get_args
-from SwissArmyTransformer.model.official.mae_model import MAE, MAEEncoder
+from sat import mpu, get_args
+from sat.model.official.mae_model import MAE, MAEEncoder
 from mae_finetune_model import MAE_finetune
-from SwissArmyTransformer.training.deepspeed_training import training_main
+from sat.training.deepspeed_training import training_main
 
 def get_batch(data_iterator, args, timers):
     # Items and their type.
@@ -62,7 +62,7 @@ def forward_step(data_iterator, model, args, timers):
     acc = (torch.argmax(logits, dim=-1) == labels).sum() / labels.numel()
     return loss, {'acc': acc}
 
-#/dataset/fd5061f6/SwissArmyTransformerDatasets/
+#/dataset/fd5061f6/satDatasets/
 def create_dataset_function(path, args):
     transform = transforms.Compose(
         [transforms.ToTensor(),
@@ -86,10 +86,10 @@ if __name__ == '__main__':
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
-    # from SwissArmyTransformer.training.deepspeed_training import initialize_distributed, set_random_seed
+    # from sat.training.deepspeed_training import initialize_distributed, set_random_seed
     # initialize_distributed(args)
     # set_random_seed(args.seed)
-    model, args = MAE.from_pretrained(args, args.md_type)
+    model, args = MAE.from_pretrained(args.md_type, args)
 
     swiss_model = model.encoder
     swiss_model = MAE_finetune(swiss_model, args.hidden_size, args.num_finetune_classes)

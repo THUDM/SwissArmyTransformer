@@ -11,12 +11,12 @@ import argparse
 vit = CLIPModel.from_pretrained('openai/clip-vit-large-patch14')
 processor = CLIPProcessor.from_pretrained('openai/clip-vit-large-patch14')
 
-from SwissArmyTransformer import get_args
-from SwissArmyTransformer.arguments import update_args_with_file
+from sat import get_args
+from sat.arguments import update_args_with_file
 args = get_args()
-args = update_args_with_file(args, '/home/dingming/SwissArmyTransformer/examples/clip/model_config.json')
+args = update_args_with_file(args, '/home/dingming/sat/examples/clip/model_config.json')
 
-from SwissArmyTransformer.model.official.clip_model import CLIP
+from sat.model.official.clip_model import CLIP
 model = CLIP(args, layernorm_epsilon=1e-5)
 
 def copy_layer_param(src, dst):

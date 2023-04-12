@@ -19,15 +19,15 @@ import argparse
 import stat
 from functools import partial
 
-from SwissArmyTransformer import mpu, get_args, get_tokenizer
+from sat import mpu, get_args, get_tokenizer
 
-from SwissArmyTransformer.training import initialize_distributed, set_random_seed
+from sat.training import initialize_distributed, set_random_seed
 
-from SwissArmyTransformer.model import GLMModel
-from SwissArmyTransformer.model.mixins import CachedAutoregressiveMixin
-from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence, evaluate_perplexity
-from SwissArmyTransformer.generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
-from SwissArmyTransformer.generation.utils import timed_name, generate_continually
+from sat.model import GLMModel
+from sat.model.mixins import CachedAutoregressiveMixin
+from sat.generation.autoregressive_sampling import filling_sequence, evaluate_perplexity
+from sat.generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
+from sat.generation.utils import timed_name, generate_continually
 
 
 def get_masks_and_position_ids_glm(seq, mask_position, context_length):
@@ -148,8 +148,8 @@ def main(model, args):
     os.makedirs(args.output_path, exist_ok=True)
     generate_continually(process, args.input_source)
 
-from SwissArmyTransformer import AutoModel
-from SwissArmyTransformer.model.official import GLMModel
+from sat import AutoModel
+from sat.model.official import GLMModel
 if __name__ == "__main__":
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--sampling-strategy', type=str, default='BaseStrategy', help='type name of sampling strategy')
@@ -161,7 +161,7 @@ if __name__ == "__main__":
 
     initialize_distributed(args)
     # build model
-    model,args = AutoModel.from_pretrained(args, 'glm-large-zh')
+    model,args = AutoModel.from_pretrained('glm-large-zh', args)
     model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
 
     with torch.no_grad():

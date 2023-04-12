@@ -1,9 +1,15 @@
 # Introduction
-`SwissArmyTransformer` is a flexible and powerful library to develop your own Transformer variants.
+`sat`(`SwissArmyTransformer`) is a flexible and powerful library to develop your own Transformer variants.
 
-`SwissArmyTransformer` is named after "swiss army knife", meaning that all the models (e.g. BERT, GPT, T5, GLM, CogView, ViT...) **share the same backone code** and cater for versatile usages with some extra light-weight mixins. 
+`sat` is named after "swiss army knife", meaning that all the models (e.g. BERT, GPT, T5, GLM, CogView, ViT...) **share the same backone code** and cater for versatile usages with some extra light-weight mixins. 
 
-`SwissArmyTransformer` is powered by `deepspeed-ZeRO` and model parallelism, aiming to provide the best practice for pretraining and finetuning large models (100M\~20B parameters). 
+`sat` is powered by `deepspeed-ZeRO` and model parallelism, aiming to provide the best practice for pretraining and finetuning large models (100M\~20B parameters). 
+
+# Migrate from SwissArmyTransformer 0.2.x to 0.3.x
+0. change the package name from `SwissArmyTransformer` to `sat` when importing, e.g. `from sat import get_args`.
+1. delete all `--sandwich-ln` in you script, use `layernorm-order='sandwich'`.
+2. change order `from_pretrained(args, name) => from_pretrained(name, args)`.
+
 ## Install
 ```
     pip install SwissArmyTransformer
@@ -26,11 +32,11 @@
     - GPT and other auto-regressive models act differently during training and inference. During inference, text is generated token-by-token and we need to cache previous states for efficiency. With our lib, you only need to consider the behavior during training (teacher-forcing) and transform it to a cached auto-regressive model via adding a mixin:
 
     ```python
-        model, args = AutoModel.from_pretrained(args, 'glm-10b-chinese')
+        model, args = AutoModel.from_pretrained('glm-10b-chinese', args)
         model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
         # Generate a sequence with beam search
-        from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence
-        from SwissArmyTransformer.generation.sampling_strategies import BeamSearchStrategy
+        from sat.generation.autoregressive_sampling import filling_sequence
+        from sat.generation.sampling_strategies import BeamSearchStrategy
         output, *mems = filling_sequence(model, input_seq,
                         batch_size=args.batch_size,
                         strategy=BeamSearchStrategy(args.batch_size))
@@ -66,7 +72,7 @@
             ) # Add the mixin for GLM
     ```
 
-*  **Comprehensive supports for training**. `SwissArmyTransformer` aims to provide the best practice for pretraining and finetuning, where you only need to finish `forward_step` and `create_dataset_function` but with hyperparameters to alter useful training configurations.
+*  **Comprehensive supports for training**. `sat` aims to provide the best practice for pretraining and finetuning, where you only need to finish `forward_step` and `create_dataset_function` but with hyperparameters to alter useful training configurations.
     - Extend the training to multiple GPUs or nodes by specifying `--num_nodes`, `--num_gpus` and a simple `hostfile`. 
     - DeepSpeed and Model parallelism.
     - Better integration of ZeRO-2 and activation checkpointing.
@@ -79,14 +85,14 @@
 
 # Quick Tour
 
-The most typical python file to use `Bert` in SwissArmyTransformer (for inference) is as follows:
+The most typical python file to use `Bert` in sat (for inference) is as follows:
 ```python
 # @File: inference_bert.py
-from SwissArmyTransformer import get_args, get_tokenizer, AutoModel
+from sat import get_args, get_tokenizer, AutoModel
 # Parse args, initialize the environment. This is necessary.
 args = get_args() 
 # Automatically download and load model. Will also dump model-related hyperparameters to args.
-model, args = AutoModel.from_pretrained(args, 'bert-base-uncased') 
+model, args = AutoModel.from_pretrained('bert-base-uncased', args) 
 # Get the BertTokenizer according to args.tokenizer_type (automatically set).
 tokenizer = get_tokenizer(args) 
 # Here to use bert as you want!
@@ -96,13 +102,13 @@ Then we can run the code via
 ```bash
     SAT_HOME=/path/to/download python inference_bert.py --mode inference
 ```
-All officially supported model names are in [urls.py](SwissArmyTransformer/resources/urls.py).
+All officially supported model names are in [urls.py](sat/resources/urls.py).
 
 To finetune or pretrain a transformer is also extremely easy!
 ```python
 # @File: finetune_bert.py
-from SwissArmyTransformer import get_args, get_tokenizer, AutoModel
-from SwissArmyTransformer.model.mixins import MLPHeadMixin
+from sat import get_args, get_tokenizer, AutoModel
+from sat.model.mixins import MLPHeadMixin
 
 def create_dataset_function(path, args):
     # Here to load the dataset
@@ -117,7 +123,7 @@ def forward_step(data_iterator, model, args, timers):
     
 # Parse args, initialize the environment. This is necessary.
 args = get_args() 
-model, args = AutoModel.from_pretrained(args, 'bert-base-uncased') 
+model, args = AutoModel.from_pretrained('bert-base-uncased', args) 
 tokenizer = get_tokenizer(args) 
 # Here to use bert as you want!
 model.del_mixin('bert-final')
@@ -142,7 +148,7 @@ Here we use data-parallel on GPUs 0,1. We can also launch the training on many i
 
 To write your own model, you only need to consider the difference between the standard Transformer. For example, if you have a idea to improve the attention operation:
 ```python
-from SwissArmyTransformer.model import BaseMixin
+from sat.model import BaseMixin
 class MyAttention(BaseMixin):
     def __init__(self, hidden_size):
         super(MyAttention, self).__init__()
@@ -155,7 +161,7 @@ class MyAttention(BaseMixin):
         # ...
         return attention_results
 ```
-Here `attention_fn` is a hook function, replacing the default action by the new function. All available hooks are in [transformer_defaults.py](/SwissArmyTransformer/transformer_defaults.py). 
+Here `attention_fn` is a hook function, replacing the default action by the new function. All available hooks are in [transformer_defaults.py](/sat/transformer_defaults.py). 
 Now we can use `add_mixin` to apply our change to all the transformers, such as BERT, Vit and CogView. See the tutorial for more details. 
 
 ## Tutorials 
@@ -164,8 +170,8 @@ TO BE RELEASED SOON...
 # Citation
 Currently we don't have a paper, so you don't need to formally cite us!~ 
 
-If this project helps your research or engineering, use `\footnote{https://github.com/THUDM/SwissArmyTransformer}` to mention us and recommend `SwissArmyTransformer` to others.
+If this project helps your research or engineering, use `\footnote{https://github.com/THUDM/sat}` to mention us and recommend `sat` to others.
 
-The tutorial for contributing SwissArmyTransformer is on the way!
+The tutorial for contributing sat is on the way!
 
 The project is based on (a user of) DeepSpeed, Megatron-LM and Huggingface transformers. Thanks for their awesome work.

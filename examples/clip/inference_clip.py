@@ -1,7 +1,7 @@
 import os
 import argparse
-from SwissArmyTransformer.model.official.clip_model import CLIP, ImageEncoder
-from SwissArmyTransformer import get_args
+from sat.model.official.clip_model import CLIP, ImageEncoder
+from sat import get_args
 py_parser = argparse.ArgumentParser(add_help=False)
 py_parser.add_argument('--old_checkpoint', action="store_true")
 py_parser.add_argument('--md_type', type=str)
@@ -16,8 +16,8 @@ if model_type == 'clip':
 
 import os
 import torch
-model, args = CLIP.from_pretrained(args, args.md_type)
-# from SwissArmyTransformer.training.deepspeed_training import load_checkpoint
+model, args = CLIP.from_pretrained(args.md_type, args)
+# from sat.training.deepspeed_training import load_checkpoint
 
 # model = CLIP(args)
 # load_checkpoint(model, args)

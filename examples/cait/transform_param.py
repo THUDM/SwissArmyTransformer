@@ -15,10 +15,10 @@ torch.distributed.init_process_group(
         backend='nccl',
         world_size=args.world_size, rank=args.rank, init_method=init_method)
 
-import SwissArmyTransformer.mpu as mpu
+import sat.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
-from SwissArmyTransformer.model.official.cait_model import CaiT
+from sat.model.official.cait_model import CaiT
 model = CaiT(args, layernorm_epsilon=1e-6)
 
 def copy_layer_param(src, dst):

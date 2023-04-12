@@ -75,3 +75,14 @@ This will let the key `'last_attention_map'` appear in the next layer's `kw_args
 # 2022.6.27
 1. Fix *flat_output bug.
 2. fix defualt mpu init_method bug.
+
+# 2023.4.9
+Large update v.0.3.0
+1. delete `--sandwich-ln`
+2. `from_pretrained(args, name) => from_pretrained(name, args=None)`
+3. MODEL_URLS fix typo
+4. enable model-only mode
+
+# 2023.4.11
+v.0.3.1
+refactor SwissArmyTransformer as sat (package name SwissArmyTransformer)

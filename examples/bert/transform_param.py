@@ -59,10 +59,10 @@ torch.distributed.init_process_group(
         backend='nccl',
         world_size=args.world_size, rank=args.rank, init_method=init_method)
 
-import SwissArmyTransformer.mpu as mpu
+import sat.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
-from SwissArmyTransformer.model.official.bert_model import BertModel
+from sat.model.official.bert_model import BertModel
 model = BertModel(args, layernorm_epsilon=1e-12)
 
 def copy_layer_param(src, dst):

@@ -10,7 +10,7 @@ logger = logging.get_logger(__name__)
 import torch
 import torch.nn as nn
 from transformers import GenerationMixin
-from SwissArmyTransformer import AutoModel
+from sat import AutoModel
 from typing import Optional, Tuple, Union, List, Callable, Dict, Any
 from transformers.generation.utils import LogitsProcessorList, StoppingCriteriaList, GenerationConfig, ModelOutput
 from transformers.modeling_outputs import (
@@ -33,7 +33,7 @@ class ChatModel(nn.Module, GenerationMixin):
         self.config = AutoConfig.from_pretrained('THUDM/chatglm-6b', trust_remote_code=True)
         self.generation_config = GenerationConfig.from_model_config(self.config)
         if model is None:
-            self.model, args = AutoModel.from_pretrained(args, "chatglm-6b")
+            self.model, args = AutoModel.from_pretrained("chatglm-6b", args)
         else:
             self.model = model
         self.device = self.model.parameters().__next__().device
@@ -42,9 +42,9 @@ class ChatModel(nn.Module, GenerationMixin):
     @classmethod
     def from_pretrained(cls, args, name, base_cls=None, *, home_path=None, url=None, prefix='', **kwargs):
         if base_cls is None:
-            model, args = AutoModel.from_pretrained(args, name, home_path=home_path, url=url, prefix=prefix, **kwargs)
+            model, args = AutoModel.from_pretrained(name, args, home_path=home_path, url=url, prefix=prefix, **kwargs)
         else:
-            model, args = base_cls.from_pretrained(args, name, home_path=home_path, url=url, prefix=prefix, **kwargs)
+            model, args = base_cls.from_pretrained(name, args, home_path=home_path, url=url, prefix=prefix, **kwargs)
         return cls(args, model), args
     
     def can_generate(self):

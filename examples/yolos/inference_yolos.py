@@ -58,9 +58,9 @@ init_method += master_ip + ':' + master_port
 torch.distributed.init_process_group(
         backend='nccl',
         world_size=swiss_args.world_size, rank=swiss_args.rank, init_method=init_method)
-import SwissArmyTransformer.mpu as mpu
+import sat.mpu as mpu
 mpu.initialize_model_parallel(swiss_args.model_parallel_size)
-from SwissArmyTransformer.model.official.yolos_model import YOLOS
+from sat.model.official.yolos_model import YOLOS
 swiss_model, swiss_args = YOLOS.from_pretrained(swiss_args, 'yolos-tiny')
 swiss_model.get_mixin('pos_embedding').reinit() # patch_embedding should not reinit for inference
 model = swiss_model

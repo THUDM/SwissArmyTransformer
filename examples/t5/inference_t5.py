@@ -19,14 +19,14 @@ import argparse
 import stat
 from functools import partial
 
-from SwissArmyTransformer import mpu, get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
+from sat import mpu, get_args, get_tokenizer, load_checkpoint, initialize_distributed, set_random_seed
 
-from SwissArmyTransformer.model import T5Model
-from SwissArmyTransformer.model.mixins import CachedAutoregressiveMixin
-from SwissArmyTransformer.generation.autoregressive_sampling import filling_sequence, evaluate_perplexity, get_masks_and_position_ids_default
-from SwissArmyTransformer.generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
-from SwissArmyTransformer.generation.utils import timed_name, generate_continually
-from SwissArmyTransformer.training.deepspeed_training import setup_model_and_optimizer
+from sat.model import T5Model
+from sat.model.mixins import CachedAutoregressiveMixin
+from sat.generation.autoregressive_sampling import filling_sequence, evaluate_perplexity, get_masks_and_position_ids_default
+from sat.generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
+from sat.generation.utils import timed_name, generate_continually
+from sat.training.deepspeed_training import setup_model_and_optimizer
 
 
 

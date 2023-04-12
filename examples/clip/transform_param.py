@@ -16,10 +16,10 @@ torch.distributed.init_process_group(
         backend='nccl',
         world_size=args.world_size, rank=args.rank, init_method=init_method)
 
-import SwissArmyTransformer.mpu as mpu
+import sat.mpu as mpu
 mpu.initialize_model_parallel(args.model_parallel_size)
 
-from SwissArmyTransformer.model.official.clip_model import CLIP
+from sat.model.official.clip_model import CLIP
 model = CLIP(args, layernorm_epsilon=1e-5)
 
 def copy_layer_param(src, dst):

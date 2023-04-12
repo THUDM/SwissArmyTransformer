@@ -2,13 +2,13 @@
 ## The Training API
 We provide a simple but powerful training API `training_main()`, which is not limited to our Transformer models, but also applicable to any `torch.nn.Module`. 
 ```python
-from SwissArmyTransformer import get_args, training_main
-from SwissArmyTransformer.model import AutoModel, BaseModel
+from sat import get_args, training_main
+from sat.model import AutoModel, BaseModel
 args = get_args()
 # to pretrain from scratch, give a class obj
 model = BaseModel
 # to finetuned from a given model, give a torch.nn.Module
-model = AutoModel.from_pretrained(args, 'bert-base-uncased')
+model = AutoModel.from_pretrained('bert-base-uncased', args)
 
 training_main(args, 
     model_cls=model,
@@ -18,7 +18,7 @@ training_main(args,
     init_function=None
 )
 ```
-The above is an (incomplete) example for a standard training program using `SwissArmyTransformer`. The `training_main` accepts 5 parameters:
+The above is an (incomplete) example for a standard training program using `sat`. The `training_main` accepts 5 parameters:
 * (Required) `model_cls`: a type object inheriting `torch.nn.Module`, or a `torch.nn.Module` object which we train from. 
 * (Required) `forward_step_function`: a customized function with input `data_iterator, model, args, timers`, returns `loss, {'metric0': m0, ...}`.
 * (Required) `create_dataset_function`: Return a `torch.utils.data.Dataset` for loading. Our library will automatically distribute the data into multiple workers, and give the dataiterator to `forward_step_function`.
@@ -33,7 +33,7 @@ The `create_dataset_function` has inputs of `path, args` where the path could be
 
 The function returns a `torch.utils.data.Dataset`. 
 
-**What does SwissArmyTransformer do about the dataset?** It splits the dataset into different works and randomly shuffles it (without saving the large id mapping list). It also duplicates the dataset to make it enough to train `args.train_iters` iterations. 
+**What does sat do about the dataset?** It splits the dataset into different works and randomly shuffles it (without saving the large id mapping list). It also duplicates the dataset to make it enough to train `args.train_iters` iterations. 
 
 If you don't have a separated validation set (usually in pretraining), you can pass `--split 95,5,5` to split the training set to train/valid/test sets according to this ratio.
 
@@ -75,7 +75,7 @@ def forward_step(data_iterator, model, args, timers):
 This is flexible enough to customize the your training.  
 
 ## Hyperparameters
-There are many hyperparameters to control the training, see `add_training_args(parser)` in the [arguments.py](/SwissArmyTransformer/arguments.py).
+There are many hyperparameters to control the training, see `add_training_args(parser)` in the [arguments.py](/sat/arguments.py).
 
 Very common ones: 
 `--train-iters`, `--batch-size`, `--lr`, `--seed`, `--zero-stage`, `--checkpoint-activations`, `--fp16`, `--gradient-accumulation-steps`, `--warmup`...
@@ -90,4 +90,4 @@ The `--save` controls the path (under which folder) to store the saved checkpoin
 ## Load 
 There two ways to load an existing model: 
 
-The first is `ModelClass.from_pretrained(args, name, url=None, home_path=None)`. It will create an object of `ModelClass` and load the checkpoint in `home_path/name`.
+The first is `ModelClass.from_pretrained(name, args, url=None, home_path=None)`. It will create an object of `ModelClass` and load the checkpoint in `home_path/name`.

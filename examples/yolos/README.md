@@ -4,7 +4,7 @@
 
 ## Pretrained weights
 
-You can download pretrained weights from YOLOS repo, and then transform it into `SwissArmyTransformer` using `transform_param.py`.
+You can download pretrained weights from YOLOS repo, and then transform it into `sat` using `transform_param.py`.
 
 ```bash
 python transform_param.py

@@ -10,10 +10,10 @@ import torch.nn.functional as F
 import argparse
 import numpy as np
 from functools import partial
-from SwissArmyTransformer import mpu, get_args
-from SwissArmyTransformer.training.deepspeed_training import training_main
+from sat import mpu, get_args
+from sat.training.deepspeed_training import training_main
 from roberta_model import RobertaModel
-from SwissArmyTransformer.model.mixins import PrefixTuningMixin, MLPHeadMixin, BaseMixin
+from sat.model.mixins import PrefixTuningMixin, MLPHeadMixin, BaseMixin
 
 class ClassificationModel(RobertaModel):
     def __init__(self, args, transformer=None, parallel_output=True):
@@ -117,7 +117,7 @@ def _encode(text, text_pair):
     position_ids = create_position_ids_from_input_ids(torch.tensor([encoded_input['input_ids']]), 1, 0)
     return dict(input_ids=encoded_input['input_ids'], position_ids=position_ids[0].numpy(), attention_mask=encoded_input['attention_mask'])
 
-from SwissArmyTransformer.data_utils import load_hf_dataset
+from sat.data_utils import load_hf_dataset
 
 def create_dataset_function(path, args):
     def process_fn(row):
@@ -159,7 +159,7 @@ def create_dataset_function(path, args):
             'neg_tokens': neg_tokens,
         }
 
-    return load_hf_dataset(path, process_fn, columns = ["pos_tokens", "neg_tokens"], cache_dir='/dataset/fd5061f6/SwissArmyTransformerDatasets', offline=True, transformer_name="record_transformer")
+    return load_hf_dataset(path, process_fn, columns = ["pos_tokens", "neg_tokens"], cache_dir='/dataset/fd5061f6/satDatasets', offline=True, transformer_name="record_transformer")
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
