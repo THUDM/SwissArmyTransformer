@@ -85,4 +85,4 @@ Large update v.0.3.0
 
 # 2023.4.11
 v.0.3.1
-refactor SwissArmyTransformer as sat (package name swiss_army_transformer)
+refactor SwissArmyTransformer as sat (package name SwissArmyTransformer)

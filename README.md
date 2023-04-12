@@ -1,12 +1,18 @@
 # Introduction
-`sat`(`swiss_army_transformer`) is a flexible and powerful library to develop your own Transformer variants.
+`sat`(`SwissArmyTransformer`) is a flexible and powerful library to develop your own Transformer variants.
 
 `sat` is named after "swiss army knife", meaning that all the models (e.g. BERT, GPT, T5, GLM, CogView, ViT...) **share the same backone code** and cater for versatile usages with some extra light-weight mixins. 
 
 `sat` is powered by `deepspeed-ZeRO` and model parallelism, aiming to provide the best practice for pretraining and finetuning large models (100M\~20B parameters). 
+
+# Migrate from SwissArmyTransformer 0.2.x to 0.3.x
+0. change the package name from `SwissArmyTransformer` to `sat` when importing, e.g. `from sat import get_args`.
+1. delete all `--sandwich-ln` in you script, use `layernorm-order='sandwich'`.
+2. change order `from_pretrained(args, name) => from_pretrained(name, args)`.
+
 ## Install
 ```
-    pip install swiss_army_transformer
+    pip install SwissArmyTransformer
 ```
 # Features
 

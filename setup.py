@@ -15,7 +15,7 @@ def _requirements():
     return Path("requirements.txt").read_text()
 
 setup(
-    name="swiss_army_transformer",
+    name="SwissArmyTransformer",
     version='0.3.1',
     description="A transformer-based framework with finetuning as the first class citizen.",
     long_description=Path("README.md").read_text(),

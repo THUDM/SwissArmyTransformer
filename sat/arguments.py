@@ -298,10 +298,12 @@ def _simple_init(model_parallel_size=1):
         return True
     return False
 
-def get_args(args_list=None):
+def get_args(args_list=None, parser=None):
     """Parse all the args."""
-
-    parser = argparse.ArgumentParser(description='sat')
+    if parser is None:
+        parser = argparse.ArgumentParser(description='sat')
+    else:
+        assert isinstance(parser, argparse.ArgumentParser)
     parser = add_model_config_args(parser)
     parser = add_training_args(parser)
     parser = add_evaluation_args(parser)
