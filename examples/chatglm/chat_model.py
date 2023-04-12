@@ -96,11 +96,9 @@ class ChatModel(nn.Module, GenerationMixin):
     ) -> dict:
         if past is None:
             past = past_key_values
-        attention_mask, position_ids = self.model.get_inputs(input_ids, attention_mask=None, position_ids=None, **kwargs)
-        if past is not None:
-            input_ids = input_ids[:, -1:]
-            position_ids = position_ids[..., -1:]
-            attention_mask = attention_mask[:, :, -1:]
+        if attention_mask is not None and attention_mask.dtype != torch.bool:
+            # logger.warning_once(f"The dtype of attention mask ({attention_mask.dtype}) is not bool")
+            attention_mask = None
         return {
             "input_ids": input_ids,
             "position_ids": position_ids,
@@ -189,3 +187,14 @@ class ChatModel(nn.Module, GenerationMixin):
         response = self.process_response(response)
         history = history + [(query, response)]
         return response, history
+    
+    @torch.no_grad()
+    def batch_generate(self, tokenizer, queries, max_length: int = 2048, num_beams=1,
+             do_sample=True, top_p=0.7, temperature=0.95, **kwargs):
+        gen_kwargs = {"max_length": max_length, "num_beams": num_beams, "do_sample": do_sample, "top_p": top_p,
+                      "temperature": temperature, **kwargs}
+        inputs = tokenizer(queries, return_tensors="pt", padding=True)
+        inputs = {k:v.to(self.device) for k, v in inputs.items()}
+        outputs = self.generate(**inputs, **gen_kwargs)
+        texts = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        return texts

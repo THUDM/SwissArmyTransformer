@@ -44,7 +44,8 @@ def make_data_loader(dataset, batch_size, args, split, collate_fn=None):
             dataset,
             batch_size=batch_size//world_size,
             num_workers=args.num_workers,
-            pin_memory=True
+            pin_memory=True,
+            collate_fn=collate_fn
             )
 
     sampler = torch.utils.data.SequentialSampler(dataset)
