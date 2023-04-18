@@ -40,7 +40,7 @@ class ChatModel(nn.Module, GenerationMixin):
         self.main_input_name = 'input_ids'
     
     @classmethod
-    def from_pretrained(cls, args, name, base_cls=None, *, home_path=None, url=None, prefix='', **kwargs):
+    def from_pretrained(cls, name, args, base_cls=None, *, home_path=None, url=None, prefix='', **kwargs):
         if base_cls is None:
             model, args = AutoModel.from_pretrained(name, args, home_path=home_path, url=url, prefix=prefix, **kwargs)
         else:
