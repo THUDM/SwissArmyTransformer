@@ -16,7 +16,7 @@ import torch
 import inspect
 import warnings
 import argparse
-
+from sat.model.registry import model_registry
 
 
 from sat.model.transformer import BaseTransformer, standard_attention
@@ -72,7 +72,7 @@ class BaseMixin(torch.nn.Module):
     #     attn_result = post_hack(attn_result)
     #     return attn_result
 
-
+@model_registry.register
 class BaseModel(torch.nn.Module):
     def __init__(self, args, transformer=None, params_dtype=torch.float, **kwargs):
         super(BaseModel, self).__init__()
@@ -185,7 +185,7 @@ class BaseModel(torch.nn.Module):
         return parser
 
     @classmethod
-    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', **kwargs):
+    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', build_only=False, **kwargs):
         '''Load a pretrained checkpoint of the current model.
             Args:
                 name: The identifier of the pretrained model.
@@ -206,7 +206,8 @@ class BaseModel(torch.nn.Module):
             args = cls.get_args()
         args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
         model = get_model(args, cls, **kwargs)
-        load_checkpoint(model, args, load_path=model_path, prefix=prefix)
+        if not build_only:
+            load_checkpoint(model, args, load_path=model_path, prefix=prefix)
         return model, args
     
     @classmethod
@@ -243,7 +244,7 @@ class BaseModel(torch.nn.Module):
 
 class AutoModel():
     @classmethod
-    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', **kwargs):
+    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', build_only=False, **kwargs):
         '''Automatically find the class and instantiate it. Auto-download.
             Args:
                 name: The identifier of the pretrained model.
@@ -263,12 +264,7 @@ class AutoModel():
         args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
         if not hasattr(args, 'model_class'):
             raise ValueError('model_config.json must have key "model_class" for AutoModel.from_pretrained.')
-        import sat.model
-        if not hasattr(sat.model, args.model_class): 
-            # TODO dynamic loading
-            raise ValueError(f'model_class {args.model_class} not found.')
-        else:
-            model_cls = getattr(sat.model, args.model_class)
+        model_cls = model_registry.get(args.model_class)
         if null_args:
             # fill args with default values, if not provided
             model_default_args = model_cls.get_args()
@@ -276,5 +272,6 @@ class AutoModel():
                 if not hasattr(args, k):
                     setattr(args, k, v)
         model = get_model(args, model_cls, **kwargs)
-        load_checkpoint(model, args, load_path=model_path, prefix=prefix)
+        if not build_only:
+            load_checkpoint(model, args, load_path=model_path, prefix=prefix)
         return model, args

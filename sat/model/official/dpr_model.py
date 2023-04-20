@@ -53,6 +53,8 @@ class DPRTypeMixin(BaseMixin):
             token_type_ids = torch.zeros(input_ids.shape, dtype=torch.long).to(input_ids.device)
         return self.transformer.word_embeddings(input_ids) + self.type_embeddings(token_type_ids)
 
+from sat.model.registry import model_registry
+@model_registry.register
 class DPRQuestionEncoder(BaseModel):
     def __init__(self, args, transformer=None, **kwargs):
         super(DPRQuestionEncoder, self).__init__(args, transformer=transformer, **kwargs)
@@ -65,6 +67,7 @@ class DPRQuestionEncoder(BaseModel):
         group.add_argument('--num-types', type=int)
         return parser
 
+@model_registry.register
 class DPRContextEncoder(BaseModel):
     def __init__(self, args, transformer=None, **kwargs):
         super(DPRContextEncoder, self).__init__(args, transformer=transformer, **kwargs)
@@ -77,6 +80,7 @@ class DPRContextEncoder(BaseModel):
         group.add_argument('--num-types', type=int)
         return parser
 
+@model_registry.register
 class DPRReader(BaseModel):
     def __init__(self, args, transformer=None, **kwargs):
         super(DPRReader, self).__init__(args, transformer=transformer, **kwargs)

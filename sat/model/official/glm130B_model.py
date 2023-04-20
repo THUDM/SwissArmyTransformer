@@ -334,7 +334,8 @@ class WordEmbedding(BaseMixin):
     def word_embedding_forward(self, input_ids, output_cross_layer, **kw_args):
         return self.transformer.word_embeddings(input_ids).transpose(0, 1)
 
-
+from sat.model.registry import model_registry
+@model_registry.register
 class GLM130B(BaseModel):
     def __init__(self, args, transformer=None, parallel_output=False):
         super().__init__(

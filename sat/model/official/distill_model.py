@@ -1,5 +1,7 @@
 import torch.nn as nn
 
+from sat.model.registry import model_registry
+@model_registry.register
 class DistillModel(nn.Module):
     def __init__(self, teacher, student):
         super().__init__()

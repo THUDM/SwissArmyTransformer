@@ -61,6 +61,8 @@ class GPT2AttnMixin(BaseMixin):
         context_layer = torch.matmul(attention_probs, value_layer)
         return context_layer
 
+from sat.model.registry import model_registry
+@model_registry.register
 class GPT2Model(BaseModel):
     def __init__(self, args, transformer=None, **kwargs):
         super(GPT2Model, self).__init__(args, transformer=transformer, activation_func=gelu, **kwargs)

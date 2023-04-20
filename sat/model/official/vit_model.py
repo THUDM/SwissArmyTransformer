@@ -137,7 +137,8 @@ class ClsMixin(BaseMixin):
         logits = self.classifier(logits[:, 0])
         return logits
 
-
+from sat.model.registry import model_registry
+@model_registry.register
 class ViTModel(BaseModel):
     def __init__(self, args, transformer=None, parallel_output=True, **kwargs):
         self.property = ViTProperty(args.image_size, args.patch_size, args.pre_len, args.post_len)

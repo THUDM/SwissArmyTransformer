@@ -81,6 +81,8 @@ class GPTNeoAttentionMixin(BaseMixin):
         context_layer = torch.matmul(attention_probs, value_layer)
         return context_layer
 
+from sat.model.registry import model_registry
+@model_registry.register
 class GPTNeoModel(BaseModel):
     def __init__(self, args, transformer=None, **kwargs):
         super().__init__(args, transformer, **kwargs)

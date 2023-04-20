@@ -24,7 +24,8 @@ class EncoderFinalMixin(BaseMixin):
         logits = copy_to_model_parallel_region(logits)
         return logits
 
-
+from sat.model.registry import model_registry
+@model_registry.register
 class EncoderDecoderModel(torch.nn.Module):
     def __init__(self, args, encoder=None, decoder=None, tie_word_embeddings=True, parallel_output=False, **kwargs):
         super(EncoderDecoderModel, self).__init__()

@@ -121,7 +121,8 @@ class EVA2AttnMixin(BaseMixin):
             output = self.output_dropout(output)
         return output
 
-
+from sat.model.registry import model_registry
+@model_registry.register
 class EVA2Model(BaseModel):
     def __init__(self, args, transformer=None, parallel_output=True, **kwargs):
         self.property = ViTProperty(args.image_size, args.patch_size, args.pre_len, args.post_len)

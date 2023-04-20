@@ -6,6 +6,7 @@ from sat.model.base_model import BaseMixin, BaseModel, non_conflict
 from sat.model.official.vit_model import ViTModel, ClsMixin
 from sat.model.mixins import BaseMixin
 from sat import mpu
+from sat.model.registry import model_registry
 
 class AttnMixin(BaseMixin):
     def __init__(self, num_heads, num_layers):
@@ -171,6 +172,7 @@ class CaiTDecoder(BaseModel):
 from sat.model import EncoderDecoderModel
 import argparse
 
+@model_registry.register
 class CaiT(EncoderDecoderModel):
     def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-6):
         encoder = CaiTEncoder(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon)

@@ -70,6 +70,8 @@ class AttentionMixin(BaseMixin):
             self.dense[layer_id].weight.data.copy_(old_attention.dense.weight.data)
             self.dense[layer_id].bias.data.copy_(old_attention.dense.bias.data)
 
+from sat.model.registry import model_registry
+@model_registry.register
 class Cuda2dModel(BaseModel):
     def __init__(self, args, transformer=None):
         super().__init__(args, transformer=transformer)

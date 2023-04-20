@@ -17,6 +17,8 @@ class BlockPositionEmbeddingMixin(BaseMixin):
         block_position_embeddings = self.block_position_embeddings(block_position_ids)
         return position_embeddings + block_position_embeddings
 
+from sat.model.registry import model_registry
+@model_registry.register
 class GLMModel(BaseModel):
     def __init__(self, args, transformer=None, parallel_output=True):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output)

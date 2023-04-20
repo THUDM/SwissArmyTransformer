@@ -38,7 +38,8 @@ class CachedAutoregressiveMixin(BaseMixin):
                 v = torch.cat((memv, v), dim=2)
         return old_impl(q, k, v, mask, dropout_fn, cross_attention=cross_attention, mems=mems, **kw_args)
 
-
+from sat.model.registry import model_registry
+@model_registry.register
 class CachedAutoregressiveModel(BaseModel):
     def __init__(self, args, transformer=None):
         super().__init__(args, transformer=transformer)

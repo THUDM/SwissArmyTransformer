@@ -35,6 +35,8 @@ class BertTypeMixin(BaseMixin):
     def word_embedding_forward(self, input_ids, **kwargs):
         return self.transformer.word_embeddings(input_ids) + self.type_embeddings(kwargs["token_type_ids"])
 
+from sat.model.registry import model_registry
+@model_registry.register
 class BertModel(BaseModel):
     def __init__(self, args, transformer=None, **kwargs):
         super(BertModel, self).__init__(args, transformer=transformer, activation_func=gelu, **kwargs)

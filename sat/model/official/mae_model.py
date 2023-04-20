@@ -131,7 +131,8 @@ class MAEDecoder(BaseModel):
 
 from sat.model import EncoderDecoderModel
 import argparse
-
+from sat.model.registry import model_registry
+@model_registry.register
 class MAE(EncoderDecoderModel):
     def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-6):
         encoder = MAEEncoder(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon)

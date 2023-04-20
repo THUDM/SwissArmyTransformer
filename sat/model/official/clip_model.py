@@ -94,6 +94,8 @@ class TextEncoder(BaseModel):
 
 import argparse
 
+from sat.model.registry import model_registry
+@model_registry.register
 class CLIP(nn.Module):
     def __init__(self, args, layernorm_epsilon=1e-5):
         super().__init__()

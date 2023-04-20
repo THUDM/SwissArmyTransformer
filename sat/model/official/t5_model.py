@@ -189,7 +189,8 @@ class T5GatedGeluMLPMixin(BaseMixin):
             output = mlp_module.dropout(output)
         return output
 
-
+from sat.model.registry import model_registry
+@model_registry.register
 class T5Model(EncoderDecoderModel):
     def __init__(self, args, **kwargs):
         self.init_method_std = args.init_method_std

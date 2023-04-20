@@ -164,7 +164,9 @@ class ChatGLMLayerMixin(BaseMixin):
             output = hidden_states + mlp_output
 
         return output
-    
+
+from sat.model.registry import model_registry
+@model_registry.register
 class ChatGLMModel(BaseModel):
     def __init__(self, args, transformer=None, **kwargs):
         super(ChatGLMModel, self).__init__(args, transformer=transformer, activation_func=gelu, **kwargs)

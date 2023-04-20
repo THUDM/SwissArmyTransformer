@@ -46,6 +46,8 @@ class DetHeadMixin(BaseMixin):
         out = {'pred_logits': outputs_class, 'pred_boxes': outputs_coord}
         return out
 
+from sat.model.registry import model_registry
+@model_registry.register
 class YOLOS(ViTModel):
     def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-6, **kwargs):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon, **kwargs)
