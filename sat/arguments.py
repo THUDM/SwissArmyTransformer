@@ -32,13 +32,13 @@ def add_model_config_args(parser):
     group = parser.add_argument_group('model', 'model configuration')
 
     # --------------- Core hyper-parameters --------------- 
-    group.add_argument('--num-layers', type=int, default=24,
+    group.add_argument('--num-layers', type=int, default=6,
                        help='num of layers')
     group.add_argument('--hidden-size', type=int, default=1024,
                        help='transformer hidden size')
     group.add_argument('--num-attention-heads', type=int, default=16,
                        help='num of transformer attention heads')
-    group.add_argument('--vocab-size', type=int, default=0,
+    group.add_argument('--vocab-size', type=int, default=100,
                        help='vocab size for tokenization. the size of word_embeddings.')
     group.add_argument('--max-sequence-length', type=int, default=512,
                        help='maximum number of position embeddings to use')
@@ -458,7 +458,6 @@ def initialize_distributed(args):
 
     # Set the model-parallel / data-parallel communicators.
     mpu.initialize_model_parallel(args.model_parallel_size)
-
     # Optional DeepSpeed Activation Checkpointing Features
     if args.deepspeed: 
         deepspeed.init_distributed(
@@ -466,6 +465,12 @@ def initialize_distributed(args):
             world_size=args.world_size, rank=args.rank, init_method=init_method)
         # It seems that it has no negative influence to configure it even without using checkpointing.  
         deepspeed.checkpointing.configure(mpu, deepspeed_config=args.deepspeed_config, num_checkpoints=args.num_layers)
+    else:
+        # in model-only mode, we don't want to init deepspeed, but we still need to init the rng tracker for model_parallel, just because we save the seed by default when dropout. 
+        from deepspeed.runtime.activation_checkpointing.checkpointing import _CUDA_RNG_STATE_TRACKER, _MODEL_PARALLEL_RNG_TRACKER_NAME
+        _CUDA_RNG_STATE_TRACKER.add(_MODEL_PARALLEL_RNG_TRACKER_NAME, 1) # default seed 1
+
+
     return True
 
 def set_random_seed(seed):

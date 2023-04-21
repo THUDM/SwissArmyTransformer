@@ -175,6 +175,7 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
 
     if args.train_data is not None:
         if args.deepspeed:
+            from packaging import version
             print_rank_0("DeepSpeed is enabled.")
             model, optimizer, _, _ = deepspeed.initialize(
                 model=model,
@@ -183,6 +184,8 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
                 mpu=mpu,
                 dist_init_required=False,
                 config_params=args.deepspeed_config
+                    if version.parse(deepspeed.version) < version.parse("0.9.0")
+                    else None
             )
         else:
             raise ValueError('Currently, we only support training with deepspeed.')
