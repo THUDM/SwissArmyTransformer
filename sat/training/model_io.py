@@ -93,7 +93,7 @@ def save_checkpoint(iteration, model, optimizer,
                 ('cross_attn_hidden_size', None), 
                 ('use_bias', True),
                 ('inner_hidden_size', None),
-                ('hidden_size_per_attention_head', None)
+                ('hidden_size_per_attention_head', None),
                 ('use_final_layernorm', True),
                 ('layernorm_epsilon', 1e-5),
             ]
