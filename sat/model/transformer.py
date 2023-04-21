@@ -112,7 +112,7 @@ class CrossAttention(torch.nn.Module):
 
     def __init__(self, hidden_size, num_attention_heads, attention_dropout_prob, output_dropout_prob, init_method,
                  layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, hooks={},
-                 transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
+                 cross_attn_hidden_size=None, transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
         super().__init__()
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
@@ -133,7 +133,9 @@ class CrossAttention(torch.nn.Module):
         self.query = ColumnParallelLinear(hidden_size, self.inner_hidden_size,
                                           gather_output=False,
                                           init_method=init_method, bias=bias, params_dtype=params_dtype, module=self, name="query", skip_init=skip_init, device=device)
-        self.key_value = ColumnParallelLinear(hidden_size, 2 * self.inner_hidden_size,
+        if cross_attn_hidden_size is None:
+            cross_attn_hidden_size = hidden_size
+        self.key_value = ColumnParallelLinear(cross_attn_hidden_size, 2 * self.inner_hidden_size,
                                               stride=2,
                                               gather_output=False,
                                               init_method=init_method, bias=bias, params_dtype=params_dtype, module=self, name="key_value",
@@ -245,6 +247,7 @@ class BaseTransformerLayer(torch.nn.Module):
             layernorm_order='pre',
             layernorm=LayerNorm,
             is_decoder=False,
+            cross_attn_hidden_size=None,
             use_bias=True,
             activation_func=gelu,
             hooks={},
@@ -302,6 +305,7 @@ class BaseTransformerLayer(torch.nn.Module):
                 layer_id,
                 hidden_size_per_attention_head=hidden_size_per_attention_head,
                 output_layer_init_method=output_layer_init_method,
+                cross_attn_hidden_size=cross_attn_hidden_size,
                 bias=use_bias,
                 hooks=hooks,
                 transformer_pointer=transformer_pointer,
@@ -337,10 +341,10 @@ class BaseTransformer(torch.nn.Module):
                  hidden_size,
                  num_attention_heads,
                  max_sequence_length,
-                 embedding_dropout_prob,
-                 attention_dropout_prob,
-                 output_dropout_prob,
-                 checkpoint_activations,
+                 embedding_dropout_prob=0,
+                 attention_dropout_prob=0,
+                 output_dropout_prob=0,
+                 checkpoint_activations=False,
                  checkpoint_num_layers=1,
                  layernorm_epsilon=1.0e-5,
                  init_method_std=0.02,
@@ -349,6 +353,7 @@ class BaseTransformer(torch.nn.Module):
                  layernorm_order='pre',
                  parallel_output=True,
                  is_decoder=False,
+                 cross_attn_hidden_size=None,
                  use_bias=True,
                  activation_func=gelu,
                  layernorm=LayerNorm,
@@ -363,6 +368,12 @@ class BaseTransformer(torch.nn.Module):
 
         # recording parameters
         self.is_decoder = is_decoder
+        self.cross_attn_hidden_size = cross_attn_hidden_size
+        if not is_decoder and cross_attn_hidden_size is not None:
+            print('warning: cross_attn_hidden_size is set but is_decoder is False')
+        self.use_bias = use_bias
+        self.use_final_layernorm = use_final_layernorm
+        self.layernorm_epsilon = layernorm_epsilon
         self.parallel_output = parallel_output
         self.checkpoint_activations = checkpoint_activations
         self.checkpoint_num_layers = checkpoint_num_layers
@@ -402,6 +413,7 @@ class BaseTransformer(torch.nn.Module):
                 hidden_size_per_attention_head=hidden_size_per_attention_head,
                 output_layer_init_method=self.output_layer_init_method,
                 is_decoder=self.is_decoder,
+                cross_attn_hidden_size=cross_attn_hidden_size,
                 layernorm_order=layernorm_order,
                 layernorm=layernorm,
                 use_bias=use_bias,
@@ -417,7 +429,6 @@ class BaseTransformer(torch.nn.Module):
             [get_layer(layer_id) for layer_id in range(num_layers)])
 
         # Final layer norm before output.
-        self.use_final_layernorm = use_final_layernorm
         if use_final_layernorm:
             self.final_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
 
