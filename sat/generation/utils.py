@@ -68,7 +68,7 @@ def generate_continually(func, input_source='interactive'):
                 print(e)
                 continue
     else:
-        with open(input_source, 'r') as fin:
+        with open(input_source, 'r', encoding="utf-8") as fin:
             inputs = fin.readlines()
         for line_no, raw_text in enumerate(inputs):
             if line_no % get_data_parallel_world_size() != get_data_parallel_rank():
