@@ -9,7 +9,7 @@
 0. change the package name from `SwissArmyTransformer` to `sat` when importing, e.g. `from sat import get_args`.
 1. delete all `--sandwich-ln` in you script, use `layernorm-order='sandwich'`.
 2. change order `from_pretrained(args, name) => from_pretrained(name, args)`.
-4. We can directly use `from sat.model import AutoModel;model, args = AutoModel.from_pretrained(‘roberta-base’)` to load model in `model-only` mode, instead of initializing the sat first. 
+4. We can directly use `from sat.model import AutoModel;model, args = AutoModel.from_pretrained('roberta-base')` to load model in `model-only` mode, instead of initializing the sat first. 
 
 ## Install
 ```
@@ -171,7 +171,7 @@ TO BE RELEASED SOON...
 # Citation
 Currently we don't have a paper, so you don't need to formally cite us!~ 
 
-If this project helps your research or engineering, use `\footnote{https://github.com/THUDM/sat}` to mention us and recommend `sat` to others.
+If this project helps your research or engineering, use `\footnote{https://github.com/THUDM/SwissArmyTransformer}` to mention us and recommend `SwissArmyTransformer` to others.
 
 The tutorial for contributing sat is on the way!
 
