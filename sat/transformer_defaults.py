@@ -153,7 +153,7 @@ def layer_forward_default(self, hidden_states, mask, *args, **kw_args):
             # Cross attention
             attention_output = self.cross_attention(mlp_input, **kw_args)
             # Residual connection.
-            hidden_states = hidden_states + attention_output
+            hidden_states = mlp_input + attention_output
             # Layer norm post the cross attention
             mlp_input = self.post_cross_attention_layernorm(hidden_states)
 

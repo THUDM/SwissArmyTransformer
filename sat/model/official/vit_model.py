@@ -61,9 +61,8 @@ class ImagePatchEmbeddingMixin(BaseMixin):
 
 
 class InterpolatedPositionEmbeddingMixin(BaseMixin):
-    def __init__(self, hidden_size, old_property, property, init_method_std=0.02):
+    def __init__(self, property, init_method_std=0.02):
         super(InterpolatedPositionEmbeddingMixin, self).__init__()
-        self.old_property = old_property
         self.property = property
         self.init_method_std = init_method_std
 
@@ -105,27 +104,24 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
         * kwargs["offline"]: boolean to identify offline or not
         * kwargs["height"], kwargs["width"]: specified image height and width for online mode
         """
-        if kwargs["offline"]:
-            return self.transformer.position_embeddings(position_ids)
-        else:
-            new_height, new_width = kwargs['height'], kwargs['width']
-            new_pos = self.interpolate_pos_encoding(new_height, new_width)
-            return new_pos[position_ids]
+        return self.transformer.position_embeddings.weight.unsqueeze(0)
 
-    def reinit(self, parent_model=None):
+    def reinit(self, parent_model=None, property=None):
         """
         new pre_len, new num_patches and new post_len should all be larger or equal than the old ones.
         """
+        assert property is not None
         old_weight = self.transformer.position_embeddings.weight.data
-        pre_weight = old_weight[:self.old_property.pre_len]
-        post_weight = old_weight[self.old_property.pre_len+self.old_property.num_patches:]
-        image_weight = old_weight[self.old_property.pre_len:self.old_property.pre_len+self.old_property.num_patches].reshape(1, self.old_property.grid_size[0], self.old_property.grid_size[1], -1).permute(0, 3, 1, 2)
-        image_weight = F.interpolate(image_weight, size=self.property.grid_size, mode='bicubic', align_corners=False).permute(0, 2, 3, 1).reshape(self.property.num_patches, -1)
-        self.transformer.position_embeddings = torch.nn.Embedding(self.property.seq_len, old_weight.shape[1]).type(old_weight.dtype).to(old_weight.device)
+        pre_weight = old_weight[:self.property.pre_len]
+        post_weight = old_weight[self.property.pre_len+self.property.num_patches:]
+        image_weight = old_weight[self.property.pre_len:self.property.pre_len+self.property.num_patches].reshape(1, self.property.grid_size[0], self.property.grid_size[1], -1).permute(0, 3, 1, 2)
+        image_weight = F.interpolate(image_weight, size=property.grid_size, mode='bicubic', align_corners=False).permute(0, 2, 3, 1).reshape(property.num_patches, -1)
+        self.transformer.position_embeddings = torch.nn.Embedding(property.seq_len, old_weight.shape[1]).type(old_weight.dtype).to(old_weight.device)
         torch.nn.init.normal_(self.transformer.position_embeddings.weight, mean=0.0, std=self.init_method_std)
-        self.transformer.position_embeddings.weight.data[:self.old_property.pre_len] = pre_weight
-        self.transformer.position_embeddings.weight.data[self.property.pre_len:self.property.pre_len+self.property.num_patches] = image_weight
-        self.transformer.position_embeddings.weight.data[self.property.pre_len+self.property.num_patches:self.property.pre_len+self.property.num_patches+self.old_property.post_len] = post_weight
+        self.transformer.position_embeddings.weight.data[:self.property.pre_len] = pre_weight
+        self.transformer.position_embeddings.weight.data[property.pre_len:property.pre_len+property.num_patches] = image_weight
+        self.transformer.position_embeddings.weight.data[property.pre_len+property.num_patches:property.pre_len+property.num_patches+self.property.post_len] = post_weight
+        self.property = property
 
 
 class ClsMixin(BaseMixin):
@@ -140,15 +136,13 @@ class ClsMixin(BaseMixin):
 
 class ViTModel(BaseModel):
     def __init__(self, args, transformer=None, parallel_output=True, **kwargs):
-        self.property = ViTProperty(args.image_size, args.patch_size, args.pre_len, args.post_len)
-        assert args.old_image_size is not None and args.old_pre_len is not None and args.old_post_len is not None
-        self.old_property = ViTProperty(args.old_image_size, args.patch_size, args.old_pre_len, args.old_post_len)
-        args.max_sequence_length = self.old_property.pre_len + self.old_property.num_patches + self.old_property.post_len
+        property = ViTProperty(args.image_size, args.patch_size, args.pre_len, args.post_len)
+        args.max_sequence_length = property.pre_len + property.num_patches + property.post_len
         if 'activation_func' not in kwargs:
             kwargs['activation_func'] = gelu
         super().__init__(args, transformer=transformer, parallel_output=parallel_output, **kwargs)
-        self.add_mixin("patch_embedding", ImagePatchEmbeddingMixin(args.in_channels, args.hidden_size, self.property))
-        self.add_mixin("pos_embedding", InterpolatedPositionEmbeddingMixin(args.hidden_size, self.old_property, self.property))
+        self.add_mixin("patch_embedding", ImagePatchEmbeddingMixin(args.in_channels, args.hidden_size, property))
+        self.add_mixin("pos_embedding", InterpolatedPositionEmbeddingMixin(property))
         self.add_mixin("cls", ClsMixin(args.hidden_size, args.num_classes))
 
     @classmethod
@@ -160,9 +154,6 @@ class ViTModel(BaseModel):
         group.add_argument('--in-channels', type=int, default=3)
         group.add_argument('--num-classes', type=int, default=21843)
         group.add_argument('--patch-size', type=int, default=16)
-        group.add_argument('--old-image-size', nargs='+', type=int, default=None)
-        group.add_argument('--old-pre-len', type=int, default=None)
-        group.add_argument('--old-post-len', type=int, default=None)
         return parser
 
 

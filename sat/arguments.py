@@ -430,6 +430,24 @@ def update_args_with_file(args, path):
     return args
 
 
+def overwrite_args_by_dict(args, overwrite_args={}):
+    if 'decoder_freq' in overwrite_args:
+        decoder_freq = overwrite_args['decoder_freq']
+        del overwrite_args['decoder_freq']
+    else:
+        decoder_freq = None
+    for k in overwrite_args:
+        setattr(args, k, overwrite_args[k])
+    if decoder_freq is not None:
+        args.is_decoder = []
+        for i in range(args.num_layers):
+            if i % decoder_freq == 0:
+                args.is_decoder.append(True)
+            else:
+                args.is_decoder.append(False)
+    return args
+
+
 def initialize_distributed(args):
     """Initialize torch.distributed."""
     if torch.distributed.is_initialized():
