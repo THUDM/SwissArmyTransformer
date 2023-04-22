@@ -261,7 +261,7 @@ class BaseTransformerLayer(torch.nn.Module):
         if output_layer_init_method is None:
             output_layer_init_method = init_method
         self.layer_id = layer_id
-        self.is_decoder = is_decoder
+        self.is_decoder = is_decoder[layer_id] if type(is_decoder) is list else is_decoder
         self.layernorm_order = layernorm_order
         self.hooks = hooks
         object.__setattr__(self, 'transformer', transformer_pointer)
@@ -367,6 +367,8 @@ class BaseTransformer(torch.nn.Module):
         super(BaseTransformer, self).__init__()
 
         # recording parameters
+        self.inner_hidden_size = inner_hidden_size
+        self.hidden_size_per_attention_head = hidden_size_per_attention_head
         self.is_decoder = is_decoder
         self.cross_attn_hidden_size = cross_attn_hidden_size
         if not is_decoder and cross_attn_hidden_size is not None:

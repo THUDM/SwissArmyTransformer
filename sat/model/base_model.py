@@ -19,7 +19,7 @@ import argparse
 from sat.model.registry import model_registry, MetaModel
 
 from sat.model.transformer import BaseTransformer, standard_attention
-from sat import update_args_with_file
+from sat.arguments import update_args_with_file, overwrite_args_by_dict
 from sat.training.deepspeed_training import load_checkpoint, get_model
 
 from sat.transformer_defaults import HOOKS_DEFAULT
@@ -189,7 +189,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
         return parser
 
     @classmethod
-    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', build_only=False, **kwargs):
+    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', build_only=False, overwrite_args={}, **kwargs):
         '''Load a pretrained checkpoint of the current model.
             Args:
                 name: The identifier of the pretrained model.
@@ -209,6 +209,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
         if args is None:
             args = cls.get_args()
         args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
+        args = overwrite_args_by_dict(args, overwrite_args=overwrite_args)
         model = get_model(args, cls, **kwargs)
         if not build_only:
             load_checkpoint(model, args, load_path=model_path, prefix=prefix)
@@ -248,7 +249,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
 
 class AutoModel():
     @classmethod
-    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', build_only=False, **kwargs):
+    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', build_only=False, overwrite_args={}, **kwargs):
         '''Automatically find the class and instantiate it. Auto-download.
             Args:
                 name: The identifier of the pretrained model.
@@ -266,6 +267,7 @@ class AutoModel():
         else:
             null_args = False
         args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
+        args = overwrite_args_by_dict(args, overwrite_args=overwrite_args)
         if not hasattr(args, 'model_class'):
             raise ValueError('model_config.json must have key "model_class" for AutoModel.from_pretrained.')
         model_cls = model_registry.get(args.model_class)
