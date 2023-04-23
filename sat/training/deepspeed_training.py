@@ -155,12 +155,16 @@ def get_model(args, model_cls, **kwargs):
         print(' > number of parameters on model parallel rank {}: {}'.format(
             mpu.get_model_parallel_rank(),
             sum([p.nelement() for p in model.parameters()])), flush=True)
-
-    model.cuda(torch.cuda.current_device())
+        
     if hasattr(args, 'fp16') and args.fp16:
         model.half()
     elif hasattr(args, 'bf16') and args.bf16:
         model.bfloat16()
+
+    if torch.cuda.is_available():
+        model.cuda(torch.cuda.current_device())
+    else:
+        print_rank_0('WARNING: No GPU detected, using CPU for inference.')
     
     return model
 

@@ -86,3 +86,13 @@ Large update v.0.3.0
 # 2023.4.11
 v.0.3.1
 refactor SwissArmyTransformer as sat (package name SwissArmyTransformer)
+
+# 2023.4.21
+v 0.3.2
+fix model-only "create then inference" bug
+support deepspeed 0.8.x & 0.9.x
+model register first try
+
+# 2023.4.23
+v 0.3.3
+change the fp16 & to cuda order in `get_model`.
