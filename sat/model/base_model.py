@@ -113,7 +113,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
     def reinit(self, mixin_names=None):  # will be called when loading model, None means all
         # if some mixins are loaded, overrides this function
         for k, m in self.mixins.items():
-            if k in mixin_names or mixin_names is None:
+            if mixin_names is None or k in mixin_names:
                 m.reinit(self)
 
     def add_mixin(self, name, new_mixin, reinit=False):
