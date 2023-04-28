@@ -154,6 +154,12 @@ def get_model(args, model_cls, **kwargs):
             params_dtype = torch.half
         elif hasattr(args, 'bf16') and args.bf16:
             params_dtype = torch.bfloat16
+        else:
+            params_dtype = torch.float32
+    else:
+        # pop params_dtype from kwargs
+        params_dtype = kwargs.pop('params_dtype')
+        
     model = model_cls(args, params_dtype=params_dtype, **kwargs)
 
     if mpu.get_data_parallel_rank() == 0:
