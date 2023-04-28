@@ -149,13 +149,18 @@ def get_model(args, model_cls, **kwargs):
     """Build the model."""
 
     print_rank_0(f'building {model_cls.__name__} model ...')
-    model = model_cls(args, **kwargs)
+    if 'params_dtype' not in kwargs:
+        if hasattr(args, 'fp16') and args.fp16:
+            params_dtype = torch.half
+        elif hasattr(args, 'bf16') and args.bf16:
+            params_dtype = torch.bfloat16
+    model = model_cls(args, params_dtype=params_dtype, **kwargs)
 
     if mpu.get_data_parallel_rank() == 0:
         print(' > number of parameters on model parallel rank {}: {}'.format(
             mpu.get_model_parallel_rank(),
             sum([p.nelement() for p in model.parameters()])), flush=True)
-        
+    
     if hasattr(args, 'fp16') and args.fp16:
         model.half()
     elif hasattr(args, 'bf16') and args.bf16:

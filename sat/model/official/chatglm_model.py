@@ -179,8 +179,9 @@ class ChatGLMModel(BaseModel):
     def position_embedding_forward(self, position_ids, output_cross_layer, **kw_args):
         return None
     
-    def forward(self, input_ids, attention_mask=None, position_ids=None, past_key_values=None, **kwargs):
-        attention_mask, position_ids = self.get_inputs(input_ids, attention_mask=attention_mask, position_ids=position_ids, past_key_values=past_key_values, **kwargs)
+    def forward(self, input_ids, position_ids=None, attention_mask=None, past_key_values=None, **kwargs):
+        if attention_mask is None and position_ids is None:
+            attention_mask, position_ids = self.get_inputs(input_ids, attention_mask=attention_mask, position_ids=position_ids, past_key_values=past_key_values, **kwargs)
         if past_key_values is not None:
             input_ids = input_ids[:, -1:]
             position_ids = position_ids[..., -1:]

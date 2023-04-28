@@ -106,7 +106,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
                 hooks=self.hooks,
                 params_dtype=params_dtype,
                 skip_init=args.skip_init,
-                device=torch.cuda.current_device() if args.use_gpu_initialization else torch.device('cpu'),
+                device=torch.cuda.current_device() if hasattr(args, 'use_gpu_initialization') and args.use_gpu_initialization else torch.device('cpu'),
                 **kwargs
             )
 
