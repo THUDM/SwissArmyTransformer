@@ -5,6 +5,11 @@ This folder provides inference and fineuning for [ChatGLM-6B](https://github.com
 If you want to inference or chat with ChatGLM-6B:
 
 ```
+python chat_sat.py
+```
+
+If you want to inference or chat with ChatGLM-6B with huggingface generation instead of sat (legacy):
+```
 python inference_chatglm.py --mode inference --fp16 --device 0 --skip-init
 python chat.py --mode inference --fp16 --skip-init
 ```
