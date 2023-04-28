@@ -113,7 +113,7 @@ def chat(model, tokenizer,
     # ---------------
 
     response = tokenizer.decode(output_list[0])
-    response = process_response(response)
+    response = process_response(response).split('答：')[-1].strip()
     history = history + [(query, response)]
     return response, history
 
