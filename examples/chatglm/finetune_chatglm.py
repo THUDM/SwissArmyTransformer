@@ -9,26 +9,38 @@ from sat import mpu, get_args, get_tokenizer
 from sat.training.deepspeed_training import training_main
 from sat.model.official import ChatGLMModel
 from sat.model.finetune import PTuningV2Mixin
+from sat.model.finetune.lora_mixin import LoraMixin
 
-class PTModel(ChatGLMModel):
-    def __init__(self, args, transformer=None, parallel_output=True):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output)
-        self.add_mixin("ptuning", PTuningV2Mixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.pre_seq_len))
+class FineTuneModel(ChatGLMModel):
+    def __init__(self, args, transformer=None, parallel_output=True, **kw_args):
+        super().__init__(args, transformer=transformer, parallel_output=parallel_output, **kw_args)
+        if args.use_ptuning:
+            self.add_mixin("ptuning", PTuningV2Mixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.pre_seq_len))
+        if args.use_lora:
+            # If you use lora on other "normal" Transformer, just use it with head_first=False (by default)
+            self.add_mixin("lora", LoraMixin(args.num_layers, args.lora_rank, head_first=True, num_attention_heads=args.num_attention_heads, hidden_size_per_attention_head=args.hidden_size // args.num_attention_heads), reinit=True)
 
     @classmethod
     def add_model_specific_args(cls, parser):
         group = parser.add_argument_group('ChatGLM-finetune', 'ChatGLM finetune Configurations')
         group.add_argument('--pre_seq_len', type=int, default=8)
+        group.add_argument('--lora_rank', type=int, default=10)
+        group.add_argument('--use_ptuning', action="store_true")
+        group.add_argument('--use_lora', action="store_true")
         return super().add_model_specific_args(parser)
 
 from chat_model import ChatModel
-class PTChat(ChatModel):
+class FineTuneChat(ChatModel):
     def disable_untrainable_params(self):
-        enable = ['ptuning']
+        enable = []
+        if self.args.use_ptuning:
+            enable.extend(['ptuning'])
+        if self.args.use_lora:
+            enable.extend(['matrix_A', 'matrix_B'])
         for n, p in self.named_parameters():
             flag = False
             for e in enable:
-                if e in n.lower():
+                if e.lower() in n.lower():
                     flag = True
                     break
             if not flag:
@@ -213,13 +225,13 @@ if __name__ == '__main__':
     py_parser.add_argument('--source_prefix', type=str, default="")
     py_parser.add_argument('--prompt_column', type=str)
     py_parser.add_argument('--response_column', type=str)
-    py_parser = PTModel.add_model_specific_args(py_parser)
+    py_parser = FineTuneModel.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
 
     model_type = 'chatglm-6b'
-    model, args = PTChat.from_pretrained(model_type, args, PTModel)
+    model, args = FineTuneChat.from_pretrained(model_type, args, FineTuneModel)
     tokenizer = get_tokenizer(args)
     label_pad_token_id = -100 if args.ignore_pad_token_for_loss else tokenizer.pad_token_id
     data_collator = DataCollatorForSeq2Seq(

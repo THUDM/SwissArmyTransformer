@@ -131,7 +131,7 @@ class EVA2Model(BaseModel):
         # The old_property of ViTModel is not elegent. However, I don't have time to fix them (including vit, cait, deit, yolos). I can only discard it since eva model for now.
         # self.add_mixin("pos_embedding", InterpolatedPositionEmbeddingMixin(args.hidden_size, self.old_property, self.property))
         self.add_mixin("eva2-final", EVA2FinalMixin(args.predict_feature_dim, args.hidden_size))
-        self.add_mixin("eva2-mlp", SwiGLUMixin(args.num_layers, args.hidden_size, args.inner_hidden_size, eps=kwargs["layernorm_epsilon"]))
+        self.add_mixin("eva2-mlp", SwiGLUMixin(args.num_layers, args.hidden_size, args.inner_hidden_size, eps=args.layernorm_epsilon))
         self.add_mixin("eva2-attn", EVA2AttnMixin(args.hidden_size, args.num_attention_heads, self.property))
 
     def position_embedding_forward(self, position_ids, output_cross_layer, **kw_args):
