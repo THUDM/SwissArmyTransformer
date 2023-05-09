@@ -23,7 +23,7 @@ eval_data="./AdvertiseGen/dev.json"
 
 
 gpt_options=" \
-       --experiment-name finetune-$MODEL_TYPE-adgen \
+       --experiment-name finetune-$MODEL_TYPE-adgen-ptuning \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
        --train-iters 1000 \
@@ -42,10 +42,11 @@ gpt_options=" \
        --eval-iters 10 \
        --eval-batch-size 8 \
        --zero-stage 1 \
-       --lr 0.02 \
+       --lr 0.01 \
        --batch-size 8 \
        --skip-init \
-       --fp16
+       --fp16 \
+       --use_ptuning
 "
 
               

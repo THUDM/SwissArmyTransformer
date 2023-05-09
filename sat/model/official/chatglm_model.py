@@ -182,6 +182,8 @@ class ChatGLMModel(BaseModel):
     def forward(self, input_ids, position_ids=None, attention_mask=None, past_key_values=None, **kwargs):
         if attention_mask is None and position_ids is None:
             attention_mask, position_ids = self.get_inputs(input_ids, attention_mask=attention_mask, position_ids=position_ids, past_key_values=past_key_values, **kwargs)
+        if attention_mask is not None and attention_mask.dtype is torch.bool:
+            attention_mask = (~attention_mask).long()
         if past_key_values is not None:
             input_ids = input_ids[:, -1:]
             position_ids = position_ids[..., -1:]
@@ -198,8 +200,6 @@ class ChatGLMModel(BaseModel):
                     input_ids=input_ids,
                     device=input_ids.device, **kwargs
                 )
-        elif attention_mask.dtype is torch.bool:
-            attention_mask = (~attention_mask).long()
         if position_ids is None:
             MASK, gMASK = self.mask_token_id, self.gmask_token_id
             mask_token = gMASK if gMASK in input_ids else MASK

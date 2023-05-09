@@ -33,9 +33,9 @@ class ChatModel(nn.Module, GenerationMixin):
         self.config = AutoConfig.from_pretrained('THUDM/chatglm-6b', trust_remote_code=True)
         self.generation_config = GenerationConfig.from_model_config(self.config)
         if model is None:
-            self.model, args = AutoModel.from_pretrained("chatglm-6b", args)
+            self.model, self.args = AutoModel.from_pretrained("chatglm-6b", args)
         else:
-            self.model = model
+            self.model, self.args = model, args
         self.device = self.model.parameters().__next__().device
         self.main_input_name = 'input_ids'
     
