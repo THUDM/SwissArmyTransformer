@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 class BeamSearchStrategy:
     def __init__(self, num_beams, length_penalty=1., consider_end=False,
-                end_tokens=[], invalid_slices=[], no_repeat_ngram_size=0, min_tgt_length=0):
+                end_tokens=[], invalid_slices=[], no_repeat_ngram_size=0, min_tgt_length=0, stop_n_iter_unchanged=10):
         self.num_beams = num_beams
         self.length_penalty = length_penalty
         self.end_tokens = end_tokens
@@ -20,6 +20,7 @@ class BeamSearchStrategy:
         self.min_tgt_length = min_tgt_length
         self.invalid_slices = invalid_slices
         self.consider_end = consider_end
+        self.stop_n_iter_unchanged = stop_n_iter_unchanged
         self._init_cache()
 
     def _init_cache(self):
@@ -28,6 +29,7 @@ class BeamSearchStrategy:
         self.cached_beam_scores = 0 # [batch_size]
         self.cached_beam_ngram_bans = [{} for i in range(self.num_beams)]
         self.is_done = False
+        self.end_beams_unchanged = 0
     
     def _add_end_beams(self, score, beam):
         score = score / ((5. + len(beam)) / 6) ** self.length_penalty # Magic number for OpenNMT 
@@ -39,6 +41,12 @@ class BeamSearchStrategy:
 
         self.end_beams = self.end_beams[:self.num_beams]
         self.end_beams_penalized_scores = self.end_beams_penalized_scores[:self.num_beams]
+        if len(self.end_beams) > 1 and i > 0:
+            self.end_beams_unchanged += 1
+            if self.end_beams_unchanged >= self.stop_n_iter_unchanged:
+                self.is_done = True
+        else:
+            self.end_beams_unchanged = 0
 
     def forward(self, logits, tokens, mems):
         batch_size, vocab_size = logits.shape
