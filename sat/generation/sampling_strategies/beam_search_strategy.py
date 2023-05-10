@@ -1,6 +1,6 @@
 # -*- encoding: utf-8 -*-
 '''
-@File    :   base_strategy.py
+@File    :   beam_search_strategy.py
 @Time    :   2021/10/08 22:22:42
 @Author  :   Ming Ding
 @Contact :   dm18@mails.tsinghua.edu.cn
@@ -32,7 +32,8 @@ class BeamSearchStrategy:
         self.end_beams_unchanged = 0
     
     def _add_end_beams(self, score, beam):
-        score = score / ((5. + len(beam)) / 6) ** self.length_penalty # Magic number for OpenNMT 
+        # score = score / ((5. + len(beam)) / 6) ** self.length_penalty # Magic number for OpenNMT 
+        score = score / (1. + len(beam)) ** self.length_penalty
         for i in range(len(self.end_beams), -1, -1):
             if i == 0 or score < self.end_beams_penalized_scores[i-1]:
                 break
@@ -118,8 +119,9 @@ class BeamSearchStrategy:
 
     def finalize(self, tokens, mems):
         if self.consider_end:
-            for i in range(tokens.shape[0]):
-                self._add_end_beams(self.cached_beam_scores[i], tokens[i])
+            if not self.is_done:
+                for i in range(tokens.shape[0]):
+                    self._add_end_beams(self.cached_beam_scores[i], tokens[i])
             mems = None
             ret = self.end_beams
         else:
