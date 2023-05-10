@@ -16,15 +16,26 @@ from tqdm import tqdm
 from filelock import FileLock
 from .urls import MODEL_URLS
 
-def download_with_progress_bar(save_path, url):
-    with requests.get(url, stream=True) as r:
-        r.raise_for_status()
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        with open(save_path, 'wb') as f:
-            pbar = tqdm(total=int(r.headers['Content-Length']), unit_scale=True)
-            for chunk in r.iter_content(chunk_size=32 * 1024):
-                if chunk:  # filter out keep-alive new chunks
-                    f.write(chunk)
+def download_with_progress_bar(save_path, url, chunk_size=2048):
+    resume_header = None
+    file_size_downloaded = 0
+
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    if os.path.exists(save_path):
+        file_size_downloaded = os.path.getsize(save_path)
+        resume_header = {'Range': f'bytes={file_size_downloaded}-'}
+
+    response = requests.get(url, stream=True, headers=resume_header)
+    total_size = int(response.headers.get('content-length', 0)) + file_size_downloaded
+    if total_size == file_size_downloaded:
+        return
+    
+    with open(save_path, 'ab') as file:
+        with tqdm(total=total_size, unit='B', unit_scale=True, desc=save_path, initial=file_size_downloaded) as pbar:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    file.write(chunk)
                     pbar.update(len(chunk))
 
 def auto_create(name, *, path=None, url=None):
@@ -42,7 +53,11 @@ def auto_create(name, *, path=None, url=None):
             if url is None:
                 url = MODEL_URLS[name]
             print(f'Downloading models {url} into {file_path} ...')
-            download_with_progress_bar(file_path, url)
+            try:
+                download_with_progress_bar(file_path, url)
+            except Exception as e:
+                print(f'Failed to download or check, if you already had the zip file, please unzip it manually as {model_path}!')
+                raise e
         # unzip
         if not os.path.isdir(model_path):
             import zipfile

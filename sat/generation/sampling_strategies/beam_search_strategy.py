@@ -12,7 +12,11 @@ import torch.nn.functional as F
 
 class BeamSearchStrategy:
     def __init__(self, num_beams, length_penalty=1., consider_end=False,
-                end_tokens=[], invalid_slices=[], no_repeat_ngram_size=0, min_tgt_length=0, stop_n_iter_unchanged=10):
+                end_tokens=[], invalid_slices=[], no_repeat_ngram_size=0, 
+                min_tgt_length=0,
+                prefer_min_length=5,
+                prefer_max_length=100,
+                stop_n_iter_unchanged=10):
         self.num_beams = num_beams
         self.length_penalty = length_penalty
         self.end_tokens = end_tokens
@@ -21,6 +25,8 @@ class BeamSearchStrategy:
         self.invalid_slices = invalid_slices
         self.consider_end = consider_end
         self.stop_n_iter_unchanged = stop_n_iter_unchanged
+        self.prefer_min_length = prefer_min_length
+        self.prefer_max_length = prefer_max_length
         self._init_cache()
 
     def _init_cache(self):
@@ -33,13 +39,23 @@ class BeamSearchStrategy:
     
     def _add_end_beams(self, score, beam):
         # score = score / ((5. + len(beam)) / 6) ** self.length_penalty # Magic number for OpenNMT 
-        score = score / (1. + len(beam)) ** self.length_penalty
+        # score = float(score) / (1. + len(beam)) ** self.length_penalty
+        # ----
+        trunc_length = min(self.prefer_max_length, len(beam)) + 1
+        if len(beam) >= self.prefer_min_length:
+            adjust_penalty = self.length_penalty
+        else:
+            t = len(beam) / self.prefer_min_length
+            min_penalty = min(0.5, self.length_penalty / 2)
+            adjust_penalty = t * self.length_penalty + (1-t) * min_penalty
+        score = float(score) / trunc_length ** adjust_penalty
+        # ----
+        
         for i in range(len(self.end_beams), -1, -1):
             if i == 0 or score < self.end_beams_penalized_scores[i-1]:
                 break
         self.end_beams.insert(i, beam)
         self.end_beams_penalized_scores.insert(i, score)
-
         self.end_beams = self.end_beams[:self.num_beams]
         self.end_beams_penalized_scores = self.end_beams_penalized_scores[:self.num_beams]
         return (i == 0)
