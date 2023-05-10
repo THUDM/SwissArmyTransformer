@@ -47,7 +47,7 @@ def auto_create(name, *, path=None, url=None):
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     lock = FileLock(file_path + '.lock')
     with lock:
-        if os.path.exists(file_path) or os.path.isdir(model_path):
+        if os.path.isdir(model_path):
             pass
         else:
             if url is None:

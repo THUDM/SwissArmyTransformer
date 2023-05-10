@@ -54,7 +54,7 @@ def extract_model_specific_args_from_model(args, model):
 def save_checkpoint(iteration, model, optimizer,
                     lr_scheduler, args):
     """Save a model checkpoint."""
-    if args.deepspeed:
+    if hasattr(args, 'deepspeed') and args.deepspeed:
         if mpu.get_data_parallel_rank() == 0:
             print('Saving Model...')
             save_ds_checkpoint(iteration, model, lr_scheduler, args)

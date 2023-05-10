@@ -241,10 +241,11 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
         # use parser to parse kwargs
         args = parser.parse_args([])
         for k, v in kwargs.items():
-            if hasattr(args, k):
+            if hasattr(args, k) or k in ['fp16']: # optional args
                 setattr(args, k, v)
             else:
-                raise ValueError(f'Unknown arg {k}.')
+                print(f'warning: Unknown arg {k} for class {cls.__name__}.')
+                setattr(args, k, v)
         return args
 
 class AutoModel():
