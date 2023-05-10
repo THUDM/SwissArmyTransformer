@@ -41,12 +41,7 @@ class BeamSearchStrategy:
 
         self.end_beams = self.end_beams[:self.num_beams]
         self.end_beams_penalized_scores = self.end_beams_penalized_scores[:self.num_beams]
-        if len(self.end_beams) > 1 and i > 0:
-            self.end_beams_unchanged += 1
-            if self.end_beams_unchanged >= self.stop_n_iter_unchanged:
-                self.is_done = True
-        else:
-            self.end_beams_unchanged = 0
+        return (i == 0)
 
     def forward(self, logits, tokens, mems):
         batch_size, vocab_size = logits.shape
@@ -88,10 +83,12 @@ class BeamSearchStrategy:
         scores_continue = []
         bans_continue = []
         mems_contiue = []
+        end_beams_changed = False
         for i in range(len(next_tokens)):
             beam = torch.cat((tokens[next_indices[i]], next_tokens[i:i+1]))
             if int(next_tokens[i]) in self.end_tokens:
-                self._add_end_beams(next_token_scores[i], beam)
+                changed = self._add_end_beams(next_token_scores[i], beam)
+                end_beams_changed = end_beams_changed or changed
             elif len(beam_continue) < self.num_beams:
                 beam_continue.append(beam)
                 mems_contiue.append(mems[:, next_indices[i]])
@@ -109,7 +106,14 @@ class BeamSearchStrategy:
         self.cached_beam_scores = torch.tensor(scores_continue, device=logits.device)
         self.cached_beam_ngram_bans = bans_continue
 
-        # TODO is_done
+        # check if done, this is not a official solution
+        if end_beams_changed:
+            self.end_beams_unchanged = 0
+        elif len(self.end_beams) > 0:
+            self.end_beams_unchanged += 1
+            if self.end_beams_unchanged >= self.stop_n_iter_unchanged:
+                self.is_done = True
+
         return tokens, mems
 
     def finalize(self, tokens, mems):

@@ -69,7 +69,7 @@ def filling_sequence(
     assert len(seq.shape) == 1
     if hasattr(strategy, 'num_beams') and batch_size < strategy.num_beams:
         batch_size = strategy.num_beams
-        print(f'Adjust batch_size to {batch_size} due to num_beams.')
+        print(f'Adjust batch_size to {batch_size} due to num_beams. Mute this warning by setting batch_size == num_beams.')
 
     # building the initial tokens, attention_mask, and position_ids
     context_length = 0
