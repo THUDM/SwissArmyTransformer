@@ -26,7 +26,8 @@ def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-65504):
 
     if top_p > 0.0:
         # convert to 1D
-        logits = logits.view(logits.size()[1]).contiguous()
+        # logits = logits.view(logits.size()[1])
+        logits = logits.contiguous()
         sorted_logits, sorted_indices = torch.sort(logits, descending=True)
         cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
 
@@ -35,10 +36,16 @@ def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-65504):
         # Shift the indices to the right to keep also the first token above the threshold
         sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
         sorted_indices_to_remove[..., 0] = 0
-        indices_to_remove = sorted_indices[sorted_indices_to_remove]
-        logits[indices_to_remove] = filter_value
-        # going back to 2D
-        logits = logits.view(1, -1).contiguous()
+
+        # indices_to_remove = sorted_indices[sorted_indices_to_remove]
+        # logits[indices_to_remove] = filter_value
+        # # going back to 2D
+        # logits = logits.view(1, -1).contiguous()
+
+        batch_size, vocab_size = logits.shape[:2]
+        for i in range(batch_size):
+            indices_to_remove = sorted_indices[i][sorted_indices_to_remove[i]]
+            logits[i][indices_to_remove] = filter_value
 
     return logits
 
