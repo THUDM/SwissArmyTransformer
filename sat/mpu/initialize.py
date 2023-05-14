@@ -19,6 +19,7 @@
 import torch
 
 from .utils import ensure_divisibility
+from sat.helpers import print_rank0
 
 
 # Model parallel group that the current rank belongs to.
@@ -47,7 +48,7 @@ def initialize_model_parallel(model_parallel_size_):
     ranks 8 to 15 belong to the second box.
     """
     if torch.distributed.get_rank() == 0:
-        print('> initializing model parallel with size {}'.format(
+        print_rank0('> initializing model parallel with size {}'.format(
             model_parallel_size_))
     # Get world size and rank. Ensure some consistencies.
     assert torch.distributed.is_initialized()

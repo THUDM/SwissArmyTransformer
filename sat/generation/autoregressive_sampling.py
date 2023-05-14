@@ -13,6 +13,7 @@ import math
 import random
 import torch
 from .sampling_strategies import BaseStrategy
+from sat.helpers import print_rank0
 
 def get_masks_and_position_ids_default(seq):
     tokens = seq.unsqueeze(0)
@@ -69,7 +70,7 @@ def filling_sequence(
     assert len(seq.shape) == 1
     if hasattr(strategy, 'num_beams') and batch_size < strategy.num_beams:
         batch_size = strategy.num_beams
-        print(f'Adjust batch_size to {batch_size} due to num_beams. Mute this warning by setting batch_size == num_beams.')
+        print_rank0(f'Adjust batch_size to {batch_size} due to num_beams. Mute this warning by setting batch_size == num_beams.', level='DEBUG')
 
     # building the initial tokens, attention_mask, and position_ids
     context_length = 0
@@ -135,7 +136,7 @@ def evaluate_perplexity(model, tokens, attention_mask, position_ids, loss_mask, 
         loss_mask = loss_mask.unsqueeze(0).expand(tokens.shape)
     pad_pos = tokens < 0
     if pad_pos.any():
-        print('Find -1 in tokens, automatically ignore them.')
+        print_rank0('Find -1 in tokens, automatically ignore them.', level='DEBUG')
         tokens[pad_pos] = 0
         loss_mask[pad_pos] = 0
 

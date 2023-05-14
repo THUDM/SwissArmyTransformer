@@ -32,13 +32,13 @@ from .model_io import load_checkpoint, save_checkpoint
 from .utils import Timers
 from .utils import report_memory
 from .utils import print_args
-from .utils import print_rank_0
 from .utils import get_sample_writer
 
 from sat import mpu
 from sat.data_utils import make_loaders
-from sat.ops import LayerNorm
+from sat.ops.layernorm import LayerNorm
 from sat.arguments import set_random_seed, initialize_distributed
+from sat.helpers import print_rank0, print_all
 
 def training_main(args, model_cls, forward_step_function, create_dataset_function, handle_metrics_function=None, init_function=None, collate_fn=None, forward_step_eval=None):
     """Main training program."""
@@ -103,9 +103,9 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     summary_writer = None
     if torch.distributed.get_rank() == 0:
         if args.mode == 'pretrain':
-            print('Pretraining or Continuing training the Model...')
+            print_rank0('Pretraining or Continuing training the Model...')
         elif args.mode == 'finetune':
-            print('Finetuning Model...')
+            print_rank0('Finetuning Model...')
         print_args(args)
         summary_writer = get_sample_writer(base=args.summary_dir, name=args.experiment_name, iteration=args.iteration)
 
@@ -118,7 +118,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
                 start_iter_val = (args.train_iters // args.save_interval) * args.eval_interval
                 val_data.batch_sampler.start_iter = start_iter_val % len(val_data)
         else:
-            print('Warning: we cannot resume iterable dataloader. skipping...')
+            print_rank0('Warning: we cannot resume iterable dataloader. skipping...')
 
     # training 
     iteration = 0
@@ -148,7 +148,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
 def get_model(args, model_cls, **kwargs):
     """Build the model."""
 
-    print_rank_0(f'building {model_cls.__name__} model ...')
+    print_rank0(f'building {model_cls.__name__} model ...')
     if 'params_dtype' not in kwargs:
         if hasattr(args, 'fp16') and args.fp16:
             params_dtype = torch.half
@@ -163,7 +163,7 @@ def get_model(args, model_cls, **kwargs):
     model = model_cls(args, params_dtype=params_dtype, **kwargs)
 
     if mpu.get_data_parallel_rank() == 0:
-        print(' > number of parameters on model parallel rank {}: {}'.format(
+        print_all(' > number of parameters on model parallel rank {}: {}'.format(
             mpu.get_model_parallel_rank(),
             sum([p.nelement() for p in model.parameters()])), flush=True)
     
@@ -175,7 +175,7 @@ def get_model(args, model_cls, **kwargs):
     if torch.cuda.is_available():
         model.cuda(torch.cuda.current_device())
     else:
-        print_rank_0('WARNING: No GPU detected, using CPU for inference.')
+        print_rank0('No GPU detected, using CPU for inference.', level='WARNING')
     
     return model
 
@@ -191,7 +191,7 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
     if args.train_data is not None:
         if args.deepspeed:
             from packaging import version
-            print_rank_0("DeepSpeed is enabled.")
+            print_rank0("DeepSpeed is enabled.", level='DEBUG')
             model, optimizer, _, _ = deepspeed.initialize(
                 model=model,
                 model_parameters=param_groups,
@@ -361,7 +361,7 @@ def train(model, optimizer, lr_scheduler,
             torch.distributed.barrier()
             time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             rank = torch.distributed.get_rank()
-            print('rank: {} | time: {} | exiting the program at iteration {}'.
+            print_all('rank: {} | time: {} | exiting the program at iteration {}'.
                   format(rank, time_str, args.iteration), flush=True)
             exit()
 
@@ -400,7 +400,7 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
                 metrics[name].data /= args.world_size
                 loss_checker = loss_checker + metrics[name]
         if loss_checker.isnan().any() or loss_checker.isinf().any():
-            print('Skipping backward and optimizer step for nan or inf in forwarding metrics/loss!')
+            print_all('Skipping backward and optimizer step for nan or inf in forwarding metrics/loss!')
             return lm_loss.detach(), 1, metrics
 
         # Accumulate the statistics
@@ -473,7 +473,7 @@ def evaluate(data_iterator, model, eval_iters, args, timers, split, verbose=Fals
         while iteration < eval_iters:
             iteration += 1
             if verbose and iteration % args.log_interval == 0:
-                print_rank_0('Evaluating iter {}/{}'.format(iteration, eval_iters))
+                print_rank0('Evaluating iter {}/{}'.format(iteration, eval_iters))
             # Forward evaluation.
             # try:
             lm_loss, metrics = forward_step(data_iterator, model, args, timers)
@@ -549,7 +549,7 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
     if args.fp16:
         log_string += ' loss scale {:.1f} |'.format(
             optimizer.cur_scale if args.deepspeed else optimizer.loss_scale)
-    print_rank_0(log_string)
+    print_rank0(log_string)
     if summary_writer is not None:
         summary_writer.add_scalar(f'Train/lr', lr, step)
         summary_writer.add_scalar(f'Train/train_loss', loss, step)
@@ -565,10 +565,10 @@ def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step, avg_metrics
     for key in avg_metrics:
         string += ' {} {:.6E} |'.format(key, avg_metrics[key].item())
     length = len(string) + 1
-    print_rank_0('-' * 100)
-    print_rank_0('-' * length)
-    print_rank_0(string)
-    print_rank_0('-' * length)
+    print_rank0('-' * 100)
+    print_rank0('-' * length)
+    print_rank0(string)
+    print_rank0('-' * length)
     if summary_writer is not None:
         summary_writer.add_scalar(f'Train/valid_ppl', ppl, step)
         summary_writer.add_scalar(f'Train/valid_loss', loss, step)

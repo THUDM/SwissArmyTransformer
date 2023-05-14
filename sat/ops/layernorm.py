@@ -10,5 +10,6 @@ try:
                 return super().forward(x)
             return super().forward(x / (x.abs().max().detach() / 8))
 except ModuleNotFoundError:
-    print('Please install apex to use fused_layer_norm, fall back to torch.nn.LayerNorm')
+    from sat.helpers import print_rank0
+    print_rank0('Please install apex to use fused_layer_norm, fall back to torch.nn.LayerNorm', level='DEBUG')
     from  torch.nn import LayerNorm

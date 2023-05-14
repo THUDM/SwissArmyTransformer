@@ -25,6 +25,8 @@ import numpy as np
 import warnings
 from sat import mpu
 
+import logging
+from sat.helpers import print_all, print_rank0
 
 def add_model_config_args(parser):
     """Model arguments"""
@@ -275,7 +277,7 @@ def _adjust_vocab_size(args):
     while (after % multiple) != 0:
         after += 1
     if args.rank == 0:
-        print('> padded vocab (size: {}) with {} dummy '
+        print_rank0('> padded vocab (size: {}) with {} dummy '
                  'tokens (new size: {})'.format(
         before, after - before, after))
 
@@ -291,9 +293,9 @@ def _simple_init(model_parallel_size=1):
     args.device = args.local_rank
     args.deepspeed = False
     if initialize_distributed(args): # first time init model parallel, print warning
-        warnings.warn(
+        print_rank0(
                   'You are using model-only mode.\n\
-                  For torch.distributed users or loading model parallel models, set environment variables RANK, WORLD_SIZE and LOCAL_RANK.'
+For torch.distributed users or loading model parallel models, set environment variables RANK, WORLD_SIZE and LOCAL_RANK.'
                   )
         return True
     return False
@@ -317,7 +319,7 @@ def get_args(args_list=None, parser=None):
     args = parser.parse_args(args_list)
 
     if not args.train_data:
-        print('WARNING: No training data specified')
+        print_rank0('WARNING: No training data specified')
 
     assert (args.train_iters is None)^(args.epochs is None)
 
@@ -343,7 +345,7 @@ def get_args(args_list=None, parser=None):
 
     # args.model_parallel_size = min(args.model_parallel_size, args.world_size)
     if args.rank == 0:
-        print('using world size: {} and model-parallel size: {} '.format(
+        print_rank0('using world size: {} and model-parallel size: {} '.format(
             args.world_size, args.model_parallel_size))
     if args.vocab_size > 0:
         _adjust_vocab_size(args)
@@ -360,7 +362,7 @@ def get_args(args_list=None, parser=None):
             override_deepspeed_config = False
     if args.zero_stage > 0:
         if args.rank == 0 and not args.fp16:
-            print('Automatically set fp16=True to use ZeRO.')     
+            print_rank0('Automatically set fp16=True to use ZeRO.')     
         args.fp16 = True
         args.bf16 = False
 
@@ -385,7 +387,7 @@ def get_args(args_list=None, parser=None):
             optimizer_params_config["weight_decay"] = args.weight_decay
         else: # override args with values in deepspeed_config
             if args.rank == 0:
-                print('Will override arguments with manually specified deepspeed_config!')
+                print_rank0('Will override arguments with manually specified deepspeed_config!')
             if "fp16" in deepspeed_config and deepspeed_config["fp16"]["enabled"]:
                 args.fp16 = True
             else:
@@ -421,7 +423,7 @@ def update_args_with_file(args, path):
         if k.endswith('_path'): 
             config[k] = os.path.join(folder, config[k])
             if args.rank == 0:
-                print(f'> parsing relative path {k} in model_config as {config[k]}.')
+                print_rank0(f'> parsing relative path {k} in model_config as {config[k]}.')
     args = vars(args)
     for k in list(args.keys()):
         if k in config:

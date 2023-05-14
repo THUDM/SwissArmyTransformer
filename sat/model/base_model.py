@@ -21,6 +21,7 @@ from sat.model.registry import model_registry, MetaModel
 from sat.model.transformer import BaseTransformer, standard_attention
 from sat.arguments import update_args_with_file, overwrite_args_by_dict
 from sat.training.deepspeed_training import load_checkpoint, get_model
+from sat.helpers import print_rank0
 
 from sat.transformer_defaults import HOOKS_DEFAULT
 from sat.resources import auto_create
@@ -244,7 +245,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
             if hasattr(args, k) or k in ['fp16']: # optional args
                 setattr(args, k, v)
             else:
-                print(f'warning: Unknown arg {k} for class {cls.__name__}.')
+                print_rank0(f'warning: Unknown arg {k} for class {cls.__name__}.', level='DEBUG')
                 setattr(args, k, v)
         return args
 

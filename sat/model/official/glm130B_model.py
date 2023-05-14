@@ -16,16 +16,6 @@ torch._C._jit_set_profiling_executor(False)
 torch._C._jit_override_can_fuse_on_cpu(True)
 torch._C._jit_override_can_fuse_on_gpu(True)
 
-try:
-    from apex.transformer.functional import FusedScaleMaskSoftmax
-    from apex.transformer.enums import AttnMaskType
-except ModuleNotFoundError:
-    print(
-        "Please install apex to use FusedScaleMaskSoftmax, otherwise the inference efficiency will be greatly reduced"
-    )
-    FusedScaleMaskSoftmax = None
-
-
 class RotaryEmbeddingMixin(BaseMixin):
     def __init__(
         self,
@@ -167,6 +157,9 @@ class SelfAttentionWithFP32SoftmaxMixin(BaseMixin):
         self.hidden_size_per_attention_head = divide(hidden_size, num_attention_heads)
         self.hidden_size_per_partition = divide(hidden_size, model_parallel_size)
         self.scale_mask_softmax = None
+
+        from sat.ops.scaled_mask_softmax import FusedScaleMaskSoftmax, AttnMaskType
+
         if FusedScaleMaskSoftmax is not None:
             self.scale_mask_softmax = FusedScaleMaskSoftmax(
                 input_in_fp16=True,

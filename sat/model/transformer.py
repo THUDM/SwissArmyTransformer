@@ -30,7 +30,7 @@ from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint
 
 from sat.mpu.utils import divide, sqrt, scaled_init_method, unscaled_init_method, gelu
 from sat.mpu.utils import split_tensor_along_last_dim
-from sat.ops import LayerNorm
+from sat.ops.layernorm import LayerNorm
 
 from sat.transformer_defaults import HOOKS_DEFAULT, standard_attention
 

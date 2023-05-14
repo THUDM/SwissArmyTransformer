@@ -23,7 +23,7 @@ from .samplers import DistributedBatchSampler
 from torch.utils.data import ChainDataset, IterableDataset
 
 from sat import mpu
-    
+from sat.helpers import print_all, print_rank0
 
 def make_data_loader(dataset, batch_size, args, split, collate_fn=None):
 
@@ -96,7 +96,7 @@ def make_data_loader(dataset, batch_size, args, split, collate_fn=None):
 def make_dataset_full(path, split, args, create_dataset_function, 
         dataset_weights=None, random_mapping=True, is_train_data=False, **kwargs):
     """function to create datasets+tokenizers for common options"""
-    print('make dataset ...', path)
+    print_all('make dataset ' + str(path), level='DEBUG')
     assert isinstance(path, list)
 
     if args.iterable_dataset: # cannot indexed

@@ -17,7 +17,7 @@ import json
 import argparse
 
 from sat import mpu
-from .utils import print_rank_0
+from sat.helpers import print_rank0, print_all
 
 def get_checkpoint_name(checkpoints_path, iteration, release=False, zero=False):
     if release:
@@ -56,7 +56,7 @@ def save_checkpoint(iteration, model, optimizer,
     """Save a model checkpoint."""
     if hasattr(args, 'deepspeed') and args.deepspeed:
         if mpu.get_data_parallel_rank() == 0:
-            print('Saving Model...')
+            print_rank0('Saving Model...')
             save_ds_checkpoint(iteration, model, lr_scheduler, args)
     elif args.mode == 'inference':
         os.makedirs(os.path.join(args.save, str(iteration)), exist_ok=True)
@@ -147,7 +147,7 @@ def get_checkpoint_iteration(load_path):
     # Read the tracker file and set the iteration.
     tracker_filename = get_checkpoint_tracker_filename(load_path)
     if not os.path.isfile(tracker_filename):
-        print_rank_0('could not find the metadata file {} '.format(
+        print_rank0('could not find the metadata file {} '.format(
             tracker_filename))
         raise ValueError('could not find the metadata file {}, please check --load'.format(
             tracker_filename))
@@ -161,7 +161,7 @@ def get_checkpoint_iteration(load_path):
         except ValueError:
             release = metastring == 'release'
             if not release:
-                print_rank_0('ERROR: Invalid metadata file {}. Exiting'.format(
+                print_rank0('ERROR: Invalid metadata file {}. Exiting'.format(
                     tracker_filename))
                 exit()
     assert iteration > 0 or release, 'error parsing metadata file {}'.format(
@@ -187,7 +187,7 @@ def load_checkpoint(model, args, load_path=None, prefix=''):
     
     checkpoint_name = get_checkpoint_name(load_path, iteration, release)
     if mpu.get_data_parallel_rank() == 0:
-            print('global rank {} is loading checkpoint {}'.format(
+            print_all('global rank {} is loading checkpoint {}'.format(
                 torch.distributed.get_rank(), checkpoint_name))
     sd = torch.load(checkpoint_name, map_location='cpu')
     new_sd = {'module':{}}
@@ -207,12 +207,12 @@ def load_checkpoint(model, args, load_path=None, prefix=''):
     # only load module, other hyperparameters are just for recording.
     missing_keys, unexpected_keys = module.load_state_dict(sd['module'], strict=False)
     if len(unexpected_keys) > 0:
-        print_rank_0(
+        print_rank0(
             f'Will continue but found unexpected_keys! Check whether you are loading correct checkpoints: {unexpected_keys}.')
     if len(missing_keys) > 0:
         if args.mode == 'inference':
             if 'force_inference' in args and args.force_inference:
-                print(f'Warning: Missing keys for inference: {missing_keys}.')
+                print_rank0(f'Warning: Missing keys for inference: {missing_keys}.')
             else:
                 raise ValueError(f'Missing keys for inference: {missing_keys}.\nIf you still want to inference anyway, pass --force_inference to args.')
         else: # new params
@@ -242,7 +242,7 @@ def load_checkpoint(model, args, load_path=None, prefix=''):
             torch.cuda.set_rng_state(sd['cuda_rng_state'])
             mpu.get_cuda_rng_tracker().set_states(sd['rng_tracker_states'])
         except KeyError:
-            print_rank_0('Unable to load optimizer from checkpoint {}, exiting. '
+            print_rank0('Unable to load optimizer from checkpoint {}, exiting. '
                          'Specify --no-load-rng or --finetune to prevent '
                          'attempting to load the random '
                          'state.'.format(checkpoint_name))
@@ -251,6 +251,6 @@ def load_checkpoint(model, args, load_path=None, prefix=''):
         module.eval()
 
     if mpu.get_data_parallel_rank() == 0:
-        print('  successfully loaded {}'.format(checkpoint_name))
+        print_all('> successfully loaded {}'.format(checkpoint_name))
     del sd
     return iteration
