@@ -96,3 +96,8 @@ model register first try
 # 2023.4.23
 v 0.3.3
 change the fp16 & to cuda order in `get_model`.
+
+# 2023.5.15
+v 0.3.4
+1. add example for nested transformer models
+2. move all print to logging, set `SAT_LOGLEVEL` to control
