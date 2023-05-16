@@ -101,3 +101,8 @@ change the fp16 & to cuda order in `get_model`.
 v 0.3.4
 1. add example for nested transformer models
 2. move all print to logging, set `SAT_LOGLEVEL` to control
+
+# 2023.5.16
+v. 0.3.5
+1. add repetition penalty
+2. add quantization

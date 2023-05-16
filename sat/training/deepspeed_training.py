@@ -172,10 +172,10 @@ def get_model(args, model_cls, **kwargs):
     elif hasattr(args, 'bf16') and args.bf16:
         model.bfloat16()
 
-    if torch.cuda.is_available():
-        model.cuda(torch.cuda.current_device())
-    else:
-        print_rank0('No GPU detected, using CPU for inference.', level='WARNING')
+    try:
+        model = model.to(args.device if hasattr(args, 'device') else 'cuda')
+    except RuntimeError as e:
+        print_all(e)
     
     return model
 

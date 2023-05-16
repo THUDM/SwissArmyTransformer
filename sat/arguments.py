@@ -291,6 +291,8 @@ def _simple_init(model_parallel_size=1):
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
     args.local_rank = int(os.getenv("LOCAL_RANK", '0')) # torchrun
     args.device = args.local_rank
+    if not torch.cuda.is_available():
+        args.device = 'cpu'
     args.deepspeed = False
     if initialize_distributed(args): # first time init model parallel, print warning
         print_rank0(
