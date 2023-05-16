@@ -17,10 +17,12 @@ class BeamSearchStrategy:
                 consider_end=True,
                 end_tokens=[], invalid_slices=[], no_repeat_ngram_size=0, 
                 min_tgt_length=0,
+                repetition_penalty=1.,
                 prefer_min_length=5,
                 prefer_max_length=100,
                 stop_n_iter_unchanged=10):
         self.num_beams = num_beams
+        self.repetition_penalty = repetition_penalty
         self.length_penalty = length_penalty
         self.end_tokens = end_tokens
         self.ngram = no_repeat_ngram_size
@@ -74,7 +76,15 @@ class BeamSearchStrategy:
         seq_len = tokens.shape[-1]
         if self.context_length is None:
             self.context_length = seq_len
+
         logits = logits.float()
+        penalty_mat = torch.ones_like(logits)
+        if tokens.shape[-1]> self.context_length:
+            penalty_mat.scatter_(1, 
+            tokens[:, self.context_length:], torch.ones_like(tokens[:, self.context_length:]).float() * self.repetition_penalty)  
+        penalty_mat *= self.temperature
+        logits = logits.float() / penalty_mat
+
         for invalid_slice in self.invalid_slices:
             logits[..., invalid_slice] = -65504
         if self.min_tgt_length > seq_len:
@@ -86,7 +96,7 @@ class BeamSearchStrategy:
                 for banned_index in self.cached_beam_ngram_bans[i].get(tuple(ngram_prefix), []):
                     logits[i, banned_index] = -65504
         
-        logits = logits / self.temperature
+        # logits = logits / self.temperature
         logits = top_k_logits(logits, self.top_k, self.top_p)
 
         next_token_scores = F.log_softmax(logits, dim=-1) # [batch_size, vocab_size]

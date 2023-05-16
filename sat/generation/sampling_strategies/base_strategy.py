@@ -51,7 +51,8 @@ def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-65504):
 
 
 class BaseStrategy:
-    def __init__(self, invalid_slices=[], temperature=1., top_k=200, eps=1e-4, top_p=0.0, end_tokens=None):
+    def __init__(self, invalid_slices=[], temperature=1., top_k=200, eps=1e-4, top_p=0.0,  repetition_penalty=1., end_tokens=None):
+        self.repetition_penalty = repetition_penalty
         self.invalid_slices = invalid_slices
         self.temperature = temperature
         self.topk = top_k
@@ -61,20 +62,30 @@ class BaseStrategy:
             end_tokens = []
         self.end_tokens = end_tokens
         self._is_done = False
+        self.context_length = None
 
     @property
     def is_done(self) -> bool:
         return self._is_done
 
     def forward(self, logits, tokens, mems, temperature=None):
+        if self.context_length is None:
+            self.context_length = tokens.shape[-1]
         if temperature is None:
             temperature = self.temperature
-        logits = logits / temperature
+        # logits = logits.float() / temperature
+        # apply repetition penalty
+        penalty_mat = torch.ones_like(logits).float()
+        if tokens.shape[-1]> self.context_length:
+            penalty_mat.scatter_(1, 
+            tokens[:, self.context_length:], torch.ones_like(tokens[:, self.context_length:]).float() * self.repetition_penalty)
+        penalty_mat *= temperature
+        logits = logits.float() / penalty_mat
+
         for invalid_slice in self.invalid_slices:
             logits[..., invalid_slice] = -65504
-
         logits = top_k_logits(logits, self.topk, self.top_p)
-        probs = F.softmax(logits.float(), dim=-1)  # float is essetial, due to a bug in Pytorch
+        probs = F.softmax(logits, dim=-1)  # float is essetial, due to a bug in Pytorch
         pred = torch.multinomial(probs, num_samples=1)
         if pred.numel() == 1 and pred.item() in self.end_tokens:
             self._is_done = True
@@ -83,4 +94,5 @@ class BaseStrategy:
 
     def finalize(self, tokens, mems):
         self._is_done = False
+        self.context_length = None
         return tokens, mems
