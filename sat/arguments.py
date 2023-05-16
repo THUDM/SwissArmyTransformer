@@ -18,7 +18,6 @@
 import argparse
 import os
 import torch
-import deepspeed
 import json
 import random
 import numpy as np
@@ -317,6 +316,7 @@ def get_args(args_list=None, parser=None):
     parser = add_text_generate_args(parser)
 
     # Include DeepSpeed configuration arguments
+    import deepspeed
     parser = deepspeed.add_config_arguments(parser)
 
     args = parser.parse_args(args_list)
@@ -496,6 +496,7 @@ def initialize_distributed(args):
     mpu.initialize_model_parallel(args.model_parallel_size)
     # Optional DeepSpeed Activation Checkpointing Features
     if args.deepspeed: 
+        import deepspeed
         deepspeed.init_distributed(
             dist_backend=args.distributed_backend,
             world_size=args.world_size, rank=args.rank, init_method=init_method)
@@ -504,12 +505,13 @@ def initialize_distributed(args):
     else:
         # in model-only mode, we don't want to init deepspeed, but we still need to init the rng tracker for model_parallel, just because we save the seed by default when dropout. 
         try:
+            import deepspeed
             from deepspeed.runtime.activation_checkpointing.checkpointing import _CUDA_RNG_STATE_TRACKER, _MODEL_PARALLEL_RNG_TRACKER_NAME
             _CUDA_RNG_STATE_TRACKER.add(_MODEL_PARALLEL_RNG_TRACKER_NAME, 1) # default seed 1
         except Exception as e:
             from sat.helpers import print_rank0
             print_rank0(str(e), level="DEBUG")
-            
+
 
     return True
 

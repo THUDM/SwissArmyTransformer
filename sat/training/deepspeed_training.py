@@ -37,8 +37,8 @@ from .utils import get_sample_writer
 from sat import mpu
 from sat.data_utils import make_loaders
 from sat.ops.layernorm import LayerNorm
-from sat.arguments import set_random_seed, initialize_distributed
 from sat.helpers import print_rank0, print_all
+from sat.model.base_model import get_model
 
 def training_main(args, model_cls, forward_step_function, create_dataset_function, handle_metrics_function=None, init_function=None, collate_fn=None, forward_step_eval=None):
     """Main training program."""
@@ -144,40 +144,6 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         prefix = 'the end of training for test data'
         test_loss = evaluate_and_print_results(prefix, iter(test_data),
             model, len(test_data) if args.strict_eval else args.eval_iters, args, timers, True, split='test', hooks=hooks)
-
-def get_model(args, model_cls, **kwargs):
-    """Build the model."""
-
-    print_rank0(f'building {model_cls.__name__} model ...')
-    if 'params_dtype' not in kwargs:
-        if hasattr(args, 'fp16') and args.fp16:
-            params_dtype = torch.half
-        elif hasattr(args, 'bf16') and args.bf16:
-            params_dtype = torch.bfloat16
-        else:
-            params_dtype = torch.float32
-    else:
-        # pop params_dtype from kwargs
-        params_dtype = kwargs.pop('params_dtype')
-        
-    model = model_cls(args, params_dtype=params_dtype, **kwargs)
-
-    if mpu.get_data_parallel_rank() == 0:
-        print_all(' > number of parameters on model parallel rank {}: {}'.format(
-            mpu.get_model_parallel_rank(),
-            sum([p.nelement() for p in model.parameters()])), flush=True)
-    
-    if hasattr(args, 'fp16') and args.fp16:
-        model.half()
-    elif hasattr(args, 'bf16') and args.bf16:
-        model.bfloat16()
-
-    try:
-        model = model.to(args.device if hasattr(args, 'device') else 'cuda')
-    except RuntimeError as e:
-        print_all(e)
-    
-    return model
 
 
 def setup_model_untrainable_params_and_optimizer(args, model, config_params=None):
