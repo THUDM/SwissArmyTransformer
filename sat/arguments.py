@@ -334,10 +334,13 @@ def get_args(args_list=None, parser=None):
         args.local_rank = int(os.getenv("LOCAL_RANK", '0')) # torchrun
    
     if args.device == -1: # not set manually
-        args.device = args.rank % torch.cuda.device_count()
-        if args.local_rank is not None:
+        if torch.cuda.device_count() == 0:
+            args.device = 'cpu'
+        elif args.local_rank is not None:
             args.device = args.local_rank
-
+        else:
+            args.device = args.rank % torch.cuda.device_count()
+            
     # local rank should be consistent with device in DeepSpeed
     if args.local_rank != args.device and args.mode != 'inference':
         raise ValueError(

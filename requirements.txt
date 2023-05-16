@@ -5,3 +5,4 @@ tensorboardX
 datasets
 transformers
 cpm_kernels
+einops
