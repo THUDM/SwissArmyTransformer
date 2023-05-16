@@ -294,6 +294,7 @@ def _simple_init(model_parallel_size=1):
     if not torch.cuda.is_available():
         args.device = 'cpu'
     args.deepspeed = False
+        
     if initialize_distributed(args): # first time init model parallel, print warning
         print_rank0(
                   'You are using model-only mode.\n\
@@ -471,7 +472,14 @@ def initialize_distributed(args):
     # Call the init process
     init_method = 'tcp://'
     args.master_ip = os.getenv('MASTER_ADDR', 'localhost')
-    args.master_port = os.getenv('MASTER_PORT', '6000')
+    
+    if args.world_size == 1:
+        from sat.helpers import get_free_port
+        default_master_port = str(get_free_port())
+    else:
+        default_master_port = '6000'
+    args.master_port = os.getenv('MASTER_PORT', default_master_port)
+    print(args.master_port)
     init_method += args.master_ip + ':' + args.master_port
     torch.distributed.init_process_group(
         backend=args.distributed_backend,
