@@ -22,17 +22,13 @@ import torch
 import torch.nn.functional as F
 
 from sat import mpu
-from sat.mpu.initialize import get_model_parallel_world_size
-from sat.mpu.layers import ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding
-from sat.mpu.mappings import gather_from_model_parallel_region, copy_to_model_parallel_region
+from sat.mpu import get_model_parallel_world_size,ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding, gather_from_model_parallel_region, copy_to_model_parallel_region, checkpoint
 
-from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint
 
 from sat.mpu.utils import divide, sqrt, scaled_init_method, unscaled_init_method, gelu
-from sat.mpu.utils import split_tensor_along_last_dim
 from sat.ops.layernorm import LayerNorm
 
-from sat.transformer_defaults import HOOKS_DEFAULT, standard_attention
+from sat.transformer_defaults import HOOKS_DEFAULT, standard_attention, split_tensor_along_last_dim
 
 
 class SelfAttention(torch.nn.Module):

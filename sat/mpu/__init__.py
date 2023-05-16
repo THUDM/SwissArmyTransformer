@@ -40,4 +40,14 @@ from .mappings import gather_from_model_parallel_region
 from .mappings import reduce_from_model_parallel_region
 from .mappings import scatter_to_model_parallel_region
 
-from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint, get_cuda_rng_tracker, model_parallel_cuda_manual_seed
+try:
+    import torch
+    assert torch.cuda.is_available() # or set get_cuda_rng_tracker to None
+    from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint, get_cuda_rng_tracker, model_parallel_cuda_manual_seed
+except Exception as e:
+    from sat.helpers import print_rank0
+    print_rank0(str(e), level="DEBUG")
+    print_rank0("DeepSpeed/CUDA is not installed, fallback to Pytorch checkpointing.", level="INFO")
+    from torch.utils.checkpoint import checkpoint
+    get_cuda_rng_tracker = None
+    model_parallel_cuda_manual_seed = lambda x: None

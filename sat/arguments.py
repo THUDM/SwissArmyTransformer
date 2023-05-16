@@ -284,7 +284,7 @@ def _adjust_vocab_size(args):
 def _simple_init(model_parallel_size=1):
     '''Necessary initialization for torch.distributed for model-only mode'''
     args = argparse.Namespace(
-        distributed_backend='nccl',
+        distributed_backend='nccl' if torch.distributed.is_nccl_available() else 'gloo',
         model_parallel_size=model_parallel_size,
     )
     args.rank = int(os.getenv('RANK', '0'))
@@ -470,8 +470,11 @@ def initialize_distributed(args):
                             'Please carefully make sure the correctness on your own.')
             mpu.initialize_model_parallel(args.model_parallel_size)
         return True
-    # the automatic assignment of devices has been moved to arguments.py 
-    torch.cuda.set_device(args.device)
+    # the automatic assignment of devices has been moved to arguments.py
+    if args.device == 'cpu':
+        pass
+    else:
+        torch.cuda.set_device(args.device)
     # Call the init process
     init_method = 'tcp://'
     args.master_ip = os.getenv('MASTER_ADDR', 'localhost')
@@ -500,9 +503,13 @@ def initialize_distributed(args):
         deepspeed.checkpointing.configure(mpu, deepspeed_config=args.deepspeed_config, num_checkpoints=args.num_layers)
     else:
         # in model-only mode, we don't want to init deepspeed, but we still need to init the rng tracker for model_parallel, just because we save the seed by default when dropout. 
-        from deepspeed.runtime.activation_checkpointing.checkpointing import _CUDA_RNG_STATE_TRACKER, _MODEL_PARALLEL_RNG_TRACKER_NAME
-        _CUDA_RNG_STATE_TRACKER.add(_MODEL_PARALLEL_RNG_TRACKER_NAME, 1) # default seed 1
-
+        try:
+            from deepspeed.runtime.activation_checkpointing.checkpointing import _CUDA_RNG_STATE_TRACKER, _MODEL_PARALLEL_RNG_TRACKER_NAME
+            _CUDA_RNG_STATE_TRACKER.add(_MODEL_PARALLEL_RNG_TRACKER_NAME, 1) # default seed 1
+        except Exception as e:
+            from sat.helpers import print_rank0
+            print_rank0(str(e), level="DEBUG")
+            
 
     return True
 
