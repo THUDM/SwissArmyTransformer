@@ -8,7 +8,7 @@ class RotaryEmbedding(torch.nn.Module):
     def __init__(self, dim, base=10000, precision=torch.half, learnable=False, device=torch.device('cpu')):
         super().__init__()
         inv_freq = 1. / (base ** (torch.arange(0, dim, 2, device=device).float() / dim))
-        inv_freq = inv_freq.half()
+        # inv_freq = inv_freq.half()
         self.learnable = learnable
         if learnable:
             self.inv_freq = torch.nn.Parameter(inv_freq)
@@ -38,9 +38,8 @@ class RotaryEmbedding(torch.nn.Module):
             # [sx, 1 (b * np), hn]
             cos_cached = emb.cos()[:, None, :]
             sin_cached = emb.sin()[:, None, :]
-            if self.precision == torch.bfloat16:
-                cos_cached = cos_cached.bfloat16()
-                sin_cached = sin_cached.bfloat16()
+            cos_cached = cos_cached.to(self.precision)
+            sin_cached = sin_cached.to(self.precision)
             if self.learnable:
                 return cos_cached, sin_cached
             self.cos_cached, self.sin_cached = cos_cached, sin_cached

@@ -315,8 +315,10 @@ def get_model(args, model_cls, **kwargs):
         model.bfloat16()
 
     try:
-        model = model.to(args.device if hasattr(args, 'device') else 'cuda')
-    except RuntimeError as e:
+        if not hasattr(args, 'device'):
+            args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        model = model.to(args.device)
+    except Exception as e:
         print_all(e)
     
     return model

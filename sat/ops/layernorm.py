@@ -12,4 +12,13 @@ try:
 except ModuleNotFoundError:
     from sat.helpers import print_rank0
     print_rank0('Please install apex to use fused_layer_norm, fall back to torch.nn.LayerNorm', level='DEBUG')
-    from  torch.nn import LayerNorm
+    import torch
+    class LayerNorm(torch.nn.LayerNorm):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+        def forward(self, x):
+            # if cpu and float16, calculate in float32 for both x and weight, bias.
+            if str(x.device) == 'cpu' and x.dtype in[torch.float16, torch.bfloat16]:
+                return torch.nn.functional.layer_norm(x.float(), self.normalized_shape, self.weight.float(), self.bias.float()).to(x.dtype)
+            else:
+                return super().forward(x)    

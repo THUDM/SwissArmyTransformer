@@ -10,12 +10,6 @@ from sat.model.base_model import BaseModel, BaseMixin
 from sat.model.position_embedding import RotaryEmbedding
 from sat.model.position_embedding import apply_rotary_pos_emb_index
 
-# flags required to enable jit fusion kernels
-torch._C._jit_set_profiling_mode(False)
-torch._C._jit_set_profiling_executor(False)
-torch._C._jit_override_can_fuse_on_cpu(True)
-torch._C._jit_override_can_fuse_on_gpu(True)
-
 class RotaryEmbeddingMixin(BaseMixin):
     def __init__(
         self,
@@ -330,6 +324,11 @@ class WordEmbedding(BaseMixin):
 
 class GLM130B(BaseModel):
     def __init__(self, args, transformer=None, parallel_output=False):
+        # flags required to enable jit fusion kernels
+        torch._C._jit_set_profiling_mode(False)
+        torch._C._jit_set_profiling_executor(False)
+        torch._C._jit_override_can_fuse_on_cpu(True)
+        torch._C._jit_override_can_fuse_on_gpu(True)
         super().__init__(
             args,
             params_dtype=torch.half if args.fp16 else torch.float,
