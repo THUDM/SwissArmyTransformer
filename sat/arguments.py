@@ -528,5 +528,9 @@ def set_random_seed(seed):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.enabled = True # False
         torch.backends.cuda.matmul.allow_tf32 = False # if set it to True will be much faster but not accurate
-        if deepspeed.checkpointing.is_configured():
-            mpu.model_parallel_cuda_manual_seed(seed)
+        try:
+            import deepspeed
+            if deepspeed.checkpointing.is_configured():
+                mpu.model_parallel_cuda_manual_seed(seed)
+        except ImportError:
+            pass
