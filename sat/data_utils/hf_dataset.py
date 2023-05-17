@@ -7,6 +7,7 @@
 import os
 import datasets
 from datasets import load_dataset
+from sat.helpers import print_rank0
 
 def parse_huggingface_path(path):
     if path.startswith('hf://'):
@@ -31,7 +32,7 @@ def load_hf_dataset(path, process_fn, columns=None, cache_dir='~/.cache/huggingf
         dataset = load_dataset(dataset_name, sub_name, cache_dir=cache_dir, split=split,
         download_config=datasets.utils.DownloadConfig(max_retries=20)) # TODO
         # dataset = dataset.filter(lambda example, indice: indice % 100 == 0, with_indices=True)
-        print(f'> Preprocessing the {dataset_name} by process_fn... Next time will return cached files.\n> Pass "rebuild=True" to load_hf_dataset if change process_fn. Change "transformer_name" for different tokenizers or models.')
+        print_rank0(f'> Preprocessing the {dataset_name} by process_fn... Next time will return cached files.\n> Pass "rebuild=True" to load_hf_dataset if change process_fn. Change "transformer_name" for different tokenizers or models.')
         dataset = dataset.map(process_fn, batched=False, load_from_cache_file=True)
         if dataset_path:
             dataset.save_to_disk(dataset_path)

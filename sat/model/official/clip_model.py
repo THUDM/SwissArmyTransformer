@@ -4,13 +4,12 @@ from re import L
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from sat.model.base_model import BaseMixin, BaseModel, non_conflict
+from sat.model.base_model import BaseMixin, BaseModel, non_conflict, load_checkpoint, get_model
 from sat.model.official.vit_model import ViTModel, ImagePatchEmbeddingMixin
 from sat.model.mixins import BaseMixin
 from sat import mpu
 from sat.model.transformer import LayerNorm
 from sat import update_args_with_file
-from sat.training.deepspeed_training import load_checkpoint, get_model
 from sat.resources import auto_create
 
 """

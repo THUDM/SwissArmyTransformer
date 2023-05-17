@@ -20,7 +20,8 @@ import torch
 from sat import AutoModel
 from transformers import AutoTokenizer
 from sat.model.mixins import CachedAutoregressiveMixin
-from sat.generation.autoregressive_sampling import filling_sequence, evaluate_perplexity, BaseStrategy
+from sat.generation.autoregressive_sampling import filling_sequence, evaluate_perplexity
+from sat.generation.sampling_strategies import BaseStrategy, BeamSearchStrategy
 
 from sat.generation.utils import timed_name, generate_continually
 
@@ -68,7 +69,7 @@ def process_response(response):
 
 def chat(model, tokenizer, 
         query: str, history: List[Tuple[str, str]] = None, 
-        max_length: int = 1024, num_beams=1, top_p=0.7, temperature=0.95):
+        max_length: int = 1024, num_beams=1, top_p=0.7, top_k=0, temperature=0.95):
     if not history:
         history = []
     prompt = ""
@@ -89,6 +90,7 @@ def chat(model, tokenizer,
     )
     # ---------------
     strategy = BaseStrategy(temperature=temperature, top_p=top_p, top_k=0, end_tokens=[tokenizer.eos_token_id])
+    strategy = BeamSearchStrategy(temperature=temperature, top_p=top_p, top_k=0, end_tokens=[tokenizer.eos_token_id], num_beams=num_beams, consider_end=True)
     output = filling_sequence(
         model, seq,
         batch_size=1,
@@ -99,9 +101,9 @@ def chat(model, tokenizer,
     # ---------------
     # port from inference_glm.py, more general than chat mode
     # clip -1s and fill back generated things into seq
-    output_list = output.tolist()
+    output_list = list(output)
     for i in range(len(output_list)):
-        output = output_list[i]
+        output = list(output_list[i])
         try:
             unfinished = output.index(-1)
         except ValueError:
@@ -122,7 +124,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--max_length", type=int, default=2048)
     parser.add_argument("--num_beams", type=int, default=1)
-    parser.add_argument("--top_p", type=float, default=0.7)
+    parser.add_argument("--top_p", type=float, default=0.)
+    parser.add_argument("--top_k", type=int, default=10)
     parser.add_argument("--temperature", type=float, default=0.95)
     args = parser.parse_args()
 
@@ -142,7 +145,7 @@ if __name__ == "__main__":
             query = input(">>> ")
             if query == "exit":
                 break
-            response, history = chat(model, tokenizer, query, history=history, max_length=args.max_length, num_beams=args.num_beams, top_p=args.top_p, temperature=args.temperature)
+            response, history = chat(model, tokenizer, query, history=history, max_length=args.max_length, num_beams=args.num_beams, top_p=args.top_p, temperature=args.temperature, top_k=args.top_k)
             print(response.split('答：')[-1].strip())
 
             

@@ -101,3 +101,55 @@ def list_avail_pretrained():
     print('Available pretrained models (example: sat.AutoModel.from_pretrained("roberta-base")):')
     print_aligned_string_list(model_list)
     return model_list
+
+import logging
+import torch
+
+def configure_logging():
+    logger = logging.getLogger("sat")
+    logger.setLevel(os.environ.get("SAT_LOGLEVEL", "INFO"))
+    if os.environ.get("LOGLEVEL", None) is not None:
+        logger.setLevel(os.environ.get("LOGLEVEL", "INFO"))
+    formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
+
+    # stream handler
+    sh = logging.StreamHandler()
+    logger.setLevel(os.environ.get("SAT_LOGLEVEL", "INFO"))
+    if os.environ.get("LOGLEVEL", None) is not None:
+        logger.setLevel(os.environ.get("LOGLEVEL", "INFO"))
+    sh.setFormatter(formatter)
+    logger.addHandler(sh)
+
+    return logger
+
+logger = configure_logging()
+
+def print_rank0(msg, level=logging.INFO, flush=True):
+    if isinstance(level, str):
+        level = getattr(logging, level.upper())
+    if torch.distributed.is_initialized():
+        msg = f"[RANK {torch.distributed.get_rank()}] {msg}"
+        if torch.distributed.get_rank() == 0:
+            logger.log(level=level, msg=msg)
+            if flush:
+                logger.handlers[0].flush()
+    else:
+        logger.log(level=level, msg=msg)
+
+def print_all(msg, level=logging.INFO, flush=True):
+    if isinstance(level, str):
+        level = getattr(logging, level.upper())
+    if torch.distributed.is_initialized():
+        msg = f"[RANK {torch.distributed.get_rank()}] {msg}"
+    logger.log(level=level, msg=msg)
+    if flush:
+        logger.handlers[0].flush()
+
+
+def get_free_port():
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('localhost', 0))
+        port = s.getsockname()[1]
+    # At this point, the socket is closed, and the port is released
+    return port

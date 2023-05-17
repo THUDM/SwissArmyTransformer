@@ -13,7 +13,7 @@ import math
 import random
 import torch
 
-from sat.training.utils import print_rank_0
+from sat.helpers import print_rank0
 
 
 def get_tokenizer(args=None, *, tokenizer_type=None, outer_tokenizer=None):
@@ -24,7 +24,7 @@ def get_tokenizer(args=None, *, tokenizer_type=None, outer_tokenizer=None):
     if outer_tokenizer is not None: # set 1
         get_tokenizer.tokenizer = outer_tokenizer
         get_tokenizer.tokenizer_type = 'outer_tokenizer'
-        print_rank_0('> Set tokenizer as an outer_tokenizer! Now you can get_tokenizer() everywhere.')
+        print_rank0('> Set tokenizer as an outer_tokenizer! Now you can get_tokenizer() everywhere.')
         return outer_tokenizer
     if tokenizer_type is None:
         if args is None:
@@ -69,17 +69,17 @@ def get_tokenizer(args=None, *, tokenizer_type=None, outer_tokenizer=None):
     #     if tokenizer_type == "hf_T5Tokenizer":
     #         get_tokenizer.tokenizer = HFT5Tokenizer(args.tokenizer_model_type, cache_dir=args.cache_dir)
     else:
-        print_rank_0('Try to load tokenizer from Huggingface transformers...')
+        print_rank0('Try to load tokenizer from Huggingface transformers...')
         os.environ['TOKENIZERS_PARALLELISM'] = 'true'
         from transformers import AutoTokenizer
         try:
             get_tokenizer.tokenizer = AutoTokenizer.from_pretrained(tokenizer_type, trust_remote_code=True)
         except OSError as e:
-            print_rank_0(f'Cannot find {tokenizer_type} from Huggingface or sat. Creating a fake tokenizer...')
+            print_rank0(f'Cannot find {tokenizer_type} from Huggingface or sat. Creating a fake tokenizer...')
             assert args.vocab_size > 0
             get_tokenizer.tokenizer = FakeTokenizer(args.vocab_size)
             return get_tokenizer.tokenizer
-    print_rank_0(f'> Set tokenizer as a {tokenizer_type} tokenizer! Now you can get_tokenizer() everywhere.')
+    print_rank0(f'> Set tokenizer as a {tokenizer_type} tokenizer! Now you can get_tokenizer() everywhere.')
     return get_tokenizer.tokenizer
 
 

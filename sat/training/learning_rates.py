@@ -17,6 +17,8 @@ import torch
 from torch.optim.lr_scheduler import _LRScheduler
 import math
 
+from sat.helpers import print_rank0
+
 
 class AnnealingLR(_LRScheduler):
     """Anneals the learning rate from start to zero along a cosine curve."""
@@ -37,7 +39,7 @@ class AnnealingLR(_LRScheduler):
         self.auto_warmup_rate = auto_warmup_rate
         self.step(self.num_iters)
         if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
-            print(f'learning rate decaying style {self.decay_style}, ratio {self.decay_ratio}')
+            print_rank0(f'learning rate decaying style {self.decay_style}, ratio {self.decay_ratio}')
 
     def get_lr(self):
         if self.num_iters <= self.init_step + self.auto_warmup_steps:

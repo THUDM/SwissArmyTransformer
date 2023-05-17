@@ -91,8 +91,8 @@ class ChatGLMAttnMixin(BaseMixin):
             position_ids[:, 1, :].transpose(0, 1).contiguous()
         q1, k1 = apply_rotary_pos_emb_index(q1, k1, cos, sin, position_ids)
         q2, k2 = apply_rotary_pos_emb_index(q2, k2, cos, sin, block_position_ids)
-        query_layer = torch.concat([q1, q2], dim=(q1.ndim - 1))
-        key_layer = torch.concat([k1, k2], dim=(k1.ndim - 1))
+        query_layer = torch.cat([q1, q2], dim=(q1.ndim - 1))
+        key_layer = torch.cat([k1, k2], dim=(k1.ndim - 1))
 
         if kw_args.get('past_key_values', None) is not None:
             pack = kw_args['past_key_values'][kw_args['layer_id']]
