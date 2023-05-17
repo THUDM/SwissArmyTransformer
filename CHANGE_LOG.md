@@ -106,3 +106,9 @@ v 0.3.4
 v. 0.3.5
 1. add repetition penalty
 2. add quantization
+
+# 2023.5.17
+v. 0.3.6
+support no deepspeed model-only
+test cpu inference
+test windows
