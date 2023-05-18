@@ -14,6 +14,12 @@ import random
 import torch
 import torch.nn.functional as F
 
+def invalid_score_logits_process(scores):
+    if torch.isnan(scores).any():
+        scores.zero_()
+        scores[..., 5] = 5e4
+    return scores    
+
 
 def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-65504):
     # This function has been mostly taken from huggingface conversational ai code at
@@ -86,6 +92,7 @@ class BaseStrategy:
             logits[..., invalid_slice] = -65504
         logits = top_k_logits(logits, self.topk, self.top_p)
         probs = F.softmax(logits, dim=-1)  # float is essetial, due to a bug in Pytorch
+        probs = invalid_score_logits_process(probs)
         pred = torch.multinomial(probs, num_samples=1)
         if pred.numel() == 1 and pred.item() in self.end_tokens:
             self._is_done = True
