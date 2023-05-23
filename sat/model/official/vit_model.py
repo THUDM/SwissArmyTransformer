@@ -40,7 +40,6 @@ class ViTProperty:
 class ImagePatchEmbeddingMixin(BaseMixin):
     def __init__(self, in_channels, hidden_size, property):
         super(ImagePatchEmbeddingMixin, self).__init__()
-        self.property = property
         self.proj = nn.Conv2d(in_channels, hidden_size, kernel_size=property.patch_size, stride=property.patch_size)
 
     def word_embedding_forward(self, input_ids, **kwargs):
@@ -54,45 +53,13 @@ class ImagePatchEmbeddingMixin(BaseMixin):
         images = kwargs["image"]
         embeddings = self.proj(images)
         embeddings = embeddings.flatten(2).transpose(1, 2)
-        pre_word_embeddings = self.transformer.word_embeddings(input_ids[:,:self.property.pre_len])
-        post_word_embeddings = self.transformer.word_embeddings(input_ids[:,self.property.pre_len:self.property.pre_len+self.property.post_len])
+        pre_word_embeddings = self.transformer.word_embeddings(input_ids[:,:self.transformer.property.pre_len])
+        post_word_embeddings = self.transformer.word_embeddings(input_ids[:,self.transformer.property.pre_len:self.transformer.property.pre_len+self.transformer.property.post_len])
         embeddings = torch.cat([pre_word_embeddings, embeddings, post_word_embeddings], dim=1)
         return embeddings
 
 
 class InterpolatedPositionEmbeddingMixin(BaseMixin):
-    def __init__(self, property, init_method_std=0.02):
-        super(InterpolatedPositionEmbeddingMixin, self).__init__()
-        self.property = property
-        self.init_method_std = init_method_std
-
-    def interpolate_pos_encoding(self, height, width):
-        """
-        Adapted from https://github.com/huggingface/transformers/blob/master/src/transformers/models/vit/modeling_vit.py#L79
-        This method allows to interpolate the pre-trained position encodings, to be able to use the model on higher
-        resolution images.
-        Source:
-        https://github.com/facebookresearch/dino/blob/de9ee3df6cf39fac952ab558447af1fa1365362a/vision_transformer.py#L174
-        """
-        pre_pos_embed = self.transformer.position_embeddings.weight[:self.property.pre_len]
-        patch_pos_embed = self.transformer.position_embeddings.weight[self.property.pre_len:self.property.pre_len+self.property.num_patches]
-        post_pos_embed = self.transformer.position_embeddings.weight[self.property.pre_len+self.property.num_patches:]
-        dim = self.transformer.position_embeddings.weight.shape[-1]
-        h0 = height
-        w0 = width
-        # we add a small number to avoid floating point error in the interpolation
-        # see discussion at https://github.com/facebookresearch/dino/issues/8
-        h0, w0 = h0 + 0.1, w0 + 0.1
-        patch_pos_embed = F.interpolate(
-            patch_pos_embed.reshape(1, self.property.grid_size[0], self.property.grid_size[1], dim).permute(0, 3, 1, 2),
-            scale_factor=(h0 / self.property.grid_size[0], w0 / self.property.grid_size[1]),
-            mode="bicubic",
-            align_corners=False,
-        )
-        assert int(h0) == patch_pos_embed.shape[-2] and int(w0) == patch_pos_embed.shape[-1]
-        patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(-1, dim)
-        return torch.cat((pre_pos_embed, patch_pos_embed, post_pos_embed), dim=0)
-    
     def position_embedding_forward(self, position_ids, **kwargs):
         """
         There are two modes for position_embedding:
@@ -112,16 +79,16 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
         """
         assert property is not None
         old_weight = self.transformer.position_embeddings.weight.data
-        pre_weight = old_weight[:self.property.pre_len]
-        post_weight = old_weight[self.property.pre_len+self.property.num_patches:]
-        image_weight = old_weight[self.property.pre_len:self.property.pre_len+self.property.num_patches].reshape(1, self.property.grid_size[0], self.property.grid_size[1], -1).permute(0, 3, 1, 2)
+        pre_weight = old_weight[:self.transformer.property.pre_len]
+        post_weight = old_weight[self.transformer.property.pre_len+self.transformer.property.num_patches:]
+        image_weight = old_weight[self.transformer.property.pre_len:self.transformer.property.pre_len+self.transformer.property.num_patches].reshape(1, self.transformer.property.grid_size[0], self.transformer.property.grid_size[1], -1).permute(0, 3, 1, 2)
         image_weight = F.interpolate(image_weight, size=property.grid_size, mode='bicubic', align_corners=False).permute(0, 2, 3, 1).reshape(property.num_patches, -1)
         self.transformer.position_embeddings = torch.nn.Embedding(property.seq_len, old_weight.shape[1]).type(old_weight.dtype).to(old_weight.device)
-        torch.nn.init.normal_(self.transformer.position_embeddings.weight, mean=0.0, std=self.init_method_std)
-        self.transformer.position_embeddings.weight.data[:self.property.pre_len] = pre_weight
+        torch.nn.init.normal_(self.transformer.position_embeddings.weight, mean=0.0, std=0.02)
+        self.transformer.position_embeddings.weight.data[:self.transformer.property.pre_len] = pre_weight
         self.transformer.position_embeddings.weight.data[property.pre_len:property.pre_len+property.num_patches] = image_weight
-        self.transformer.position_embeddings.weight.data[property.pre_len+property.num_patches:property.pre_len+property.num_patches+self.property.post_len] = post_weight
-        self.property = property
+        self.transformer.position_embeddings.weight.data[property.pre_len+property.num_patches:property.pre_len+property.num_patches+self.transformer.property.post_len] = post_weight
+        self.transformer.property = property
 
 
 class ClsMixin(BaseMixin):
@@ -141,8 +108,9 @@ class ViTModel(BaseModel):
         if 'activation_func' not in kwargs:
             kwargs['activation_func'] = gelu
         super().__init__(args, transformer=transformer, parallel_output=parallel_output, **kwargs)
+        self.transformer.property = property
         self.add_mixin("patch_embedding", ImagePatchEmbeddingMixin(args.in_channels, args.hidden_size, property))
-        self.add_mixin("pos_embedding", InterpolatedPositionEmbeddingMixin(property))
+        self.add_mixin("pos_embedding", InterpolatedPositionEmbeddingMixin())
         self.add_mixin("cls", ClsMixin(args.hidden_size, args.num_classes))
 
     @classmethod

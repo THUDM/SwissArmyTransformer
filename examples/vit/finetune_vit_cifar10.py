@@ -59,7 +59,7 @@ def forward_step(data_iterator, model, args, timers):
 
     timers('batch generator').stop()
 
-    logits, *mems = model(tokens, position_ids, attention_mask, image=images, offline=True) #, offline=False, height=384//16, width=384//16)
+    logits, *mems = model(tokens, position_ids, attention_mask, image=images)
     loss = F.cross_entropy(logits, labels)
     acc = (torch.argmax(logits, dim=-1) == labels).sum() / labels.numel()
     return loss, {'acc': acc}
@@ -68,26 +68,26 @@ def forward_step(data_iterator, model, args, timers):
 def create_dataset_function(path, args):
     transform = transforms.Compose(
         [transforms.ToTensor(),
-         transforms.Resize(384),
+         transforms.Resize(args.finetune_resolution),
          transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     trainset = torchvision.datasets.CIFAR10(root='/'.join(path.split('/')[:-1]), train=(path.split('/')[-1]=='train'),
                                             download=True, transform=transform)
     return trainset
 
 def init_function(args, model):
-    model.get_mixin("pos_embedding").reinit()
+    from sat.model.official.vit_model import ViTProperty
+    old_prop = model.transformer.property
+    new_prop = ViTProperty(args.finetune_resolution, old_prop.patch_size, old_prop.pre_len, old_prop.post_len)
+    model.get_mixin("pos_embedding").reinit(property=new_prop)
 
 if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--old_checkpoint', action="store_true")
-    py_parser.add_argument('--md_type', type=str)
+    py_parser.add_argument('--from_pretrained', type=str)
     # py_parser.add_argument('--prefix_len', type=int, default=16)
     py_parser = ViTFinetuneModel.add_model_specific_args(py_parser)
     known, args_list = py_parser.parse_known_args()
     args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
-    # from sat.training.deepspeed_training import initialize_distributed, set_random_seed
-    # initialize_distributed(args)
-    # set_random_seed(args.seed)
-    model, args = ViTFinetuneModel.from_pretrained(args.md_type, args)
+    model, args = ViTFinetuneModel.from_pretrained(args.from_pretrained, args)
     training_main(args, model_cls=model, forward_step_function=forward_step, create_dataset_function=create_dataset_function, init_function=init_function)

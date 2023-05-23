@@ -1,5 +1,5 @@
 import os
-pretrain_path = '/data/qingsong/pretrain'
+pretrain_path = './'
 
 import timm
 vit = timm.create_model('vit_base_patch16_224_in21k', pretrained=False)
@@ -18,15 +18,15 @@ args = argparse.Namespace(
     patch_size=16,
     pre_len=1,
     post_len=0,
+    layernorm_epsilon=1e-6,
     inner_hidden_size=None,
     hidden_size_per_attention_head=None,
-    checkpoint_activations=True,
-    checkpoint_num_layers=1,
-    sandwich_ln=False,
-    post_ln=False,
+    checkpoint_activations=None,
+    layernorm_order='pre',
+    skip_init=True,
     model_parallel_size=1,
-    world_size=1,
-    rank=0,
     num_classes=21843,
-    load=None
+    tokenizer_type='fake',
+    mode='inference',
+    save='vit-base-patch16-224-in21k'
     )
