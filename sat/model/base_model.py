@@ -20,7 +20,8 @@ from sat.model.registry import model_registry, MetaModel
 
 from sat.model.transformer import BaseTransformer, standard_attention
 from sat.arguments import update_args_with_file, overwrite_args_by_dict
-from sat.training.deepspeed_training import load_checkpoint, get_model
+from sat.training.model_io import load_checkpoint
+from sat.helpers import print_rank0
 
 from sat.transformer_defaults import HOOKS_DEFAULT
 from sat.resources import auto_create
@@ -244,7 +245,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
             if hasattr(args, k) or k in ['fp16']: # optional args
                 setattr(args, k, v)
             else:
-                print(f'warning: Unknown arg {k} for class {cls.__name__}.')
+                print_rank0(f'warning: Unknown arg {k} for class {cls.__name__}.', level='DEBUG')
                 setattr(args, k, v)
         return args
 
@@ -282,3 +283,42 @@ class AutoModel():
         if not build_only:
             load_checkpoint(model, args, load_path=model_path, prefix=prefix)
         return model, args
+    
+def get_model(args, model_cls, **kwargs):
+    """Build the model."""
+    import torch
+    from sat.helpers import print_rank0,print_all
+    from sat import mpu
+
+    print_rank0(f'building {model_cls.__name__} model ...')
+    if 'params_dtype' not in kwargs:
+        if hasattr(args, 'fp16') and args.fp16:
+            params_dtype = torch.half
+        elif hasattr(args, 'bf16') and args.bf16:
+            params_dtype = torch.bfloat16
+        else:
+            params_dtype = torch.float32
+    else:
+        # pop params_dtype from kwargs
+        params_dtype = kwargs.pop('params_dtype')
+        
+    model = model_cls(args, params_dtype=params_dtype, **kwargs)
+
+    if mpu.get_data_parallel_rank() == 0:
+        print_all(' > number of parameters on model parallel rank {}: {}'.format(
+            mpu.get_model_parallel_rank(),
+            sum([p.nelement() for p in model.parameters()])), flush=True)
+    
+    if hasattr(args, 'fp16') and args.fp16:
+        model.half()
+    elif hasattr(args, 'bf16') and args.bf16:
+        model.bfloat16()
+
+    try:
+        if not hasattr(args, 'device'):
+            args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        model = model.to(args.device)
+    except Exception as e:
+        print_all(e)
+    
+    return model

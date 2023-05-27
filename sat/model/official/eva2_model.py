@@ -3,7 +3,7 @@ from sat.model.base_model import BaseModel
 from sat.model.mixins import BaseMixin
 import torch.nn as nn
 from .vit_model import ViTProperty
-from sat.ops import LayerNorm
+from sat.ops.layernorm import LayerNorm
 
 class MaskedPatchEmbedMixin(BaseMixin):
     def __init__(self, in_channels, hidden_size, property):

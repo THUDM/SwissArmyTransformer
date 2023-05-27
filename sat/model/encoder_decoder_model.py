@@ -13,10 +13,9 @@ import math
 import random
 import torch
 import argparse
-from .base_model import BaseModel, BaseMixin
+from .base_model import BaseModel, BaseMixin, load_checkpoint, get_model
 from sat.mpu.mappings import copy_to_model_parallel_region
 from sat import update_args_with_file
-from sat.training.deepspeed_training import load_checkpoint, get_model
 from sat.resources import auto_create
 
 class EncoderFinalMixin(BaseMixin):

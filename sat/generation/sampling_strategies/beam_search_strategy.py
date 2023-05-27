@@ -9,15 +9,20 @@
 # here put the import lib
 import torch
 import torch.nn.functional as F
+from .base_strategy import top_k_logits
 
 class BeamSearchStrategy:
-    def __init__(self, num_beams, length_penalty=1., consider_end=False,
+    def __init__(self, num_beams, length_penalty=1., 
+                temperature=1., top_k=0., top_p=0.0,
+                consider_end=True,
                 end_tokens=[], invalid_slices=[], no_repeat_ngram_size=0, 
                 min_tgt_length=0,
+                repetition_penalty=1.,
                 prefer_min_length=5,
                 prefer_max_length=100,
                 stop_n_iter_unchanged=10):
         self.num_beams = num_beams
+        self.repetition_penalty = repetition_penalty
         self.length_penalty = length_penalty
         self.end_tokens = end_tokens
         self.ngram = no_repeat_ngram_size
@@ -27,6 +32,9 @@ class BeamSearchStrategy:
         self.stop_n_iter_unchanged = stop_n_iter_unchanged
         self.prefer_min_length = prefer_min_length
         self.prefer_max_length = prefer_max_length
+        self.temperature = temperature
+        self.top_k = top_k
+        self.top_p = top_p
         self._init_cache()
 
     def _init_cache(self):
@@ -36,18 +44,20 @@ class BeamSearchStrategy:
         self.cached_beam_ngram_bans = [{} for i in range(self.num_beams)]
         self.is_done = False
         self.end_beams_unchanged = 0
+        self.context_length = None
     
     def _add_end_beams(self, score, beam):
-        # score = score / ((5. + len(beam)) / 6) ** self.length_penalty # Magic number for OpenNMT 
-        # score = float(score) / (1. + len(beam)) ** self.length_penalty
+        gen_length = len(beam) - self.context_length # we usually care about generated length, instead of total length
+        # score = score / ((5. + gen_length) / 6) ** self.length_penalty # Magic number for OpenNMT 
         # ----
-        trunc_length = min(self.prefer_max_length, len(beam)) + 1
-        if len(beam) >= self.prefer_min_length:
+        trunc_length = min(self.prefer_max_length, gen_length) + 1
+        if gen_length >= self.prefer_min_length:
             adjust_penalty = self.length_penalty
         else:
-            t = len(beam) / self.prefer_min_length
+            t = gen_length / self.prefer_min_length
             min_penalty = min(0.5, self.length_penalty / 2)
             adjust_penalty = t * self.length_penalty + (1-t) * min_penalty
+        # print(float(score), trunc_length, adjust_penalty)
         score = float(score) / trunc_length ** adjust_penalty
         # ----
         
@@ -58,12 +68,23 @@ class BeamSearchStrategy:
         self.end_beams_penalized_scores.insert(i, score)
         self.end_beams = self.end_beams[:self.num_beams]
         self.end_beams_penalized_scores = self.end_beams_penalized_scores[:self.num_beams]
+        # print('add end beam', score, i)
         return (i == 0)
 
     def forward(self, logits, tokens, mems):
         batch_size, vocab_size = logits.shape
         seq_len = tokens.shape[-1]
+        if self.context_length is None:
+            self.context_length = seq_len
+
         logits = logits.float()
+        penalty_mat = torch.ones_like(logits)
+        if tokens.shape[-1]> self.context_length:
+            penalty_mat.scatter_(1, 
+            tokens[:, self.context_length:], torch.ones_like(tokens[:, self.context_length:]).float() * self.repetition_penalty)  
+        penalty_mat *= self.temperature
+        logits = logits.float() / penalty_mat
+
         for invalid_slice in self.invalid_slices:
             logits[..., invalid_slice] = -65504
         if self.min_tgt_length > seq_len:
@@ -75,6 +96,9 @@ class BeamSearchStrategy:
                 for banned_index in self.cached_beam_ngram_bans[i].get(tuple(ngram_prefix), []):
                     logits[i, banned_index] = -65504
         
+        # logits = logits / self.temperature
+        logits = top_k_logits(logits, self.top_k, self.top_p)
+
         next_token_scores = F.log_softmax(logits, dim=-1) # [batch_size, vocab_size]
         prev_scores = self.cached_beam_scores
         if isinstance(self.cached_beam_scores, torch.Tensor):
@@ -83,7 +107,7 @@ class BeamSearchStrategy:
         
         next_token_scores = next_token_scores.view(batch_size * vocab_size)
 
-        probs = F.softmax(next_token_scores, dim=0)
+        probs = F.softmax(logits.view(batch_size * vocab_size), dim=0)
         next_tokens = torch.multinomial(probs, 
             num_samples=(max(1,len(self.end_tokens))+1) * self.num_beams) # [2*nb]
         next_token_scores = next_token_scores[next_tokens]

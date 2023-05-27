@@ -8,18 +8,11 @@
 '''
 
 import math
-import copy
 import torch
 import torch.nn.functional as F
 
 from sat import mpu
-from sat.mpu.initialize import get_model_parallel_world_size
-from sat.mpu.layers import ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding
-from sat.mpu.mappings import gather_from_model_parallel_region, copy_to_model_parallel_region
 
-from deepspeed.runtime.activation_checkpointing.checkpointing import checkpoint
-
-from sat.mpu.utils import divide, sqrt, scaled_init_method, unscaled_init_method, gelu
 from sat.mpu.utils import split_tensor_along_last_dim
 
 def standard_attention(query_layer, key_layer, value_layer, attention_mask,

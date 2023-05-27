@@ -18,13 +18,14 @@
 import argparse
 import os
 import torch
-import deepspeed
 import json
 import random
 import numpy as np
 import warnings
 from sat import mpu
 
+import logging
+from sat.helpers import print_all, print_rank0
 
 def add_model_config_args(parser):
     """Model arguments"""
@@ -275,25 +276,28 @@ def _adjust_vocab_size(args):
     while (after % multiple) != 0:
         after += 1
     if args.rank == 0:
-        print('> padded vocab (size: {}) with {} dummy '
+        print_rank0('> padded vocab (size: {}) with {} dummy '
                  'tokens (new size: {})'.format(
         before, after - before, after))
 
 def _simple_init(model_parallel_size=1):
     '''Necessary initialization for torch.distributed for model-only mode'''
     args = argparse.Namespace(
-        distributed_backend='nccl',
+        distributed_backend='nccl' if torch.distributed.is_nccl_available() else 'gloo',
         model_parallel_size=model_parallel_size,
     )
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
     args.local_rank = int(os.getenv("LOCAL_RANK", '0')) # torchrun
     args.device = args.local_rank
+    if not torch.cuda.is_available():
+        args.device = 'cpu'
     args.deepspeed = False
+        
     if initialize_distributed(args): # first time init model parallel, print warning
-        warnings.warn(
+        print_rank0(
                   'You are using model-only mode.\n\
-                  For torch.distributed users or loading model parallel models, set environment variables RANK, WORLD_SIZE and LOCAL_RANK.'
+For torch.distributed users or loading model parallel models, set environment variables RANK, WORLD_SIZE and LOCAL_RANK.'
                   )
         return True
     return False
@@ -312,12 +316,13 @@ def get_args(args_list=None, parser=None):
     parser = add_text_generate_args(parser)
 
     # Include DeepSpeed configuration arguments
+    import deepspeed
     parser = deepspeed.add_config_arguments(parser)
 
     args = parser.parse_args(args_list)
 
     if not args.train_data:
-        print('WARNING: No training data specified')
+        print_rank0('WARNING: No training data specified')
 
     assert (args.train_iters is None)^(args.epochs is None)
 
@@ -329,10 +334,13 @@ def get_args(args_list=None, parser=None):
         args.local_rank = int(os.getenv("LOCAL_RANK", '0')) # torchrun
    
     if args.device == -1: # not set manually
-        args.device = args.rank % torch.cuda.device_count()
-        if args.local_rank is not None:
+        if torch.cuda.device_count() == 0:
+            args.device = 'cpu'
+        elif args.local_rank is not None:
             args.device = args.local_rank
-
+        else:
+            args.device = args.rank % torch.cuda.device_count()
+            
     # local rank should be consistent with device in DeepSpeed
     if args.local_rank != args.device and args.mode != 'inference':
         raise ValueError(
@@ -343,7 +351,7 @@ def get_args(args_list=None, parser=None):
 
     # args.model_parallel_size = min(args.model_parallel_size, args.world_size)
     if args.rank == 0:
-        print('using world size: {} and model-parallel size: {} '.format(
+        print_rank0('using world size: {} and model-parallel size: {} '.format(
             args.world_size, args.model_parallel_size))
     if args.vocab_size > 0:
         _adjust_vocab_size(args)
@@ -360,7 +368,7 @@ def get_args(args_list=None, parser=None):
             override_deepspeed_config = False
     if args.zero_stage > 0:
         if args.rank == 0 and not args.fp16:
-            print('Automatically set fp16=True to use ZeRO.')     
+            print_rank0('Automatically set fp16=True to use ZeRO.')     
         args.fp16 = True
         args.bf16 = False
 
@@ -385,7 +393,7 @@ def get_args(args_list=None, parser=None):
             optimizer_params_config["weight_decay"] = args.weight_decay
         else: # override args with values in deepspeed_config
             if args.rank == 0:
-                print('Will override arguments with manually specified deepspeed_config!')
+                print_rank0('Will override arguments with manually specified deepspeed_config!')
             if "fp16" in deepspeed_config and deepspeed_config["fp16"]["enabled"]:
                 args.fp16 = True
             else:
@@ -420,8 +428,7 @@ def update_args_with_file(args, path):
         # all the relative paths in config are based on the folder
         if k.endswith('_path'): 
             config[k] = os.path.join(folder, config[k])
-            if args.rank == 0:
-                print(f'> parsing relative path {k} in model_config as {config[k]}.')
+            print_rank0(f'> parsing relative path {k} in model_config as {config[k]}.')
     args = vars(args)
     for k in list(args.keys()):
         if k in config:
@@ -462,12 +469,21 @@ def initialize_distributed(args):
                             'Please carefully make sure the correctness on your own.')
             mpu.initialize_model_parallel(args.model_parallel_size)
         return True
-    # the automatic assignment of devices has been moved to arguments.py 
-    torch.cuda.set_device(args.device)
+    # the automatic assignment of devices has been moved to arguments.py
+    if args.device == 'cpu':
+        pass
+    else:
+        torch.cuda.set_device(args.device)
     # Call the init process
     init_method = 'tcp://'
     args.master_ip = os.getenv('MASTER_ADDR', 'localhost')
-    args.master_port = os.getenv('MASTER_PORT', '6000')
+    
+    if args.world_size == 1:
+        from sat.helpers import get_free_port
+        default_master_port = str(get_free_port())
+    else:
+        default_master_port = '6000'
+    args.master_port = os.getenv('MASTER_PORT', default_master_port)
     init_method += args.master_ip + ':' + args.master_port
     torch.distributed.init_process_group(
         backend=args.distributed_backend,
@@ -478,6 +494,7 @@ def initialize_distributed(args):
     mpu.initialize_model_parallel(args.model_parallel_size)
     # Optional DeepSpeed Activation Checkpointing Features
     if args.deepspeed: 
+        import deepspeed
         deepspeed.init_distributed(
             dist_backend=args.distributed_backend,
             world_size=args.world_size, rank=args.rank, init_method=init_method)
@@ -485,8 +502,13 @@ def initialize_distributed(args):
         deepspeed.checkpointing.configure(mpu, deepspeed_config=args.deepspeed_config, num_checkpoints=args.num_layers)
     else:
         # in model-only mode, we don't want to init deepspeed, but we still need to init the rng tracker for model_parallel, just because we save the seed by default when dropout. 
-        from deepspeed.runtime.activation_checkpointing.checkpointing import _CUDA_RNG_STATE_TRACKER, _MODEL_PARALLEL_RNG_TRACKER_NAME
-        _CUDA_RNG_STATE_TRACKER.add(_MODEL_PARALLEL_RNG_TRACKER_NAME, 1) # default seed 1
+        try:
+            import deepspeed
+            from deepspeed.runtime.activation_checkpointing.checkpointing import _CUDA_RNG_STATE_TRACKER, _MODEL_PARALLEL_RNG_TRACKER_NAME
+            _CUDA_RNG_STATE_TRACKER.add(_MODEL_PARALLEL_RNG_TRACKER_NAME, 1) # default seed 1
+        except Exception as e:
+            from sat.helpers import print_rank0
+            print_rank0(str(e), level="DEBUG")
 
 
     return True
@@ -504,5 +526,9 @@ def set_random_seed(seed):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.enabled = True # False
         torch.backends.cuda.matmul.allow_tf32 = False # if set it to True will be much faster but not accurate
-        if deepspeed.checkpointing.is_configured():
-            mpu.model_parallel_cuda_manual_seed(seed)
+        try:
+            import deepspeed
+            if deepspeed.checkpointing.is_configured():
+                mpu.model_parallel_cuda_manual_seed(seed)
+        except ImportError:
+            pass

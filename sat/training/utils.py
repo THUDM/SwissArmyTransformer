@@ -20,6 +20,7 @@ import random
 import time
 import numpy as np
 import torch
+from sat.helpers import print_rank0
 
 from tensorboardX import SummaryWriter
 
@@ -32,21 +33,21 @@ def get_sample_writer(name, base="..", iteration=0):
         log_dir=os.path.join(base, SUMMARY_WRITER_DIR_NAME, name), purge_step=iteration)
 
 
-def print_rank_0(message):
-    if torch.distributed.is_initialized():
-        if torch.distributed.get_rank() == 0:
-            print(message, flush=True)
-    else:
-        print(message, flush=True)
+# def print_rank0(message):
+#     if torch.distributed.is_initialized():
+#         if torch.distributed.get_rank() == 0:
+#             print(message, flush=True)
+#     else:
+#         print(message, flush=True)
 
 
 def print_args(args):
     """Print arguments."""
 
-    print('arguments:', flush=True)
+    print_rank0('arguments:', flush=True)
     for arg in vars(args):
         dots = '.' * (29 - len(arg))
-        print('  {} {} {}'.format(arg, dots, getattr(args, arg)), flush=True)
+        print_rank0('  {} {} {}'.format(arg, dots, getattr(args, arg)), flush=True)
     if args.save_args:
         os.makedirs(os.path.join(args.summary_dir, SUMMARY_WRITER_DIR_NAME), exist_ok=True)
         with open(os.path.join(args.summary_dir, SUMMARY_WRITER_DIR_NAME, args.experiment_name+'.txt'), "w") as f:
@@ -120,7 +121,7 @@ class Timers:
             elapsed_time = self.timers[name].elapsed(
                 reset=reset) * 1000.0 / normalizer
             string += ' | {}: {:.2f}'.format(name, elapsed_time)
-        print_rank_0(string)
+        print_rank0(string)
 
 
 def report_memory(name):
@@ -135,5 +136,5 @@ def report_memory(name):
     string += ' | cached: {}'.format(torch.cuda.memory_reserved() / mega_bytes)
     string += ' | max cached: {}'.format(
         torch.cuda.max_memory_reserved() / mega_bytes)
-    print_rank_0(string)
+    print_rank0(string)
 

@@ -21,7 +21,7 @@ from functools import partial
 
 from sat import mpu, get_args, get_tokenizer
 
-from sat.training import initialize_distributed, set_random_seed
+from sat.arguments import initialize_distributed, set_random_seed
 
 from sat.model import GLMModel
 from sat.model.mixins import CachedAutoregressiveMixin

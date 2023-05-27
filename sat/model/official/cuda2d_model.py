@@ -19,8 +19,7 @@ from sat.model.base_model import BaseModel, BaseMixin
 
 from sat.model.transformer import split_tensor_along_last_dim
 from sat.mpu.utils import sqrt
-from deepspeed.runtime.activation_checkpointing.checkpointing import get_cuda_rng_tracker
-from sat.mpu import ColumnParallelLinear, RowParallelLinear
+from sat.mpu import ColumnParallelLinear, RowParallelLinear, get_cuda_rng_tracker
 from sat.model.transformer import unscaled_init_method
 
 class PositionEmbeddingMixin(BaseMixin):
