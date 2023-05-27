@@ -20,14 +20,14 @@ from utils import batch_filling_sequence, get_masks_and_position_ids_gpt2
 
 
 def main():
-    # CUDA_VISIBLE_DEVICES=0 deepspeed --master_port 16666 inference.py --from_pretrained /zhangpai21/sxx/workspace/slic-hf/checkpoints/finetune-gpt-2-05-27-03-25 --top_k 1
+    # CUDA_VISIBLE_DEVICES=0 deepspeed --master_port 16666 inference.py --from_pretrained /zhangpai21/sxx/workspace/slic-hf/checkpoints/finetune-gpt-2-05-27-11-32 --top_k 1
     # CUDA_VISIBLE_DEVICES=0 deepspeed --master_port 16666 inference.py --from_pretrained gpt2 --top_k 1
     parser = argparse.ArgumentParser()
     parser.add_argument("--max_length", type=int, default=128, help='max length of the total sequence')
     parser.add_argument("--top_p", type=float, default=0.4, help='top p for nucleus sampling')
     parser.add_argument("--top_k", type=int, default=40, help='top k for top k sampling')
     parser.add_argument("--temperature", type=float, default=.7, help='temperature for sampling')
-    parser.add_argument("--from_pretrained", type=str, default="/zhangpai21/sxx/workspace/slic-hf/checkpoints/finetune-gpt-2-05-26-03-17", help='pretrained ckpt')
+    parser.add_argument("--from_pretrained", type=str, default="/zhangpai21/sxx/workspace/slic-hf/checkpoints/finetune-gpt-2-05-27-11-32", help='pretrained ckpt')
     parser.add_argument("--local_rank", type=int, default=0, help='deepspeed local rank')
     args = parser.parse_args()
 
@@ -52,7 +52,7 @@ def main():
 
     strategy = BaseStrategy(temperature=args.temperature, top_k=args.top_k, top_p=args.top_p, end_tokens=[tokenizer.eos_token_id])
     
-    seq = tokenizer("\n\nHuman: Write a quick sort algorithm for me.\n\nAssistant:", return_tensors="pt")["input_ids"].long().cuda()
+    seq = tokenizer("\n\nHuman: How to install windows?\n\nAssistant:", return_tensors="pt")["input_ids"].long().cuda()
 
     output = batch_filling_sequence(model, seq, context_lengths=torch.tensor([seq.shape[1]] * seq.shape[0]), strategy=strategy, get_masks_and_position_ids=partial(get_masks_and_position_ids_gpt2, max_answer_seq_len=args.max_length))[0]
 

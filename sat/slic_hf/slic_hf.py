@@ -135,7 +135,10 @@ def forward_step(data_iterator, model, args, timers):
     
     # we want lower pos_loss, and higher neg_loss. 
     # ref_loss plays a role similar to kl.
-    loss = (1 - para_lambda) * max(para_delta + pos_loss - neg_loss, torch.tensor(0, device=losses.device)) + para_lambda * ref_loss
+    loss = max(para_delta + pos_loss - neg_loss, torch.tensor(0, device=losses.device)) + para_lambda * ref_loss
+    # Maybe could be write like this?
+    # loss = (1 - para_lambda) * max(para_delta + pos_loss - neg_loss, torch.tensor(0, device=losses.device)) + para_lambda * ref_loss
+    # para_lambda value not mentioned in the ori paper.
     return loss, {}
 
 
@@ -164,7 +167,8 @@ class TestDataSet2(dataset.Dataset):
 
 
 def create_slic_dataset_function(path, args, tokenizer):
-    dataset = load_dataset('parquet', data_files="/zhangpai21/sxx/data/rm-static/data/train-00000-of-00001-2a1df75c6bce91ab.parquet")["train"]
+    dataset = load_dataset('parquet', data_files=path)["train"]
+    print(dataset)
     return TestDataSet2(dataset, tokenizer)
 
 
@@ -196,14 +200,14 @@ def collate_fn(samples):
     return batch
 
 
-if __name__ == '__main__':    
+if __name__ == '__main__':
     py_parser = argparse.ArgumentParser(add_help=False)
     py_parser.add_argument('--train-ds-config', type=str, default="ds_config.json")
     py_parser.add_argument('--para_delta', type=float, default=1.0)
     py_parser.add_argument('--para_lambda', type=float, default=0.9)
 
     known, args_list = py_parser.parse_known_args()
-    args = get_args(args_list + '--train-data fake --num-workers 0'.split())
+    args = get_args(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
 
     actor_model, actor_model_args = AutoModel.from_pretrained(name="gpt2", args=args)

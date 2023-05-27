@@ -13,6 +13,7 @@ gpt_options=" \
        --experiment-name finetune-$MODEL_TYPE \
        --model-parallel-size ${MP_SIZE} \
        --mode finetune \
+       --train-data /zhangpai21/sxx/data/rm-static/data/train-00000-of-00001-2a1df75c6bce91ab.parquet\
        --train-iters 2000 \
        --distributed-backend nccl \
        --lr-decay-style cosine \
@@ -23,6 +24,8 @@ gpt_options=" \
        --zero-stage 1 \
        --lr 0.0001 \
        --skip-init \
+       --para_lambda 1.0 \
+       --para_delta 1.0 \
        --fp16
 "
 
