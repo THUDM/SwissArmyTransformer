@@ -75,7 +75,7 @@ def get_batch(data_iterator, args, timers):
             torch.cat([data_b['chosen'].long(), data_b['rejected'].long(), data_b['reference'].long()])
         ],
         dim=-1
-    )[..., :args.max_length]  # TODO
+    )[..., :args.max_sequence_length]  # TODO
 
     loss_mask = torch.cat(
         [
@@ -83,7 +83,7 @@ def get_batch(data_iterator, args, timers):
             torch.cat([data_b['chosen_loss_mask'], data_b['rejected_loss_mask'], data_b['reference_loss_mask']])
         ],
         dim=-1
-    ).float()[..., :args.max_length]
+    ).float()[..., :args.max_sequence_length]
 
     labels = tokens_[:, 1:].contiguous()
     loss_mask = loss_mask[:, 1:].contiguous()
