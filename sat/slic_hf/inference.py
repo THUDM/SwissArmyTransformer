@@ -16,8 +16,10 @@ from sat.model import AutoModel
 from sat.generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
 from sat.generation.autoregressive_sampling import filling_sequence
 
-from utils import batch_filling_sequence, get_masks_and_position_ids_gpt2
+from datasets import load_dataset, Dataset
 
+from utils import batch_filling_sequence, get_masks_and_position_ids_gpt2
+from slic_hf import SLiCDataSet
 
 def main():
     # CUDA_VISIBLE_DEVICES=0 deepspeed --master_port 16666 inference.py --from_pretrained /zhangpai21/sxx/workspace/slic-hf/checkpoints/finetune-gpt-2-05-27-11-32 --top_k 1
@@ -52,12 +54,23 @@ def main():
 
     strategy = BaseStrategy(temperature=args.temperature, top_k=args.top_k, top_p=args.top_p, end_tokens=[tokenizer.eos_token_id])
     
-    seq = tokenizer("\n\nHuman: How to install windows?\n\nAssistant:", return_tensors="pt")["input_ids"].long().cuda()
+    # seq = tokenizer("\n\nHuman: How to install windows?\n\nAssistant:", return_tensors="pt")["input_ids"].long().cuda()
 
-    output = batch_filling_sequence(model, seq, context_lengths=torch.tensor([seq.shape[1]] * seq.shape[0]), strategy=strategy, get_masks_and_position_ids=partial(get_masks_and_position_ids_gpt2, max_answer_seq_len=args.max_length))[0]
+    # output = batch_filling_sequence(model, seq, context_lengths=torch.tensor([seq.shape[1]] * seq.shape[0]), strategy=strategy, get_masks_and_position_ids=partial(get_masks_and_position_ids_gpt2, max_answer_seq_len=args.max_length))[0]
 
-    print(tokenizer.decode(output[0].long().tolist()))
+    # print(tokenizer.decode(output[0].long().tolist()))
 
+    dataset = load_dataset('parquet', data_files="/zhangpai21/sxx/data/rm-static/data/test-00000-of-00001-8c7c51afc6d45980.parquet")
+    print(dataset)
+    slic_dataset = SLiCDataSet(dataset["train"], tokenizer)
+
+    for sample in slic_dataset:
+        # print(sample)
+        seq = sample["prompt"].unsqueeze_(0).cuda()
+        output = batch_filling_sequence(model, seq, context_lengths=torch.tensor([seq.shape[1]] * seq.shape[0]), strategy=strategy, get_masks_and_position_ids=partial(get_masks_and_position_ids_gpt2, max_answer_seq_len=args.max_length))[0]
+        print(tokenizer.decode(output[0].long().tolist()))
+        print("Reference:", tokenizer.decode(sample["reference"].long().tolist()))
+        input()
 
 if __name__ == "__main__":
     main()
