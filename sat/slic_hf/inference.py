@@ -8,6 +8,7 @@ import json
 import torch.nn.functional as F
 
 from functools import partial
+from tqdm import tqdm
 
 from transformers import AutoTokenizer
 from sat.model.mixins import CachedAutoregressiveMixin
@@ -17,6 +18,7 @@ from sat.generation.sampling_strategies import BeamSearchStrategy, BaseStrategy
 from sat.generation.autoregressive_sampling import filling_sequence
 
 from datasets import load_dataset, Dataset
+from torch.utils.data.dataloader import DataLoader
 
 from utils import batch_filling_sequence, get_masks_and_position_ids_gpt2
 from slic_hf import SLiCDataSet
@@ -64,13 +66,33 @@ def main():
     print(dataset)
     slic_dataset = SLiCDataSet(dataset["train"], tokenizer)
 
-    for sample in slic_dataset:
+    results = []
+    cnt = 0
+
+    for sample in tqdm(slic_dataset):  # TODO: batched generation
         # print(sample)
         seq = sample["prompt"].unsqueeze_(0).cuda()
         output = batch_filling_sequence(model, seq, context_lengths=torch.tensor([seq.shape[1]] * seq.shape[0]), strategy=strategy, get_masks_and_position_ids=partial(get_masks_and_position_ids_gpt2, max_answer_seq_len=args.max_length))[0]
-        print(tokenizer.decode(output[0].long().tolist()))
-        print("Reference:", tokenizer.decode(sample["reference"].long().tolist()))
-        input()
+        prompt = tokenizer.decode(seq[0].long().tolist())
+        output_text = tokenizer.decode(output[0][seq.shape[1]:].long().tolist())
+        ref_text = tokenizer.decode(sample["reference"].long().tolist())
+        results.append(
+            {
+                "prompt": prompt,
+                "output": output_text,
+                "reference": ref_text
+            }
+        )
+        # print("================================================================")
+        # print(prompt)
+        # print(output_text)
+        # print(ref_text)
+        # input()
+        cnt += 1
+        if cnt == 100:
+            break
+    with open("results.json", "w", encoding="utf-8") as file:
+        json.dump(results, file, indent=2)
 
 if __name__ == "__main__":
     main()
