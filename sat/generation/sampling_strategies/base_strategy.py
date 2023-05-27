@@ -14,13 +14,6 @@ import random
 import torch
 import torch.nn.functional as F
 
-def invalid_score_logits_process(scores):
-    if torch.isnan(scores).any():
-        scores.zero_()
-        scores[..., 5] = 5e4
-    return scores    
-
-
 def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-65504):
     # This function has been mostly taken from huggingface conversational ai code at
     # https://medium.com/huggingface/how-to-build-a-state-of-the-art-conversational-ai-with-transfer-learning-2d818ac26313
@@ -74,12 +67,16 @@ class BaseStrategy:
     def is_done(self) -> bool:
         return self._is_done
 
-    def forward(self, logits, tokens, mems, temperature=None):
+    def forward(self, logits, tokens, mems, temperature=None, nan_default_token=None):
         if self.context_length is None:
             self.context_length = tokens.shape[-1]
         if temperature is None:
             temperature = self.temperature
-        # logits = logits.float() / temperature
+        if torch.isnan(logits).any():
+            if nan_default_token is None:
+                raise ValueError('nan in logits, set nan_default_token to proceed in BaseStrategy.forward.')
+            logits.fill_(-1000)
+            logits[..., nan_default_token] = 0
         # apply repetition penalty
         penalty_mat = torch.ones_like(logits).float()
         if tokens.shape[-1]> self.context_length:
@@ -92,7 +89,6 @@ class BaseStrategy:
             logits[..., invalid_slice] = -65504
         logits = top_k_logits(logits, self.topk, self.top_p)
         probs = F.softmax(logits, dim=-1)  # float is essetial, due to a bug in Pytorch
-        probs = invalid_score_logits_process(probs)
         pred = torch.multinomial(probs, num_samples=1)
         if pred.numel() == 1 and pred.item() in self.end_tokens:
             self._is_done = True
