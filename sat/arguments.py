@@ -84,6 +84,10 @@ def add_model_config_args(parser):
     # group.add_argument('--sandwich-ln', action='store_true',
     #                     help='add sandwich ln in cogview.')
     
+    # model loading
+    group.add_argument('--to-cuda-before-load', action='store_true',
+                       help='whether call model.cuda() before load_state_dict (default false)')
+    
     return parser
 
 
