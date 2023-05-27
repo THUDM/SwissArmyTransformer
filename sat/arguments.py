@@ -428,8 +428,7 @@ def update_args_with_file(args, path):
         # all the relative paths in config are based on the folder
         if k.endswith('_path'): 
             config[k] = os.path.join(folder, config[k])
-            if args.rank == 0:
-                print_rank0(f'> parsing relative path {k} in model_config as {config[k]}.')
+            print_rank0(f'> parsing relative path {k} in model_config as {config[k]}.')
     args = vars(args)
     for k in list(args.keys()):
         if k in config:
@@ -485,7 +484,6 @@ def initialize_distributed(args):
     else:
         default_master_port = '6000'
     args.master_port = os.getenv('MASTER_PORT', default_master_port)
-    print(args.master_port)
     init_method += args.master_ip + ':' + args.master_port
     torch.distributed.init_process_group(
         backend=args.distributed_backend,
