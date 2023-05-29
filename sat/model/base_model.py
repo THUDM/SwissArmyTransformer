@@ -314,11 +314,12 @@ def get_model(args, model_cls, **kwargs):
     elif hasattr(args, 'bf16') and args.bf16:
         model.bfloat16()
 
-    try:
-        if not hasattr(args, 'device'):
-            args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        model = model.to(args.device)
-    except Exception as e:
-        print_all(e)
+    if args.to_cuda_before_load:
+        try:
+            if not hasattr(args, 'device'):
+                args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            model = model.to(args.device)
+        except Exception as e:
+            print_all(e)
     
     return model

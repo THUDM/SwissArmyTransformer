@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 from sat.model.base_model import BaseMixin
 import math
+from sat.helpers import print_all
+from sat.model.transformer import RowParallelLinear, ColumnParallelLinear
 
 class HackLinear(nn.Linear):
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
@@ -15,6 +17,31 @@ class HackLinear(nn.Linear):
         if prefix + 'bias' in state_dict:
             self.bias.data.copy_(state_dict[prefix+'bias'])
 
+try:
+    from bitsandbytes.nn import LinearNF4
+    def copy_nested_list(src, dst):
+        for i in range(len(dst)):
+            if type(dst[i]) is torch.Tensor:
+                dst[i].copy_(src[i])
+            elif type(dst[i]) is list:
+                copy_nested_list(src[i], dst[i])
+            else:
+                dst[i] = src[i]
+    class HackLinearNF4(LinearNF4):
+        def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
+            if prefix + 'weight' in state_dict:
+                self.weight.data.copy_(state_dict[prefix+'weight'])
+                if self.weight.data.dtype == torch.uint8:
+                    copy_nested_list(state_dict[prefix+'quant_state'], self.weight.quant_state)
+            if prefix + 'bias' in state_dict:
+                self.bias.data.copy_(state_dict[prefix+'bias'])
+        def _save_to_state_dict(self, destination, prefix, keep_vars):
+            super()._save_to_state_dict(destination, prefix, keep_vars)
+            destination[prefix+'quant_state'] = self.weight.quant_state
+except Exception as exception:
+    print_all("Failed to load bitsandbytes:" + str(exception), level='WARNING')
+
+
 class HackParameterList(nn.ParameterList):
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
         for i in range(len(self)):
@@ -22,7 +49,7 @@ class HackParameterList(nn.ParameterList):
                 self[i].data.copy_(state_dict[prefix+str(i)])
 
 class LoraLinear(nn.Module):
-    def __init__(self, in_dim, out_dim, r, lora_alpha=1., lora_dropout=0.):
+    def __init__(self, in_dim, out_dim, r, lora_alpha=1., lora_dropout=0., qlora=False):
         super().__init__()
         if lora_dropout and lora_dropout > 0:
             self.lora_dropout = nn.Dropout(p=lora_dropout)
@@ -31,7 +58,10 @@ class LoraLinear(nn.Module):
         self.r = r
         self.lora_alpha = lora_alpha
         self.scaling = self.lora_alpha / self.r
-        self.original = HackLinear(in_dim, out_dim)
+        if qlora:
+            self.original = HackLinearNF4(in_dim, out_dim)
+        else:
+            self.original = HackLinear(in_dim, out_dim)
         self.matrix_A = nn.Parameter(torch.empty((r, in_dim)))
         self.matrix_B = nn.Parameter(torch.empty((out_dim, r)))
         nn.init.kaiming_uniform_(self.matrix_A, a=math.sqrt(5))
@@ -51,7 +81,7 @@ class LoraLinear(nn.Module):
 
 
 class LoraQKV(nn.Module):
-    def __init__(self, in_dim, out_dim, r, lora_alpha=1., lora_dropout=0., head_first=False, num_attention_heads=None, hidden_size_per_attention_head=None):
+    def __init__(self, in_dim, out_dim, r, lora_alpha=1., lora_dropout=0., head_first=False, num_attention_heads=None, hidden_size_per_attention_head=None, qlora=False):
         """
         You can use safely with this layer, ONLY WHEN query_key_value output is query_key_value order.
         If you use a different order like ChatGLM
@@ -64,7 +94,10 @@ class LoraQKV(nn.Module):
         self.r = r
         self.lora_alpha = lora_alpha
         self.scaling = self.lora_alpha / self.r
-        self.original = HackLinear(in_dim, out_dim)
+        if qlora:
+            self.original = HackLinearNF4(in_dim, out_dim)
+        else:
+            self.original = HackLinear(in_dim, out_dim)
         self.matrix_A = HackParameterList([nn.Parameter(torch.empty((r, in_dim))) for _ in range(3)])
         self.matrix_B = HackParameterList([nn.Parameter(torch.empty((out_dim // 3, r))) for _ in range(3)])
         for i in range(3):
@@ -141,7 +174,8 @@ class LoraMixin(BaseMixin):
                 layer_range = None,
                 head_first = False,
                 num_attention_heads = None,
-                hidden_size_per_attention_head = None):
+                hidden_size_per_attention_head = None,
+                qlora = False):
         super().__init__()
         self.r = r
         self.lora_alpha = lora_alpha
@@ -155,6 +189,7 @@ class LoraMixin(BaseMixin):
         self.head_first = head_first
         self.num_attention_heads = num_attention_heads
         self.hidden_size_per_attention_head = hidden_size_per_attention_head
+        self.qlora = qlora
 
     def reinit(self, parent_model):
         """
@@ -163,8 +198,34 @@ class LoraMixin(BaseMixin):
         """
         for i in self.layer_range:
             print(f'replacing layer {i} with lora')
-            parent_model.transformer.layers[i].attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].attention.dense, LoraLinear, self.r, self.lora_alpha, self.lora_dropout)
-            parent_model.transformer.layers[i].attention.query_key_value = replace_linear_with_lora(parent_model.transformer.layers[i].attention.query_key_value, LoraQKV, self.r, self.lora_alpha, self.lora_dropout, head_first=self.head_first, num_attention_heads=self.num_attention_heads, hidden_size_per_attention_head=self.hidden_size_per_attention_head)
+            parent_model.transformer.layers[i].attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].attention.dense, LoraLinear, self.r, self.lora_alpha, self.lora_dropout, self.qlora)
+            parent_model.transformer.layers[i].attention.query_key_value = replace_linear_with_lora(parent_model.transformer.layers[i].attention.query_key_value, LoraQKV, self.r, self.lora_alpha, self.lora_dropout, head_first=self.head_first, num_attention_heads=self.num_attention_heads, hidden_size_per_attention_head=self.hidden_size_per_attention_head, qlora=self.qlora)
+        if self.qlora:
+            print('replacing chatglm linear layer with 4bit')
+            def replace_linear_with_nf4(model, name=None, cache={}):
+                if type(model) in (nn.Linear, RowParallelLinear, ColumnParallelLinear):
+                    out_dim, in_dim = model.weight.shape
+                    return HackLinearNF4(in_dim, out_dim)
+                names = set()
+                for name, child in model.named_children():
+                    if name not in names:
+                        if child in cache:
+                            new_child = cache[child]
+                        else:
+                            new_child = replace_linear_with_nf4(child, name=name, cache=cache)
+                            cache[child] = new_child
+                        setattr(model, name, new_child)
+                        names.add(name)
+                flag = True
+                while flag:
+                    flag = False
+                    for name, child in model.named_children():
+                        if name not in names:
+                            setattr(model, name, cache[child])
+                            names.add(name)
+                            flag = True
+                return model
+            replace_linear_with_nf4(parent_model.transformer, None, {})
 
     def merge_lora(self):
         for i in self.layer_range:
