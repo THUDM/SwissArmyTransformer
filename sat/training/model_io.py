@@ -253,11 +253,4 @@ def load_checkpoint(model, args, load_path=None, prefix=''):
     if mpu.get_data_parallel_rank() == 0:
         print_all('> successfully loaded {}'.format(checkpoint_name))
     del sd
-    if not args.to_cuda_before_load:
-        try:
-            if not hasattr(args, 'device'):
-                args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            module.to(args.device)
-        except Exception as e:
-            print_all(e)
     return iteration
