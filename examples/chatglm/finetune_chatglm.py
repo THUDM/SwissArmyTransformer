@@ -9,7 +9,7 @@ from sat import mpu, get_args, get_tokenizer
 from sat.training.deepspeed_training import training_main
 from sat.model.official import ChatGLMModel
 from sat.model.finetune import PTuningV2Mixin
-from sat.model.finetune.lora_mixin import LoraMixin
+from sat.model.finetune.lora2 import LoraMixin
 
 class FineTuneModel(ChatGLMModel):
     def __init__(self, args, transformer=None, parallel_output=True, **kw_args):
