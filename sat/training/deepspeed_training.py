@@ -158,9 +158,23 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
         if args.deepspeed:
             from packaging import version
             print_rank0("DeepSpeed is enabled.", level='DEBUG')
+            # checking optimizer
+            optimizer_name = args.deepspeed_config.get('optimizer',{}).get('type', '')
+            if optimizer_name.startswith('sat.'):
+                from importlib import import_module
+                from functools import partial
+                # split and import 
+                optimizer_callable = getattr(import_module(optimizer_name.rsplit('.', maxsplit=1)[0]), optimizer_name.split('.')[-1])
+                optimizer_callable = partial(optimizer_callable, **args.deepspeed_config.get('optimizer', {}).get('params', {}))
+                print_rank0(f'Using optimizer {optimizer_name} from sat.')
+                del args.deepspeed_config['optimizer']
+            else:
+                optimizer_callable = None
+                
             model, optimizer, _, _ = deepspeed.initialize(
                 model=model,
                 model_parameters=param_groups,
+                optimizer=optimizer_callable,
                 args=args,
                 mpu=mpu,
                 dist_init_required=False,

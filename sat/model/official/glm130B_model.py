@@ -152,13 +152,13 @@ class SelfAttentionWithFP32SoftmaxMixin(BaseMixin):
         self.hidden_size_per_partition = divide(hidden_size, model_parallel_size)
         self.scale_mask_softmax = None
 
-        from sat.ops.scaled_mask_softmax import FusedScaleMaskSoftmax, AttnMaskType
+        from sat.ops.scaled_mask_softmax import FusedScaleMaskSoftmax
 
         if FusedScaleMaskSoftmax is not None:
             self.scale_mask_softmax = FusedScaleMaskSoftmax(
                 input_in_fp16=True,
                 input_in_bf16=False,
-                attn_mask_type=AttnMaskType.padding,
+                attn_mask_type=1, # AttnMaskType.padding,
                 scaled_masked_softmax_fusion=True,
                 mask_func=self.attention_mask_func,
                 softmax_in_fp32=True,
