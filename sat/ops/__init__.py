@@ -23,6 +23,7 @@ avaliable_ops = {
     'f_weighting': 'sat.ops.local_attention_function',
     'FusedScaleMaskSoftmax': 'sat.ops.scaled_mask_softmax',
     'FusedEmaAdam': 'sat.ops.fused_ema_adam',
+    'memory_efficient_attention': 'sat.ops.memory_efficient_attention',
 }
 
 for name, path in avaliable_ops.items():
