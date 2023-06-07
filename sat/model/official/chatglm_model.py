@@ -150,6 +150,17 @@ class ChatGLMLayerMixin(BaseMixin):
         
         mlp_input = self.post_attention_layernorm(hidden_states)
 
+        if self.is_decoder:
+            encoder_outputs = kw_args['encoder_outputs']
+            if encoder_outputs is not None:
+                assert 'cross_attention_mask' in kw_args
+                # Cross attention
+                attention_output = self.cross_attention(mlp_input, **kw_args)
+                # Residual connection.
+                hidden_states = mlp_input + attention_output
+                # Layer norm post the cross attention
+                mlp_input = self.post_cross_attention_layernorm(hidden_states)
+
         # MLP.
         mlp_output = self.mlp(mlp_input, **kw_args)
 
