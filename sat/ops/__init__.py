@@ -24,6 +24,7 @@ avaliable_ops = {
     'FusedScaleMaskSoftmax': 'sat.ops.scaled_mask_softmax',
     'FusedEmaAdam': 'sat.ops.fused_ema_adam',
     'memory_efficient_attention': 'sat.ops.memory_efficient_attention',
+    'swiglu': 'sat.ops.swiglu',
 }
 
 for name, path in avaliable_ops.items():
