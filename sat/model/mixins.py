@@ -16,3 +16,4 @@ import torch
 from .base_model import BaseMixin
 from .cached_autoregressive_model import CachedAutoregressiveMixin
 from .finetune import *
+from .attention import *
