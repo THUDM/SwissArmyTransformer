@@ -87,9 +87,11 @@ class FusedEmaAdam(torch.optim.Optimizer):
         # Skip buffer
         self._dummy_overflow_buf = get_accelerator().IntTensor([0])
         self.multi_tensor_ema_adam = fused_ema_adam_cuda.multi_tensor_ema_adam
-        self.register_buffer('ema_decay', torch.tensor(ema_decay, dtype=torch.float32))
-        self.register_buffer('num_updates', torch.tensor(0,dtype=torch.int) if use_num_upates
-                             else torch.tensor(-1,dtype=torch.int))
+        self.ema_decay = ema_decay
+        if use_num_upates:
+            self.num_updates = 0
+        else:
+            self.num_updates = -1
         self.collected_params = []
 
     def zero_grad(self):
