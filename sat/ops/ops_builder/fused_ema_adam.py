@@ -14,10 +14,10 @@ class FusedEmaAdamBuilder(CUDAOpBuilder):
         return f'sat.ops.{self.NAME}_op'
 
     def sources(self):
-        return ['csrc/adam/fused_ema_adam_frontend.cpp', 'csrc/adam/multi_tensor_ema_adam.cu']
+        return ['sat/csrc/adam/fused_ema_adam_frontend.cpp', 'sat/csrc/adam/multi_tensor_ema_adam.cu']
 
     def include_paths(self):
-        return ['csrc/includes', 'csrc/adam']
+        return ['sat/csrc/includes', 'sat/csrc/adam']
 
     def cxx_args(self):
         args = super().cxx_args()

@@ -6,14 +6,14 @@ from sat.ops.ops_builder.fused_ema_adam import FusedEmaAdamBuilder
 
 
 class FusedEmaAdam(torch.optim.Optimizer):
-    """Implements Ema-Adam algorithm.
+    """Ema-Adam algorithm implemented by ZPHZ.
 
     Currently GPU-only.  Requires Apex to be installed via
     ``pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./``.
 
-    This version of fused Adam implements 2 fusions.
+    This version of fused Ema-Adam implements 2 fusions.
 
-      * Fusion of the Adam update's elementwise operations
+      * Fusion of the Ema and Adam update's elementwise operations
       * A multi-tensor apply launch that batches the elementwise updates applied to all the model's parameters into one or a few kernel launches.
 
     :class:`apex.optimizers.FusedAdam` may be used as a drop-in replacement for ``torch.optim.AdamW``,
@@ -34,10 +34,7 @@ class FusedEmaAdam(torch.optim.Optimizer):
     In general, ``opt_level="O1"`` is recommended.
 
 
-    .. warning::
-        A previous version of :class:`FusedAdam` allowed a number of additional arguments to ``step``.  These additional arguments
-        are now deprecated and unnecessary.
-
+    
     Adam was been proposed in `Adam: A Method for Stochastic Optimization`_.
 
     Arguments:
@@ -56,6 +53,8 @@ class FusedEmaAdam(torch.optim.Optimizer):
             True for decoupled weight decay(also known as AdamW) (default: True)
         set_grad_none (bool, optional): whether set grad to None when zero_grad()
             method is called. (default: True)
+        ema_decay (float, optional): decay must be between 0 and 1
+        use_num_updates (boolean, optional): whether to use the use_num_updates
 
     .. _Adam - A Method for Stochastic Optimization:
         https://arxiv.org/abs/1412.6980
