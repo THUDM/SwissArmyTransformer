@@ -1,4 +1,4 @@
-from deepspeed.ops.op_builder.builder import CUDAOpBuilder
+from .builder import CUDAOpBuilder
 
 import sys
 
