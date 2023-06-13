@@ -31,10 +31,10 @@ typedef enum {
 using MATH_T = float;
 
 template <typename T>
-struct AdamFunctor {
+struct EmaAdamFunctor {
     __device__ __forceinline__ void operator()(int chunk_size,
                                                volatile int* noop_gmem,
-                                               TensorListMetadata<4>& tl,
+                                               TensorListMetadata<5>& tl,
                                                const float ema_decay,
                                                const float beta1,
                                                const float beta2,
@@ -119,7 +119,7 @@ struct AdamFunctor {
                     r_p[ii] = r_p[ii] - (lr * update);
 
                 }
-                r_s[ii] = decay * r_s[ii] + (1 - decay) * r_p[ii];
+                r_s[ii] = ema_decay * r_s[ii] + (1 - ema_decay) * r_p[ii];
             }
 #pragma unroll
             for (int ii = 0; ii < ILP; ii++) {
@@ -165,7 +165,7 @@ void multi_tensor_ema_adam_cuda(int chunk_size,
                                                          chunk_size,
                                                          noop_flag,
                                                          tensor_lists,
-                                                         AdamFunctor<scalar_t_0>(),
+                                                         EmaAdamFunctor<scalar_t_0>(),
                                                          ema_decay,
                                                          beta1,
                                                          beta2,

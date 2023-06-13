@@ -3,7 +3,7 @@ from torch.optim import SGD
 from deepspeed.ops.adam.multi_tensor_apply import MultiTensorApply
 from deepspeed.accelerator import get_accelerator
 from sat.ops.ops_builder.fused_ema_adam import FusedEmaAdamBuilder
-
+multi_tensor_applier = MultiTensorApply(2048 * 32)
 
 class FusedEmaAdam(torch.optim.Optimizer):
     """Ema-Adam algorithm implemented by ZPHZ.
