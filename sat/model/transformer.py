@@ -566,7 +566,7 @@ class BaseTransformer(torch.nn.Module):
                         output_this_layer=output_this_layer_obj, output_cross_layer=output_cross_layer_obj
                     )
                 else:
-                    layer_ret = layer(*args, layer_id=torch.tensor(i), **kw_args, **output_cross_layer,
+                    layer_ret = layer(*args, layer_id=torch.tensor(i), **kw_args, position_ids=position_ids, **output_cross_layer,
                         output_this_layer=output_this_layer_obj, output_cross_layer=output_cross_layer_obj)
                 if isinstance(layer_ret, tuple):
                     layer_ret = layer_ret[0] # for legacy API
