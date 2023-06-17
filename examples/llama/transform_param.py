@@ -2,7 +2,7 @@ from transformers import LlamaForCausalLM, LlamaTokenizer, LlamaConfig
 
 config = LlamaConfig.from_pretrained("llama-7b-hf")
 tokenizer = LlamaTokenizer.from_pretrained("llama-7b-hf")
-hugging = LlamaForCausalLM.from_pretrained("llama-7b-hf").eval().cuda()
+hugging = LlamaForCausalLM.from_pretrained("llama-7b-hf").eval().half().cuda()
 
 from sat.model import LLaMAModel
 import torch
