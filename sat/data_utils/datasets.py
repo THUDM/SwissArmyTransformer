@@ -93,7 +93,11 @@ try:
     class ConfiguredResampledShards(ResampledShards):
         def __init__(self, urls, seed, nshards=sys.maxsize, deterministic=True):
             from sat.mpu import get_data_parallel_group
-            worker_seed_sat_this = partial(worker_seed_sat, group=get_data_parallel_group(), seed=seed)
+            try:
+                group = get_data_parallel_group()
+            except AssertionError:
+                group = None
+            worker_seed_sat_this = partial(worker_seed_sat, group=group, seed=seed)
             super().__init__(urls, nshards, worker_seed_sat_this, deterministic)
 
     class SimpleDistributedWebDataset(DataPipeline):
