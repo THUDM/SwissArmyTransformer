@@ -105,7 +105,7 @@ def make_dataset_full(path, split, args, create_dataset_function,
     if args.iterable_dataset: # cannot indexed
         # the random mapping is flexible and efficient, but sometimes we have pratical issue
         # For instance, someone just gives you a iterable dataset, e.g. webdataset
-        from .datasets import ConfiguredResampledShards, DataPipeline
+        from .webds import ConfiguredResampledShards, DataPipeline
         valid_types = (ConfiguredResampledShards, DataPipeline)
         
         assert split[0] == 1, 'Iterable dataset cannot auto split.'
