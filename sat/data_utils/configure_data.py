@@ -46,7 +46,7 @@ def make_data_loader(dataset, batch_size, args, split, collate_fn=None):
             num_workers=args.num_workers,
             pin_memory=True,
             collate_fn=collate_fn,
-            prefatch_factor=args.prefetch_factor,
+            prefetch_factor=args.prefetch_factor,
             )
 
     sampler = torch.utils.data.SequentialSampler(dataset)
@@ -91,7 +91,7 @@ def make_data_loader(dataset, batch_size, args, split, collate_fn=None):
                                               num_workers=args.num_workers,
                                               pin_memory=True,
                                               collate_fn=collate_fn,
-                                              prefatch_factor=args.prefetch_factor,
+                                              prefetch_factor=args.prefetch_factor,
                                               )
     return data_loader
 
