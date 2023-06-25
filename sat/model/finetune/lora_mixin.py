@@ -109,6 +109,28 @@ def replace_linear_with_lora(lin, base_cls, r, *args, **kw_args):
     out_dim, in_dim = lin.weight.shape
     return base_cls(in_dim, out_dim, r, *args, **kw_args)
 
+def merge_linear_lora(lin):
+    out_dim, in_dim = lin.original.weight.shape
+    new_lin = nn.Linear(in_dim, out_dim)
+    new_lin.bias.data = lin.original.bias.data
+    new_lin.weight.data = lin.original.weight.data + (lin.matrix_A.data.T.float() @ lin.matrix_B.data.T.float() * lin.scaling).T.to(lin.original.weight.data.dtype)
+    return new_lin
+
+def merge_qkv_lora(lin):
+    out_dim, in_dim = lin.original.weight.shape
+    new_lin = nn.Linear(in_dim, out_dim)
+    new_lin.bias.data = lin.original.bias.data
+    new_qkv = []
+    for i in range(3):
+        new_qkv.append(lin.matrix_A[i].data.T.float() @ lin.matrix_B[i].data.T.float() * lin.scaling)
+    if lin.head_first:
+        ini_shape = new_qkv[0].shape
+        new_qkv = [x.view(ini_shape[0], lin.num_attention_heads, -1) for x in new_qkv]
+        new_qkv = torch.cat(new_qkv, -1).view(ini_shape[0], 3*ini_shape[1])
+    else:
+        new_qkv = torch.cat(new_qkv, -1)
+    new_lin.weight.data = lin.original.weight.data + new_qkv.T.to(lin.original.weight.data.dtype)
+    return new_lin
 
 class LoraMixin(BaseMixin):
     def __init__(self, 
@@ -140,9 +162,15 @@ class LoraMixin(BaseMixin):
         not supported for cross-attention for now
         """
         for i in self.layer_range:
+            print(f'replacing layer {i} with lora')
             parent_model.transformer.layers[i].attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].attention.dense, LoraLinear, self.r, self.lora_alpha, self.lora_dropout)
             parent_model.transformer.layers[i].attention.query_key_value = replace_linear_with_lora(parent_model.transformer.layers[i].attention.query_key_value, LoraQKV, self.r, self.lora_alpha, self.lora_dropout, head_first=self.head_first, num_attention_heads=self.num_attention_heads, hidden_size_per_attention_head=self.hidden_size_per_attention_head)
 
+    def merge_lora(self):
+        for i in self.layer_range:
+            print(f'merge layer {i} lora back to linear')
+            self.transformer.layers[i].attention.dense = merge_linear_lora(self.transformer.layers[i].attention.dense)
+            self.transformer.layers[i].attention.query_key_value = merge_qkv_lora(self.transformer.layers[i].attention.query_key_value)
 
 if __name__ == '__main__':
     class Model(nn.Module):

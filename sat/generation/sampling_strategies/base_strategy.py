@@ -14,7 +14,6 @@ import random
 import torch
 import torch.nn.functional as F
 
-
 def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-65504):
     # This function has been mostly taken from huggingface conversational ai code at
     # https://medium.com/huggingface/how-to-build-a-state-of-the-art-conversational-ai-with-transfer-learning-2d818ac26313
@@ -68,12 +67,16 @@ class BaseStrategy:
     def is_done(self) -> bool:
         return self._is_done
 
-    def forward(self, logits, tokens, mems, temperature=None):
+    def forward(self, logits, tokens, mems, temperature=None, nan_default_token=None):
         if self.context_length is None:
             self.context_length = tokens.shape[-1]
         if temperature is None:
             temperature = self.temperature
-        # logits = logits.float() / temperature
+        if torch.isnan(logits).any():
+            if nan_default_token is None:
+                raise ValueError('nan in logits, set nan_default_token to proceed in BaseStrategy.forward.')
+            logits.fill_(-1000)
+            logits[..., nan_default_token] = 0
         # apply repetition penalty
         penalty_mat = torch.ones_like(logits).float()
         if tokens.shape[-1]> self.context_length:

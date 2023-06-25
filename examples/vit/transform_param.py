@@ -1,23 +1,11 @@
 """
 Given a config file, transform a pretrained ViTModel.
 """
-import os
+import torch
 from config.vit_base_config import vit, args
 
-import torch
-init_method = 'tcp://'
-master_ip = os.getenv('MASTER_ADDR', '127.0.0.1')
-master_port = os.getenv('MASTER_PORT', '16666')
-init_method += master_ip + ':' + master_port
-torch.distributed.init_process_group(
-        backend='nccl',
-        world_size=args.world_size, rank=args.rank, init_method=init_method)
-
-import sat.mpu as mpu
-mpu.initialize_model_parallel(args.model_parallel_size)
-
 from sat.model.official.vit_model import ViTModel
-model = ViTModel(args, layernorm_epsilon=1e-6)
+model = ViTModel(args)
 
 def copy_layer_param(src, dst):
     """
@@ -72,6 +60,7 @@ def transform_weight(src_model, swiss_model):
     copy_layer_param(src_model.patch_embed.proj, swiss_model.mixins.patch_embedding.proj)
     
 
+from sat.training.model_io import save_checkpoint
 vit.eval()
 model.eval()
 with torch.no_grad():
@@ -82,9 +71,9 @@ with torch.no_grad():
     model = model.cuda()
     encoded_input = {k:v.cuda() for k,v in encoded_input.items()}
     encoded_input['attention_mask'] = None
-    dst_output = model(offline=True, **encoded_input)[0].cpu()
+    dst_output = model(**encoded_input)[0].cpu()
     print("max error:", (src_output - dst_output).abs().max())
     print("max relative error:", ((src_output - dst_output).abs() / torch.max(src_output.abs(), dst_output.abs())).max())
-    torch.save({'module':model.state_dict()}, "output.pt")
+    save_checkpoint(1, model, None, None, args)
 
 breakpoint()
