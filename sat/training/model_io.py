@@ -51,6 +51,42 @@ def extract_model_specific_args_from_model(args, model):
             ret[k] = getattr(args, k)
     return ret
 
+def extract_model_specific_args_to_dump(args, model):
+    module = model.module if hasattr(model, 'module') else model
+    # model_class
+    to_dump = {'model_class': type(module).__name__} 
+    # tokenizer_type
+    if hasattr(args, 'tokenizer_type') and args.tokenizer_type != 'fake':
+        to_dump['tokenizer_type'] = args.tokenizer_type 
+    # architecture related args
+    arch_args_list = ['num_layers', 'hidden_size', 'num_attention_heads', 'vocab_size',
+        'layernorm_order', 'model_parallel_size', 'max_sequence_length',
+        ]
+    for name in arch_args_list: 
+        if hasattr(args, name) and getattr(args, name) is not None:
+            to_dump[name] = getattr(args, name)
+
+    # optional architecture related args, only save if not default
+    # optional means might be changed when loading 
+    optional_arch_args_list = [
+        ('is_decoder', False), 
+        ('cross_attn_hidden_size', None), 
+        ('use_bias', True),
+        ('inner_hidden_size', None),
+        ('hidden_size_per_attention_head', None),
+        ('use_final_layernorm', True),
+        ('layernorm_epsilon', 1e-5),
+    ]
+    if hasattr(module, 'transformer'):
+        for name, default in optional_arch_args_list:
+            if module.transformer.__dict__[name] != default:
+                to_dump[name] = module.transformer.__dict__[name]
+
+    # model specific args
+    model_specific_args = extract_model_specific_args_from_model(args, module)
+    to_dump.update(model_specific_args)
+    return to_dump
+
 def save_checkpoint(iteration, model, optimizer,
                     lr_scheduler, args):
     """Save a model checkpoint."""
@@ -72,40 +108,7 @@ def save_checkpoint(iteration, model, optimizer,
             f.write(str(iteration))
         # save model_config.json for from_pretrained().
         with open(os.path.join(args.save, 'model_config.json'), 'w') as f:
-            module = model.module if hasattr(model, 'module') else model
-            # model_class
-            to_dump = {'model_class': type(module).__name__} 
-            # tokenizer_type
-            if args.tokenizer_type != 'fake':
-                to_dump['tokenizer_type'] = args.tokenizer_type 
-            # architecture related args
-            arch_args_list = ['num_layers', 'hidden_size', 'num_attention_heads', 'vocab_size',
-             'layernorm_order', 'model_parallel_size', 'max_sequence_length',
-             ]
-            for name in arch_args_list: 
-                if hasattr(args, name) and getattr(args, name) is not None:
-                    to_dump[name] = getattr(args, name)
-
-            # optional architecture related args, only save if not default
-            # optional means might be changed when loading 
-            optional_arch_args_list = [
-                ('is_decoder', False), 
-                ('cross_attn_hidden_size', None), 
-                ('use_bias', True),
-                ('inner_hidden_size', None),
-                ('hidden_size_per_attention_head', None),
-                ('use_final_layernorm', True),
-                ('layernorm_epsilon', 1e-5),
-            ]
-            if hasattr(module, 'transformer'):
-                for name, default in optional_arch_args_list:
-                    if module.transformer.__dict__[name] != default:
-                        to_dump[name] = module.transformer.__dict__[name]
-
-            # model specific args
-            model_specific_args = extract_model_specific_args_from_model(args, module)
-            to_dump.update(model_specific_args)
-
+            to_dump = extract_model_specific_args_to_dump(args, model)
             json.dump(to_dump, f, indent=4)
 
     # Wait so everyone is done (not necessary)
