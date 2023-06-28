@@ -6,3 +6,4 @@ datasets
 transformers
 cpm_kernels
 einops
+boto3

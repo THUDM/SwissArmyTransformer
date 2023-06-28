@@ -112,3 +112,8 @@ v. 0.3.6
 support no deepspeed model-only
 test cpu inference
 test windows
+
+# 2023.6.1
+v. 0.3.7
+update vit
+add qlora/lora2
