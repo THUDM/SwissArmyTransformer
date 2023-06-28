@@ -129,6 +129,20 @@ class VocabParallelEmbedding(torch.nn.Module):
         # Reduce across all the model parallel GPUs.
         output = reduce_from_model_parallel_region(output_parallel)
         return output
+    
+    def repartition(self):
+        assert self.num_embeddings_per_partition == self.num_embeddings
+        self.vocab_start_index, self.vocab_end_index = \
+            VocabUtility.vocab_range_from_global_vocab_size(
+                self.num_embeddings, get_model_parallel_rank(),
+                get_model_parallel_world_size())
+        self.num_embeddings_per_partition = self.vocab_end_index - \
+                                            self.vocab_start_index
+        self.original_weight = self.weight
+        self.weight = torch.nn.Parameter(torch.clone(
+            self.weight[self.vocab_start_index:self.vocab_end_index],
+            ).detach())
+        del self.original_weight
 
 
 class ParallelEmbedding(torch.nn.Module):
@@ -206,6 +220,7 @@ class ColumnParallelLinear(torch.nn.Module):
         super(ColumnParallelLinear, self).__init__()
 
         # Keep input parameters
+        self.stride = stride
         self.input_size = input_size
         self.output_size = output_size
         self.gather_output = gather_output
@@ -237,9 +252,12 @@ class ColumnParallelLinear(torch.nn.Module):
                 stride=stride, return_master_weight=keep_master_weight_for_test, module=module, name=name)
 
     def forward(self, input_):
-        # Set up backprop all-reduce.
+        # Set up backprop all-reduce, and don't change the input.
         input_parallel = copy_to_model_parallel_region(input_)
         # Matrix multiply.
+        # input_parallel: [seq_len, input_size]
+        # weight: [output_size // mp_size, input_size]
+        # bias: [output_size // mp_size]
         output_parallel = F.linear(input_parallel, self.weight, self.bias)
         if self.gather_output:
             # All-gather across the partitions.
@@ -247,6 +265,27 @@ class ColumnParallelLinear(torch.nn.Module):
         else:
             output = output_parallel
         return output
+    
+    def repartition(self):
+        assert self.output_size_per_partition == self.output_size
+        self.output_size_per_partition = divide(self.output_size, get_model_parallel_world_size())
+        mp_rank = get_model_parallel_rank()
+        self.original_weight = self.weight
+        # weight is arranged as [stride0...stride1...stride2] * [input_size], extract non-contiguous parts
+        strided_weight = self.weight.view(self.stride, self.output_size // self.stride, self.input_size)
+        self.weight = torch.nn.Parameter(torch.clone(
+                strided_weight[:, mp_rank*self.output_size_per_partition//self.stride
+                            :(mp_rank+1)*self.output_size_per_partition//self.stride, :],
+            ).detach().contiguous().view(self.output_size_per_partition, self.input_size))
+        del self.original_weight
+        if self.bias is not None:
+            self.original_bias = self.bias
+            strided_bias = self.bias.view(self.stride, self.output_size // self.stride)
+            self.bias = torch.nn.Parameter(torch.clone(
+                strided_bias[:, mp_rank*self.output_size_per_partition//self.stride
+                            :(mp_rank+1)*self.output_size_per_partition//self.stride],
+                ).detach().contiguous().view(self.output_size_per_partition))
+            del self.original_bias
 
 
 class RowParallelLinear(torch.nn.Module):
@@ -311,12 +350,14 @@ class RowParallelLinear(torch.nn.Module):
                 stride=stride, return_master_weight=keep_master_weight_for_test, module=module, name=name)
 
     def forward(self, input_):
-        # Set up backprop all-reduce.
+        # Split the input vector along the last dimension.
         if self.input_is_parallel:
             input_parallel = input_
         else:
             input_parallel = scatter_to_model_parallel_region(input_)
         # Matrix multiply.
+        # input_parallel: [seq_len, input_size // mp_size]
+        # weight: [output_size, input_size // mp_size]
         output_parallel = F.linear(input_parallel, self.weight)
         # All-reduce across all the partitions.
         output_ = reduce_from_model_parallel_region(output_parallel)
@@ -326,3 +367,13 @@ class RowParallelLinear(torch.nn.Module):
             output = output_
         return output
 
+    def repartition(self):
+        assert self.input_size_per_partition == self.input_size
+        self.input_size_per_partition = divide(self.input_size, get_model_parallel_world_size())
+        mp_rank = get_model_parallel_rank()
+        self.original_weight = self.weight
+        self.weight = torch.nn.Parameter(torch.clone(
+            self.weight[:, mp_rank*self.input_size_per_partition
+                            :(mp_rank+1)*self.input_size_per_partition],
+            ).detach())
+        del self.original_weight

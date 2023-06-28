@@ -39,7 +39,7 @@ def download_with_progress_bar(save_path, url, chunk_size=2048):
                     file.write(chunk)
                     pbar.update(len(chunk))
 
-def auto_create(name, *, path=None, url=None, ):
+def auto_create(name, *, path=None, url=None):
     if path is None:
         path = os.getenv('SAT_HOME', '~/.sat_models') # TODO Rename
     path = os.path.expanduser(path)
@@ -49,7 +49,7 @@ def auto_create(name, *, path=None, url=None, ):
     with lock:
         if url is None:
                 url = MODEL_URLS[name]
-        if os.path.isdir(model_path) and url.endswith('.zip'):
+        if os.path.isdir(model_path) and not url.startswith('r2://'):
             pass
         else:
             print(f'Downloading models {url} into {path} ...')

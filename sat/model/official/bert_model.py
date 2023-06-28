@@ -45,5 +45,5 @@ class BertModel(BaseModel):
     @classmethod
     def add_model_specific_args(cls, parser):
         group = parser.add_argument_group('BERT', 'BERT Configurations')
-        group.add_argument('--num-types', type=int)
+        group.add_argument('--num-types', type=int, default=2, help='Number of token types')
         return super().add_model_specific_args(parser)

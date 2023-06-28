@@ -45,6 +45,7 @@ class SelfAttention(torch.nn.Module):
         # Per attention head and per partition values.
         world_size = get_model_parallel_world_size()
         self.hidden_size = hidden_size
+        self.num_attention_heads = num_attention_heads
         if hidden_size_per_attention_head is None:
             self.hidden_size_per_attention_head = divide(hidden_size, num_attention_heads)
         else:
@@ -102,6 +103,10 @@ class SelfAttention(torch.nn.Module):
         else:
             return HOOKS_DEFAULT['attention_forward'](self, hidden_states, mask, **kw_args)
 
+    def repartition(self):
+        world_size = get_model_parallel_world_size()
+        self.num_attention_heads_per_partition = divide(self.num_attention_heads, world_size)
+        self.hidden_size_per_partition = self.hidden_size_per_attention_head * self.num_attention_heads_per_partition
 
 class CrossAttention(torch.nn.Module):
     """Parallel cross-attention layer for Transformer"""
@@ -115,9 +120,10 @@ class CrossAttention(torch.nn.Module):
             output_layer_init_method = init_method
         self.hooks = hooks
         self.layer_id = layer_id
+        self.num_attention_heads = num_attention_heads
+        self.hidden_size = hidden_size
         # Per attention head and per partition values.
         world_size = get_model_parallel_world_size()
-        self.hidden_size = hidden_size
         if hidden_size_per_attention_head is None:
             self.hidden_size_per_attention_head = divide(hidden_size, num_attention_heads)
         else:
@@ -169,7 +175,12 @@ class CrossAttention(torch.nn.Module):
             return self.hooks['cross_attention_forward'](hidden_states, cross_attention_mask, encoder_outputs, **kw_args)
         else:
             return HOOKS_DEFAULT['cross_attention_forward'](self, hidden_states, cross_attention_mask, encoder_outputs, **kw_args)
-
+    
+    def repartition(self):
+        world_size = get_model_parallel_world_size()
+        self.num_attention_heads_per_partition = divide(self.num_attention_heads, world_size)
+        self.hidden_size_per_partition = self.hidden_size_per_attention_head * self.num_attention_heads_per_partition
+    
 
 class MLP(torch.nn.Module):
     def __init__(self, hidden_size, output_dropout_prob, init_method, inner_hidden_size=None,

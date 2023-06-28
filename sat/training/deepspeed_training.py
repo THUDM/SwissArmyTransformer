@@ -482,7 +482,7 @@ def evaluate(data_iterator, model, eval_iters, args, timers, split, verbose=Fals
                 torch.distributed.all_gather(metrics_gathered, metrics[name])
 
                 if rank==0:
-                    gathered_len = len(metrics_gathered) if not is_last else len(metrics_gathered) - drop_number
+                    gathered_len = len(metrics_gathered) if not is_last else len(metrics_gathered) - drop_number * args.model_parallel_size
                     for i in range(gathered_len):
                         if is_scalar[name] or not is_last:
                             metrics_total[name].append(metrics_gathered[i].data.cpu())
