@@ -45,7 +45,8 @@ def make_data_loader(dataset, batch_size, args, split, collate_fn=None):
             batch_size=batch_size//world_size,
             num_workers=args.num_workers,
             pin_memory=True,
-            collate_fn=collate_fn
+            collate_fn=collate_fn,
+            prefetch_factor=args.prefetch_factor,
             )
 
     sampler = torch.utils.data.SequentialSampler(dataset)
@@ -89,7 +90,9 @@ def make_data_loader(dataset, batch_size, args, split, collate_fn=None):
                                               batch_sampler=batch_sampler,
                                               num_workers=args.num_workers,
                                               pin_memory=True,
-                                              collate_fn=collate_fn)
+                                              collate_fn=collate_fn,
+                                              prefetch_factor=args.prefetch_factor,
+                                              )
     return data_loader
 
 
@@ -102,7 +105,7 @@ def make_dataset_full(path, split, args, create_dataset_function,
     if args.iterable_dataset: # cannot indexed
         # the random mapping is flexible and efficient, but sometimes we have pratical issue
         # For instance, someone just gives you a iterable dataset, e.g. webdataset
-        from .datasets import ConfiguredResampledShards, DataPipeline
+        from .webds import ConfiguredResampledShards, DataPipeline
         valid_types = (ConfiguredResampledShards, DataPipeline)
         
         assert split[0] == 1, 'Iterable dataset cannot auto split.'
@@ -133,9 +136,9 @@ def make_dataset_full(path, split, args, create_dataset_function,
                 if is_train_data:
                 # only train-dataset will set this to True,
                 # so we enlarge it to make sure that the data is sufficient.
-                    scale = max(200, 1 + (args.train_iters * args.batch_size * world_size) // len(ds))
+                    scale = max(200, 1 + (args.train_iters * args.batch_size * args.gradient_accumulation_steps * world_size) // len(ds))
                 else:
-                    scale = max(200, 1 + ((1 + args.train_iters // args.eval_interval) * args.eval_iters * args.eval_batch_size * world_size) // len(ds))
+                    scale = max(200, 1 + ((1 + args.train_iters // args.eval_interval) * args.eval_iters * args.eval_batch_size * args.gradient_accumulation_steps * world_size) // len(ds))
                 ds = RandomMappingDataset(ds, scale=scale)
         return ds 
     else:

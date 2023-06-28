@@ -84,26 +84,7 @@ class TSVDataset(Dataset):
         return self.process_fn(self.items[index])
 
 try:
-    import webdataset as wds
-    from webdataset import ResampledShards, DataPipeline, tarfile_to_samples
-    from webdataset.utils import pytorch_worker_seed
-    def worker_seed_sat(group=None, seed=0):
-        return pytorch_worker_seed(group=group) + seed * 23
-    
-    class ConfiguredResampledShards(ResampledShards):
-        def __init__(self, urls, seed, nshards=sys.maxsize, deterministic=True):
-            from sat.mpu import get_data_parallel_group
-            worker_seed_sat_this = partial(worker_seed_sat, group=get_data_parallel_group(), seed=seed)
-            super().__init__(urls, nshards, worker_seed_sat_this, deterministic)
-
-    class SimpleDistributedWebDataset(DataPipeline):
-        def __init__(self, path, process_fn, seed, *, shuffle_buffer=1000):
-            super().__init__(
-                ConfiguredResampledShards(path, seed), # Lots of shards are recommended, or not evenly
-                tarfile_to_samples(),
-                wds.shuffle(shuffle_buffer), # set shuffle_buffer = 1 to disable it, TODO model-parallel with different due to shuffle
-                process_fn
-            )
+    from .webds import SimpleDistributedWebDataset, MetaDistributedWebDataset
         
 except ModuleNotFoundError: # webdataset not install, use pip to install
     pass

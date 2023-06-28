@@ -229,6 +229,8 @@ def add_data_args(parser):
     # I have no idea on the reason, and just set the default num-workers to 1.
     group.add_argument('--block-size', type=int, default=10000,
                        help="""Size of block to reduce memory in dataset, ignore it for most users.""")
+    group.add_argument('--prefetch-factor', type=int, default=4, 
+                       help='prefetching number of batches.')
 
     return parser
 
