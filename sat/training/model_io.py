@@ -15,7 +15,8 @@ import torch
 import numpy as np
 import json
 import argparse
-
+from deepspeed import comm as dist
+from deepspeed.runtime.utils import all_gather_dp_groups
 from sat import mpu
 from sat.helpers import print_rank0, print_all
 
@@ -87,6 +88,24 @@ def extract_model_specific_args_to_dump(args, model):
     to_dump.update(model_specific_args)
     return to_dump
 
+
+def update_ema_parameters_to_model(optimizer):
+    """update ema paramters"""
+    for i, (bit16_partitions, fp32_partition) in enumerate(
+                zip(optimizer.parallel_partitioned_bit16_groups, optimizer.single_partition_of_fp32_groups)):
+            ema_optimizer= optimizer.optimizer
+            state = ema_optimizer.state[fp32_partition]
+            partition_id = dist.get_rank(group=optimizer.real_dp_process_group[i])
+            bit16_partitions[partition_id].data.copy_(state['shadow'].data)
+            # print_rank_0(f'update_lp_params {i=} {partition_id=}', force=True)
+            # if i == 0:
+            #     print_rank_0(f'{fp32_partition[:10]=}', force=True)
+
+    all_gather_dp_groups(partitioned_param_groups=optimizer.parallel_partitioned_bit16_groups,
+                             dp_process_group=optimizer.real_dp_process_group,
+                             start_alignment_factor=optimizer.nccl_start_alignment_factor,
+                             allgather_bucket_size=optimizer.allgather_bucket_size)
+
 def save_checkpoint(iteration, model, optimizer,
                     lr_scheduler, args):
     """Save a model checkpoint."""
@@ -94,6 +113,11 @@ def save_checkpoint(iteration, model, optimizer,
         if mpu.get_data_parallel_rank() == 0:
             print_rank0('Saving Model...')
             save_ds_checkpoint(iteration, model, lr_scheduler, args)
+        if optimizer.optimizer.__class__.__name__ ==  "FusedEmaAdam" :
+            update_ema_parameters_to_model(optimizer)
+            if mpu.get_data_parallel_rank() == 0:
+                print_rank0('Saving Ema Model...')
+                save_ds_checkpoint(iteration, model, lr_scheduler, args, True)
     elif args.mode == 'inference':
         os.makedirs(os.path.join(args.save, str(iteration)), exist_ok=True)
         torch.save({'module': model.state_dict()}, os.path.join(args.save, str(iteration), 'mp_rank_00_model_states.pt'))
@@ -115,7 +139,7 @@ def save_checkpoint(iteration, model, optimizer,
     torch.distributed.barrier()
 
 
-def save_ds_checkpoint(iteration, model, lr_scheduler, args):
+def save_ds_checkpoint(iteration, model, lr_scheduler, args, use_ema=False):
     """Save a model checkpoint."""
 
     sd = {}
@@ -128,13 +152,16 @@ def save_ds_checkpoint(iteration, model, lr_scheduler, args):
         sd['np_rng_state'] = np.random.get_state()
         sd['torch_rng_state'] = torch.get_rng_state()
         sd['cuda_rng_state'] = torch.cuda.get_rng_state()
-    save_ds_checkpoint_no_optim(model, args.save, str(iteration), client_state=sd)
+    save_ds_checkpoint_no_optim(model, args.save, str(iteration), use_ema, client_state=sd)
 
 
-def save_ds_checkpoint_no_optim(model, save_dir, tag=None, client_state={}, save_latest=True):
+def save_ds_checkpoint_no_optim(model, save_dir, tag=None, use_ema=False, client_state={}, save_latest=True):
     os.makedirs(save_dir, exist_ok=True)
     # Ensure tag is a string
-    tag = str(tag)
+    if use_ema:
+        tag = str(tag) + "-ema"
+    else:
+        tag = str(tag)
     # Real save via deepspeed
     model._create_checkpoint_file(save_dir, tag, False)
     model._save_checkpoint(save_dir, tag, client_state=client_state)
