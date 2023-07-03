@@ -15,8 +15,6 @@ import torch
 import numpy as np
 import json
 import argparse
-from deepspeed import comm as dist
-from deepspeed.runtime.utils import all_gather_dp_groups
 from sat import mpu
 from sat.helpers import print_rank0, print_all
 
@@ -111,6 +109,8 @@ def save_checkpoint(iteration, model, optimizer,
             print_rank0('Saving Model...')
             save_ds_checkpoint(iteration, model, lr_scheduler, args)
         if optimizer.optimizer.__class__.__name__ ==  "FusedEmaAdam" :
+            from deepspeed import comm as dist
+            from deepspeed.runtime.utils import all_gather_dp_groups
             update_ema_parameters_to_model(optimizer)
             if mpu.get_data_parallel_rank() == 0:
                 print_rank0('Saving Ema Model...')
@@ -136,7 +136,7 @@ def save_checkpoint(iteration, model, optimizer,
     torch.distributed.barrier()
 
 
-def save_ds_checkpoint(iteration, model, lr_scheduler, args, use_ema=False):
+def save_ds_checkpoint(iteration, model, lr_scheduler, args, use_ema = False):
     """Save a model checkpoint."""
 
     sd = {}
@@ -149,16 +149,16 @@ def save_ds_checkpoint(iteration, model, lr_scheduler, args, use_ema=False):
         sd['np_rng_state'] = np.random.get_state()
         sd['torch_rng_state'] = torch.get_rng_state()
         sd['cuda_rng_state'] = torch.cuda.get_rng_state()
-    save_ds_checkpoint_no_optim(model, args.save, str(iteration), use_ema, client_state=sd)
+    if not use_ema:
+        save_ds_checkpoint_no_optim(model, args.save, str(iteration), client_state=sd)
+    else:
+        save_ds_checkpoint_no_optim(model, args.save, str(iteration)+'-ema', client_state=sd)
 
 
-def save_ds_checkpoint_no_optim(model, save_dir, tag=None, use_ema=False, client_state={}, save_latest=True):
+def save_ds_checkpoint_no_optim(model, save_dir, tag=None, client_state={}, save_latest=True):
     os.makedirs(save_dir, exist_ok=True)
     # Ensure tag is a string
-    if use_ema:
-        tag = str(tag) + "-ema"
-    else:
-        tag = str(tag)
+    tag = str(tag)
     # Real save via deepspeed
     model._create_checkpoint_file(save_dir, tag, False)
     model._save_checkpoint(save_dir, tag, client_state=client_state)
