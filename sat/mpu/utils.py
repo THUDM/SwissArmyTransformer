@@ -37,14 +37,22 @@ def split_tensor_along_last_dim(tensor, num_partitions,
     Arguments:
         tensor: input tensor.
         num_partitions: number of partitions to split the tensor
+            or a list of strides (ratios) for each partition.
         contiguous_split_chunks: If True, make each chunk contiguous
                                  in memory.
     """
     # Get the size and dimension.
     last_dim = tensor.dim() - 1
-    last_dim_size = divide(tensor.size()[last_dim], num_partitions)
+    if isinstance(num_partitions, int):
+        last_dim_size = divide(tensor.size()[last_dim], num_partitions)
     # Split.
-    tensor_list = torch.split(tensor, last_dim_size, dim=last_dim)
+        tensor_list = torch.split(tensor, last_dim_size, dim=last_dim)
+    elif isinstance(num_partitions, list, tuple):
+        factor = tensor.size()[last_dim] // sum(num_partitions)
+        tensor_list = torch.split(tensor, [factor * x for x in num_partitions],
+                                  dim=last_dim)
+    else:
+        raise ValueError('num_partitions must be either int or list/tuple.')
     # Note: torch.split does not create contiguous tensors by default.
     if contiguous_split_chunks:
         return tuple(chunk.contiguous() for chunk in tensor_list)

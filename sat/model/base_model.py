@@ -104,6 +104,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
                 use_final_layernorm=args.use_final_layernorm if hasattr(args, 'use_final_layernorm') else True,
                 layernorm_epsilon=args.layernorm_epsilon if hasattr(args, 'layernorm_epsilon') else 1e-5,
                 use_bias=args.use_bias if hasattr(args, 'use_bias') else True,
+                num_multi_query_heads=args.num_multi_query_heads if hasattr(args, 'num_multi_query_heads') else 0,
                 hooks=self.hooks,
                 params_dtype=params_dtype,
                 skip_init=args.skip_init,
@@ -242,7 +243,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
         # use parser to parse kwargs
         args = parser.parse_args([])
         for k, v in kwargs.items():
-            if hasattr(args, k) or k in ['fp16']: # optional args
+            if hasattr(args, k) or k in ['fp16']: # non-arch args but affect building models
                 setattr(args, k, v)
             else:
                 print_rank0(f'warning: Unknown arg {k} for class {cls.__name__}.', level='DEBUG')
