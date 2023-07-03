@@ -89,6 +89,9 @@ def extract_model_specific_args_to_dump(args, model):
 
 def update_ema_parameters_to_model(optimizer):
     """update ema parameters"""
+    import deepspeed
+    from deepspeed import comm as dist
+    from deepspeed.runtime.utils import all_gather_dp_groups
     for i, (bit16_partitions, fp32_partition) in enumerate(
                 zip(optimizer.parallel_partitioned_bit16_groups, optimizer.single_partition_of_fp32_groups)):
             ema_optimizer= optimizer.optimizer
@@ -109,8 +112,6 @@ def save_checkpoint(iteration, model, optimizer,
             print_rank0('Saving Model...')
             save_ds_checkpoint(iteration, model, lr_scheduler, args)
         if optimizer.optimizer.__class__.__name__ ==  "FusedEmaAdam" :
-            from deepspeed import comm as dist
-            from deepspeed.runtime.utils import all_gather_dp_groups
             update_ema_parameters_to_model(optimizer)
             if mpu.get_data_parallel_rank() == 0:
                 print_rank0('Saving Ema Model...')
