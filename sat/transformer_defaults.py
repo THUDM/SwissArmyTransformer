@@ -189,7 +189,7 @@ def layer_forward_default(self, hidden_states, mask, *args, **kw_args):
     return output
 
 HOOKS_DEFAULT = {
-    'attention_fn': standard_attention,
+    'attention_fn': attention_fn_default,
     'attention_forward': attention_forward_default,
     'cross_attention_forward': cross_attention_forward_default,
     'mlp_forward': mlp_forward_default,
