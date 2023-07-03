@@ -76,6 +76,7 @@ def extract_model_specific_args_to_dump(args, model):
         ('hidden_size_per_attention_head', None),
         ('use_final_layernorm', True),
         ('layernorm_epsilon', 1e-5),
+        ('num_multi_query_heads', 0)
     ]
     if hasattr(module, 'transformer'):
         for name, default in optional_arch_args_list:

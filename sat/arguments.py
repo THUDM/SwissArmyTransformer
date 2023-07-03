@@ -45,6 +45,8 @@ def add_model_config_args(parser):
                        help='maximum number of position embeddings to use')
     
     # ---------------  Optional hyper-parameters --------------- 
+    # for developers:
+    #   if you want to add more optional arch hyper-parameters, please also add them in model_io.py, base_model.py, and of course, transformer.py and anywhere in use.
 
     group.add_argument('--layernorm-order', type=str, default='pre',
                        help='choose from "pre", "post", "sandwich".',
@@ -67,6 +69,9 @@ def add_model_config_args(parser):
     
     group.add_argument('--use-gpu-initialization', action='store_true', 
                        help='initialize model on gpu')
+
+    group.add_argument('--num-multi-query-heads', type=int, default=0, 
+                       help='use multi-query attention, num of kv groups. 0 means multi-head attention.')
     
     # ---------------  Inessential hyper-parameters --------------- 
 
