@@ -43,6 +43,31 @@ def standard_attention(query_layer, key_layer, value_layer, attention_mask,
     context_layer = torch.matmul(attention_probs, value_layer)
     return context_layer
 
+def attention_fn_default(query_layer, key_layer, value_layer, attention_mask,
+                       attention_dropout=None, log_attention_weights=None, scaling_attention_score=True, **kwargs):
+    # expand head dim to query dim, if necessary
+    # only useful for multi-query attention
+    batch_size, num_query_heads = query_layer.shape[:2] # [b, np, s, hn]
+    num_kv_heads = key_layer.shape[1] # [b, np, s, hn]
+    key_layer = key_layer.unsqueeze(2).expand(-1, -1, num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, num_query_heads, *key_layer.shape[2:])
+    value_layer = value_layer.unsqueeze(2).expand(-1, -1, num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, num_query_heads, *value_layer.shape[2:])
+
+    if int(torch.__version__.split('.')[0]) >= 2:
+        assert scaling_attention_score == True
+        dropout_p = 0. if attention_dropout is None or not attention_dropout.training else attention_dropout.p
+        attention_mask = (attention_mask >= 0.5).bool()
+        return torch.nn.functional.scaled_dot_product_attention(
+            query_layer, key_layer, value_layer, 
+            attention_mask,
+            dropout_p
+        )
+    else:
+        return standard_attention(
+            query_layer, key_layer, value_layer, attention_mask,
+            attention_dropout=attention_dropout, log_attention_weights=log_attention_weights,
+            scaling_attention_score=scaling_attention_score, **kwargs
+        )
+
 def attention_forward_default(self, hidden_states, mask, **kw_args):
     self = self.transformer.layers[kw_args['layer_id']].attention
     attention_fn = standard_attention
@@ -52,7 +77,7 @@ def attention_forward_default(self, hidden_states, mask, **kw_args):
     mixed_raw_layer = self.query_key_value(hidden_states)
     (mixed_query_layer,
         mixed_key_layer,
-        mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, 3)
+        mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, self.stride)
 
     dropout_fn = self.attention_dropout if self.training else None
 
@@ -166,7 +191,7 @@ def layer_forward_default(self, hidden_states, mask, *args, **kw_args):
     return output
 
 HOOKS_DEFAULT = {
-    'attention_fn': standard_attention,
+    'attention_fn': attention_fn_default,
     'attention_forward': attention_forward_default,
     'cross_attention_forward': cross_attention_forward_default,
     'mlp_forward': mlp_forward_default,
@@ -174,4 +199,21 @@ HOOKS_DEFAULT = {
     'position_embedding_forward': position_embedding_forward_default,
     'final_forward': final_forward_default,
     'layer_forward': layer_forward_default
+}
+
+ARGS_DEFAULT = {
+    'embedding_dropout_prob': ('hidden_dropout', 0),
+    'attention_dropout_prob': ('attention_dropout', 0),
+    'output_dropout_prob': ('hidden_dropout', 0),
+    'inner_hidden_size': ('inner_hidden_size', None),
+    'hidden_size_per_attention_head': ('hidden_size_per_attention_head', None),
+    'checkpoint_activations': ('checkpoint_activations', False),
+    'checkpoint_num_layers': ('checkpoint_num_layers', 1),
+    'is_decoder': ('is_decoder', False),
+    'cross_attn_hidden_size': ('cross_attn_hidden_size', None),
+    'use_final_layernorm': ('use_final_layernorm', True),
+    'layernorm_epsilon': ('layernorm_epsilon', 1e-5),
+    'use_bias': ('use_bias', True),
+    'use_qkv_bias': ('use_qkv_bias', False),
+    'num_multi_query_heads': ('num_multi_query_heads', 0)
 }

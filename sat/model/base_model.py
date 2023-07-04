@@ -23,7 +23,7 @@ from sat.arguments import update_args_with_file, overwrite_args_by_dict
 from sat.training.model_io import load_checkpoint
 from sat.helpers import print_rank0
 
-from sat.transformer_defaults import HOOKS_DEFAULT
+from sat.transformer_defaults import HOOKS_DEFAULT, ARGS_DEFAULT
 from sat.resources import auto_create
 
 def non_conflict(func):
@@ -85,6 +85,8 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
             from sat.arguments import _simple_init
             success = _simple_init(model_parallel_size=args.model_parallel_size)
 
+            args_dict = {k: (getattr(args, v[0]) if hasattr(args, v[0]) else v[1]) for k, v in ARGS_DEFAULT.items()}
+
             self.transformer = BaseTransformer(
                 num_layers=args.num_layers,
                 vocab_size=args.vocab_size,
@@ -92,18 +94,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
                 num_attention_heads=args.num_attention_heads,
                 max_sequence_length=args.max_sequence_length,
                 layernorm_order=args.layernorm_order,
-                embedding_dropout_prob=args.hidden_dropout if hasattr(args, 'hidden_dropout') else 0,
-                attention_dropout_prob=args.attention_dropout if hasattr(args, 'attention_dropout') else 0,
-                output_dropout_prob=args.hidden_dropout if hasattr(args, 'hidden_dropout') else 0,
-                inner_hidden_size=args.inner_hidden_size if hasattr(args, 'inner_hidden_size') else None,
-                hidden_size_per_attention_head=args.hidden_size_per_attention_head if hasattr(args, 'hidden_size_per_attention_head') else None,
-                checkpoint_activations=args.checkpoint_activations if hasattr(args, 'checkpoint_activations') else False,
-                checkpoint_num_layers=args.checkpoint_num_layers if hasattr(args, 'checkpoint_num_layers') else 1,
-                is_decoder=args.is_decoder if hasattr(args, 'is_decoder') else False,
-                cross_attn_hidden_size=args.cross_attn_hidden_size if hasattr(args, 'cross_attn_hidden_size') else None,
-                use_final_layernorm=args.use_final_layernorm if hasattr(args, 'use_final_layernorm') else True,
-                layernorm_epsilon=args.layernorm_epsilon if hasattr(args, 'layernorm_epsilon') else 1e-5,
-                use_bias=args.use_bias if hasattr(args, 'use_bias') else True,
+                **args_dict,
                 hooks=self.hooks,
                 params_dtype=params_dtype,
                 skip_init=args.skip_init,
@@ -242,7 +233,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
         # use parser to parse kwargs
         args = parser.parse_args([])
         for k, v in kwargs.items():
-            if hasattr(args, k) or k in ['fp16']: # optional args
+            if hasattr(args, k) or k in ['fp16']: # non-arch args but affect building models
                 setattr(args, k, v)
             else:
                 print_rank0(f'warning: Unknown arg {k} for class {cls.__name__}.', level='DEBUG')

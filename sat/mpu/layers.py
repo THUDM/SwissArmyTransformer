@@ -209,7 +209,8 @@ class ColumnParallelLinear(torch.nn.Module):
                        which is Y_i = XA_i
         init_method: method to initialize weights. Note that bias is always set
                      to zero.
-        stride: For the strided linear layers.
+        stride: For the strided linear layers. Seems like only used in initialization, 
+                     but it is homogenerous, so always 1 is okay. # TODO check this conclusion
         keep_master_weight_for_test: This was added for testing and should be
                                      set to False. It returns the master weights
                                      used for initialization.
@@ -249,7 +250,7 @@ class ColumnParallelLinear(torch.nn.Module):
             self.master_weight = _initialize_affine_weight(
                 self.weight, self.output_size, self.input_size,
                 self.output_size_per_partition, 0, init_method,
-                stride=stride, return_master_weight=keep_master_weight_for_test, module=module, name=name)
+                stride=1, return_master_weight=keep_master_weight_for_test, module=module, name=name)
 
     def forward(self, input_):
         # Set up backprop all-reduce, and don't change the input.
@@ -270,21 +271,41 @@ class ColumnParallelLinear(torch.nn.Module):
         assert self.output_size_per_partition == self.output_size
         self.output_size_per_partition = divide(self.output_size, get_model_parallel_world_size())
         mp_rank = get_model_parallel_rank()
+        mp_size = get_model_parallel_world_size()
         self.original_weight = self.weight
         # weight is arranged as [stride0...stride1...stride2] * [input_size], extract non-contiguous parts
-        strided_weight = self.weight.view(self.stride, self.output_size // self.stride, self.input_size)
-        self.weight = torch.nn.Parameter(torch.clone(
-                strided_weight[:, mp_rank*self.output_size_per_partition//self.stride
-                            :(mp_rank+1)*self.output_size_per_partition//self.stride, :],
-            ).detach().contiguous().view(self.output_size_per_partition, self.input_size))
+        strides = [1]*self.stride if isinstance(self.stride, int) else self.stride # int means equal number of qkv, or ratios
+        assert self.weight.shape[0] % sum(strides) == 0, 'cannot divide weight evenly'
+        factor = self.weight.shape[0] // sum(strides)
+        # decompose weight according to strides
+        strided_weights, _acm = [], 0
+        for i in range(len(strides)):
+            strided_weights.append(self.weight[_acm:_acm+factor*strides[i], :].detach())
+            _acm += factor*strides[i]
+        new_weight = torch.cat([
+            strided_weight[
+                (strided_weight.shape[0]//mp_size)*mp_rank:
+                (strided_weight.shape[0]//mp_size)*(mp_rank+1)
+                ]
+            for strided_weight in strided_weights
+        ], dim=0).contiguous().view(self.output_size_per_partition, self.input_size)
+        self.weight = torch.nn.Parameter(new_weight)
         del self.original_weight
         if self.bias is not None:
             self.original_bias = self.bias
-            strided_bias = self.bias.view(self.stride, self.output_size // self.stride)
-            self.bias = torch.nn.Parameter(torch.clone(
-                strided_bias[:, mp_rank*self.output_size_per_partition//self.stride
-                            :(mp_rank+1)*self.output_size_per_partition//self.stride],
-                ).detach().contiguous().view(self.output_size_per_partition))
+            # decompose bias according to strides
+            strided_biases, _acm = [], 0
+            for i in range(len(strides)):
+                strided_biases.append(self.bias[_acm:_acm+factor*strides[i]].detach())
+                _acm += factor*strides[i]
+            new_bias = torch.cat([
+                strided_bias[
+                    (strided_bias.shape[0]//mp_size)*mp_rank:
+                    (strided_bias.shape[0]//mp_size)*(mp_rank+1)
+                    ]
+                for strided_bias in strided_biases
+            ], dim=0).contiguous().view(self.output_size_per_partition)
+            self.bias = torch.nn.Parameter(new_bias)
             del self.original_bias
 
 
