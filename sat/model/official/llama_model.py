@@ -56,22 +56,6 @@ class RotaryMixin(BaseMixin):
             output = self.output_dropout(output)
         return output
 
-class LlamaRMSNorm(nn.Module):
-    def __init__(self, hidden_size, eps=1e-6):
-        """
-        LlamaRMSNorm is equivalent to T5LayerNorm
-        """
-        super().__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size))
-        self.variance_epsilon = eps
-
-    def forward(self, hidden_states):
-        input_dtype = hidden_states.dtype
-        variance = hidden_states.to(torch.float32).pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-
-        return (self.weight * hidden_states).to(input_dtype)
-
 class LLaMAMlpMixin(BaseMixin):
     def __init__(self, num_layers, in_features, hidden_features):
         super().__init__()
@@ -92,8 +76,10 @@ class LMMixin(BaseMixin):
     def final_forward(self, logits, **kwargs):
         return self.lm_head(logits)
 
+from sat.model.normalization import RMSNorm
+
 class LLaMAModel(BaseModel):
-    def __init__(self, args, transformer=None, parallel_output=True, layernorm=LlamaRMSNorm, activation_func=nn.functional.silu, **kwargs):
+    def __init__(self, args, transformer=None, parallel_output=True, layernorm=RMSNorm, activation_func=nn.functional.silu, **kwargs):
         super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm=layernorm, activation_func=activation_func, **kwargs)
         del self.transformer.position_embeddings
         self.add_mixin("rotary", RotaryMixin(args.hidden_size, args.num_attention_heads))

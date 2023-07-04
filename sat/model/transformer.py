@@ -34,7 +34,7 @@ from sat.transformer_defaults import HOOKS_DEFAULT, standard_attention, split_te
 class SelfAttention(torch.nn.Module):
     def __init__(self, hidden_size, num_attention_heads,
                  attention_dropout_prob, output_dropout_prob,
-                 init_method, layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, num_multi_query_heads=0,
+                 init_method, layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, qkv_bias=False, num_multi_query_heads=0,
                  hooks={}, transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
         super(SelfAttention, self).__init__()
         # Set output layer initialization if not provided.
@@ -69,7 +69,7 @@ class SelfAttention(torch.nn.Module):
             stride=self.stride,
             gather_output=False,
             init_method=init_method,
-            bias=bias,
+            bias=bias or qkv_bias,
             params_dtype=params_dtype,
             module=self,
             name="query_key_value",
@@ -264,6 +264,7 @@ class BaseTransformerLayer(torch.nn.Module):
             is_decoder=False,
             cross_attn_hidden_size=None,
             use_bias=True,
+            use_qkv_bias=False,
             num_multi_query_heads=0,
             activation_func=gelu,
             hooks={},
@@ -297,6 +298,7 @@ class BaseTransformerLayer(torch.nn.Module):
             hidden_size_per_attention_head=hidden_size_per_attention_head,
             output_layer_init_method=output_layer_init_method,
             bias=use_bias,
+            qkv_bias=use_qkv_bias,
             num_multi_query_heads=num_multi_query_heads,
             hooks=hooks,
             transformer_pointer=transformer_pointer,
@@ -372,6 +374,7 @@ class BaseTransformer(torch.nn.Module):
                  is_decoder=False,
                  cross_attn_hidden_size=None,
                  use_bias=True,
+                 use_qkv_bias=False,
                  num_multi_query_heads=0,
                  activation_func=gelu,
                  layernorm=LayerNorm,
@@ -392,6 +395,8 @@ class BaseTransformer(torch.nn.Module):
         if not is_decoder and cross_attn_hidden_size is not None:
             print('warning: cross_attn_hidden_size is set but is_decoder is False')
         self.use_bias = use_bias
+        self.use_qkv_bias = use_qkv_bias
+        self.num_multi_query_heads = num_multi_query_heads
         self.use_final_layernorm = use_final_layernorm
         self.layernorm_epsilon = layernorm_epsilon
         self.parallel_output = parallel_output
@@ -437,6 +442,7 @@ class BaseTransformer(torch.nn.Module):
                 layernorm_order=layernorm_order,
                 layernorm=layernorm,
                 use_bias=use_bias,
+                use_qkv_bias=use_qkv_bias,
                 num_multi_query_heads=num_multi_query_heads,
                 activation_func=activation_func,
                 hooks=self.hooks,

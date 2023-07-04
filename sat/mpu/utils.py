@@ -47,7 +47,7 @@ def split_tensor_along_last_dim(tensor, num_partitions,
         last_dim_size = divide(tensor.size()[last_dim], num_partitions)
     # Split.
         tensor_list = torch.split(tensor, last_dim_size, dim=last_dim)
-    elif isinstance(num_partitions, list, tuple):
+    elif isinstance(num_partitions, (list, tuple)):
         factor = tensor.size()[last_dim] // sum(num_partitions)
         tensor_list = torch.split(tensor, [factor * x for x in num_partitions],
                                   dim=last_dim)

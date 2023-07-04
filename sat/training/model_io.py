@@ -71,6 +71,7 @@ def extract_model_specific_args_to_dump(args, model):
         ('is_decoder', False), 
         ('cross_attn_hidden_size', None), 
         ('use_bias', True),
+        ('use_qkv_bias', False),
         ('inner_hidden_size', None),
         ('hidden_size_per_attention_head', None),
         ('use_final_layernorm', True),

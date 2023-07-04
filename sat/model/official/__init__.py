@@ -16,3 +16,4 @@ from .gpt2_model import GPT2Model
 from .chatglm_model import ChatGLMModel
 from .eva2_model import EVA2Model
 from .llama_model import LLaMAModel
+from .chatglm2_model import ChatGLM2Model
