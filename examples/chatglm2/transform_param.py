@@ -54,8 +54,10 @@ def copy_transformer_layer(src, dst, w2):
     copy_layer_param(src.self_attention.query_key_value, dst.attention.query_key_value)
     copy_layer_param(src.self_attention.dense, dst.attention.dense)
     weight_1, weight_2 = src.mlp.dense_h_to_4h.weight.data.chunk(2, dim=0)
+    assert dst.mlp.dense_h_to_4h.weight.data.shape == weight_1.shape
     dst.mlp.dense_h_to_4h.weight.data = weight_1
-    w2.data = weight_2
+    assert w2.weight.data.shape == weight_2.shape
+    w2.weight.data = weight_2
     # copy_layer_param(src.mlp.dense_h_to_4h, dst.mlp.dense_h_to_4h)
     copy_layer_param(src.mlp.dense_4h_to_h, dst.mlp.dense_4h_to_h)
     copy_layer_param(src.input_layernorm, dst.input_layernorm)
@@ -74,12 +76,12 @@ chatglm.eval()
 model.eval()
 with torch.no_grad():
     transform_weight(chatglm, model)
-    # save_checkpoint(1, model, None, None, args)
+    save_checkpoint(1, model, None, None, args)
     text = ["This is a piece of text."]
     encoded_input = tokenizer(text, return_tensors='pt', padding=True)
     encoded_input = {k:v.cuda() for k, v in encoded_input.items()}
-    hugging_output = chatglm.half()(**encoded_input).logits.cpu()
-    dst_output = model.half().cuda()(input_ids=encoded_input['input_ids'], position_ids=encoded_input['position_ids'], attention_mask=torch.ones(1, 1, dtype=torch.float16, device='cuda'))
+    hugging_output = chatglm(**encoded_input).logits.cpu()
+    dst_output = model.cuda()(input_ids=encoded_input['input_ids'], position_ids=encoded_input['position_ids'], attention_mask=torch.ones(1, 1, dtype=torch.float16, device='cuda'))
     swiss_output = dst_output[0].cpu()
     print("max error:", (hugging_output - swiss_output).abs().max())
     print("max relative error:", ((hugging_output - swiss_output).abs() / torch.max(swiss_output.abs(), hugging_output.abs())).max())

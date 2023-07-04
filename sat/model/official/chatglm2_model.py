@@ -25,8 +25,8 @@ class ChatGLM2AttnMixin(BaseMixin):
         # only useful for multi-query attention
         batch_size, num_query_heads = query_layer.shape[:2] # [b, np, s, hn]
         num_kv_heads = key_layer.shape[1] # [b, np, s, hn]
-        key_layer = key_layer.unsqueeze(1).expand(-1, num_query_heads//num_kv_heads, -1, -1, -1).contiguous().view(batch_size, num_query_heads, *key_layer.shape[2:])
-        value_layer = value_layer.unsqueeze(1).expand(-1, num_query_heads//num_kv_heads, -1, -1, -1).contiguous().view(batch_size, num_query_heads, *value_layer.shape[2:])
+        key_layer = key_layer.unsqueeze(2).expand(-1, -1, num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, num_query_heads, *key_layer.shape[2:])
+        value_layer = value_layer.unsqueeze(2).expand(-1, -1, num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, num_query_heads, *value_layer.shape[2:])
 
         if int(torch.__version__.split('.')[0]) >= 2:
             assert scaling_attention_score == True
@@ -38,6 +38,7 @@ class ChatGLM2AttnMixin(BaseMixin):
                     is_causal=True
                 )
             else:
+                attention_mask = (attention_mask >= 0.5).bool()
                 return torch.nn.functional.scaled_dot_product_attention(
                     query_layer, key_layer, value_layer, 
                     attention_mask,
@@ -52,11 +53,9 @@ class ChatGLM2AttnMixin(BaseMixin):
             )
         
     def attention_forward(self, hidden_states, mask, **kw_args):
-        rotary_pos_emb = self.rotary_pos_emb(self.max_seq_len)
-        if kw_args['position_ids'] is not None:
-            rotary_pos_emb = rotary_pos_emb[kw_args['position_ids']]
-        else:
-            rotary_pos_emb = rotary_pos_emb[None, :hidden_states.size(1)]
+        max_seq_len = kw_args['position_ids'].max() + 1
+        rotary_pos_emb = self.rotary_pos_emb(max_seq_len)
+        rotary_pos_emb = rotary_pos_emb[kw_args['position_ids']]
         rotary_pos_emb = rotary_pos_emb.transpose(0, 1).contiguous()
         self = self.transformer.layers[kw_args['layer_id']].attention
         attention_fn = standard_attention
@@ -77,30 +76,36 @@ class ChatGLM2AttnMixin(BaseMixin):
         query_layer = apply_rotary_pos_emb(query_layer.permute(2, 0, 1, 3), rotary_pos_emb).permute(1, 2, 0, 3)
         key_layer = apply_rotary_pos_emb(key_layer.permute(2, 0, 1, 3), rotary_pos_emb).permute(1, 2, 0, 3)
 
+        if kw_args.get('past_key_values', None) is not None:
+            pack = kw_args['past_key_values'][kw_args['layer_id']]
+            if pack is not None:
+                past_key, past_value = pack
+                key_layer = torch.cat((past_key, key_layer), dim=2)
+                value_layer = torch.cat((past_value, value_layer), dim=2)
+        kw_args['output_this_layer']['past_key_values'] = (key_layer, value_layer)
+
         context_layer = attention_fn(query_layer, key_layer, value_layer, mask, dropout_fn, **kw_args)
 
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
         context_layer = context_layer.view(*new_context_layer_shape)
         output = self.dense(context_layer)
-        breakpoint()
 
         if self.training:
             output = self.output_dropout(output)
         return output
 
 class SwiGLUMixin(BaseMixin):
-    def __init__(self, num_layers, in_features, hidden_features, act_func=F.silu, bias=False):
+    def __init__(self, num_layers, in_features, hidden_features, bias=False):
         super().__init__()
         self.w2 = nn.ModuleList([nn.Linear(in_features, hidden_features, bias=bias) for i in range(num_layers)])
-        self.act = act_func
 
     def mlp_forward(self, hidden_states, **kw_args):
         x = hidden_states
         origin = self.transformer.layers[kw_args['layer_id']].mlp
         x1 = origin.dense_h_to_4h(x)
         x2 = self.w2[kw_args['layer_id']](x)
-        hidden = self.act(x1) * x2
+        hidden = origin.activation_func(x1) * x2
         x = origin.dense_4h_to_h(hidden)
         return x
 
@@ -108,7 +113,7 @@ from .chatglm_model import ChatGLMFinalMixin
 
 class ChatGLM2Model(BaseModel):
     def __init__(self, args, transformer=None, **kwargs):
-        super(ChatGLM2Model, self).__init__(args, transformer=transformer, activation_func=swiglu, layernorm=RMSNorm, **kwargs)
+        super(ChatGLM2Model, self).__init__(args, transformer=transformer, activation_func=F.silu, layernorm=RMSNorm, **kwargs)
         del self.transformer.position_embeddings
         self.add_mixin("chatglm-final", ChatGLMFinalMixin(args.vocab_size, args.hidden_size))
         self.add_mixin("attn", ChatGLM2AttnMixin(args.hidden_size, args.num_attention_heads, args.max_sequence_length))
@@ -116,6 +121,39 @@ class ChatGLM2Model(BaseModel):
 
     def position_embedding_forward(self, position_ids, output_cross_layer, **kw_args):
         return None
+    
+    def get_masks(self, input_ids, past_key_values, padding_mask=None):
+        batch_size, seq_length = input_ids.shape
+        full_attention_mask = torch.ones(batch_size, seq_length, seq_length, device=input_ids.device)
+        full_attention_mask.tril_()
+        past_length = 0
+        if past_key_values:
+            past_length = past_key_values[0][0].shape[0]
+        if past_length:
+            full_attention_mask = torch.cat((torch.ones(batch_size, seq_length, past_length,
+                                                        device=input_ids.device), full_attention_mask), dim=-1)
+        if padding_mask is not None:
+            full_attention_mask = full_attention_mask * padding_mask.unsqueeze(1)
+        if not past_length and padding_mask is not None:
+            full_attention_mask -= padding_mask.unsqueeze(-1) - 1
+        # full_attention_mask = (full_attention_mask < 0.5).bool()
+        full_attention_mask.unsqueeze_(1)
+        return full_attention_mask
+    
+    def forward(self, input_ids, position_ids=None, attention_mask=None, past_key_values=None, **kwargs):
+        if attention_mask is None or not attention_mask.all():
+            if past_key_values is not None and input_ids.size(0) == 1:
+                attention_mask = torch.tensor([[1]], dtype=torch.long, device=input_ids.device)
+            else:
+                attention_mask = self.get_masks(input_ids, past_key_values, padding_mask=attention_mask)
+        if attention_mask is not None and attention_mask.dtype is torch.bool:
+            attention_mask = (~attention_mask).long()
+        if past_key_values is not None:
+            input_ids = input_ids[:, -1:]
+            position_ids = position_ids[..., -1:]
+            if input_ids.size(0) != 1:
+                attention_mask = attention_mask[:, :, -1:]
+        return super().forward(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids, past_key_values=past_key_values, **kwargs)
     
     @classmethod
     def add_model_specific_args(cls, parser):
