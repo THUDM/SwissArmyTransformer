@@ -117,3 +117,11 @@ test windows
 v. 0.3.7
 update vit
 add qlora/lora2
+
+# 2023.7.3
+v. 0.4.0
+1. add xfomers memory efficient attention.
+2. pytorch 2.0 auto fast attention, attention_fn dispatch via version.
+3. add llama and chatglm2.
+4. add split model for model-parallel in inference mode.
+5. add r2 download
