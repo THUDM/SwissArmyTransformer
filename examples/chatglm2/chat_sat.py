@@ -1,14 +1,14 @@
 import torch
 from sat import AutoModel
-from transformers import LlamaTokenizer
+from transformers import AutoTokenizer
 from sat.model.mixins import CachedAutoregressiveMixin
 from sat.generation.autoregressive_sampling import filling_sequence
 from sat.generation.sampling_strategies import BaseStrategy, BeamSearchStrategy
 
 def chat(model, tokenizer, 
         max_length: int = 256, num_beams=1, top_p=0.7, top_k=0, temperature=0.95):
-    prompt = "The capital of China is"
-    inputs = tokenizer([prompt], return_tensors="pt", add_special_tokens=False).to(model.parameters().__next__().device)['input_ids'][0]
+    prompt = "[Round 0]\n\n问：你好\n\n答："
+    inputs = tokenizer([prompt], return_tensors="pt").to(model.parameters().__next__().device)['input_ids'][0]
     seq = torch.cat(
         [inputs, torch.tensor([-1]*(max_length-len(inputs)), device=inputs.device)], dim=0
     )
@@ -32,23 +32,24 @@ def chat(model, tokenizer,
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--max_length", type=int, default=512)
+    parser.add_argument("--max_length", type=int, default=8192)
     parser.add_argument("--num_beams", type=int, default=1)
-    parser.add_argument("--top_p", type=float, default=0.95)
+    parser.add_argument("--top_p", type=float, default=0.8)
     parser.add_argument("--top_k", type=int, default=10)
     parser.add_argument("--temperature", type=float, default=0.8)
     args = parser.parse_args()
 
     # load model
-    model, model_args = AutoModel.from_pretrained('llama-7b', args=argparse.Namespace(
+    model, model_args = AutoModel.from_pretrained('chatglm2-6b', args=argparse.Namespace(
         fp16=True,
         skip_init=True,
         use_gpu_initialization=True,
     ))
     model = model.eval()
-    model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
 
-    tokenizer = LlamaTokenizer.from_pretrained("decapoda-research/llama-7b-hf")
+    tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm2-6b", trust_remote_code=True)
+    
+    model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
     chat(model, tokenizer, max_length=args.max_length, num_beams=args.num_beams, top_p=args.top_p, temperature=args.temperature, top_k=args.top_k)
 
             

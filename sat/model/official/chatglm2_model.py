@@ -4,12 +4,8 @@ import torch.nn.functional as F
 from sat.model.base_model import BaseMixin, BaseModel
 from sat.mpu.utils import split_tensor_along_last_dim
 
-def swiglu(x):
-    x = torch.chunk(x, 2, dim=-1)
-    return F.silu(x[0]) * x[1]
-
 from sat.model.normalization import RMSNorm
-from sat.transformer_defaults import standard_attention
+from sat.transformer_defaults import attention_fn_default
 from sat.model.position_embedding.rotary_embeddings_original import RotaryEmbedding, apply_rotary_pos_emb
 
 class ChatGLM2AttnMixin(BaseMixin):
@@ -18,39 +14,6 @@ class ChatGLM2AttnMixin(BaseMixin):
         rotary_dim = hidden_size // num_heads
         self.rotary_pos_emb = RotaryEmbedding(rotary_dim // 2, original_impl=True)
         self.max_seq_len = max_seq_len
-
-    def attention_fn(self, query_layer, key_layer, value_layer, attention_mask,
-                       attention_dropout=None, log_attention_weights=None, scaling_attention_score=True, **kwargs):
-        # expand head dim to query dim, if necessary
-        # only useful for multi-query attention
-        batch_size, num_query_heads = query_layer.shape[:2] # [b, np, s, hn]
-        num_kv_heads = key_layer.shape[1] # [b, np, s, hn]
-        key_layer = key_layer.unsqueeze(2).expand(-1, -1, num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, num_query_heads, *key_layer.shape[2:])
-        value_layer = value_layer.unsqueeze(2).expand(-1, -1, num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, num_query_heads, *value_layer.shape[2:])
-
-        if int(torch.__version__.split('.')[0]) >= 2:
-            assert scaling_attention_score == True
-            dropout_p = 0. if attention_dropout is None or not attention_dropout.training else attention_dropout.p
-            if attention_mask.all() and query_layer.shape[2] == key_layer.shape[2]:
-                return torch.nn.functional.scaled_dot_product_attention(
-                    query_layer, key_layer, value_layer,
-                    dropout_p=dropout_p,
-                    is_causal=True
-                )
-            else:
-                attention_mask = (attention_mask >= 0.5).bool()
-                return torch.nn.functional.scaled_dot_product_attention(
-                    query_layer, key_layer, value_layer, 
-                    attention_mask,
-                    dropout_p
-                )
-        else:
-            assert attention_mask.shape[1] == 1 and query_layer.shape[1] == attention_mask.shape[2] and key_layer.shape[1] == attention_mask.shape[3]
-            return standard_attention(
-                query_layer, key_layer, value_layer, attention_mask,
-                attention_dropout=attention_dropout, log_attention_weights=log_attention_weights,
-                scaling_attention_score=scaling_attention_score, **kwargs
-            )
         
     def attention_forward(self, hidden_states, mask, **kw_args):
         max_seq_len = kw_args['position_ids'].max() + 1
@@ -58,7 +21,7 @@ class ChatGLM2AttnMixin(BaseMixin):
         rotary_pos_emb = rotary_pos_emb[kw_args['position_ids']]
         rotary_pos_emb = rotary_pos_emb.transpose(0, 1).contiguous()
         self = self.transformer.layers[kw_args['layer_id']].attention
-        attention_fn = standard_attention
+        attention_fn = attention_fn_default
         if 'attention_fn' in self.hooks:
             attention_fn = self.hooks['attention_fn']
 
@@ -128,7 +91,7 @@ class ChatGLM2Model(BaseModel):
         full_attention_mask.tril_()
         past_length = 0
         if past_key_values:
-            past_length = past_key_values[0][0].shape[0]
+            past_length = past_key_values[0][0].shape[2]
         if past_length:
             full_attention_mask = torch.cat((torch.ones(batch_size, seq_length, past_length,
                                                         device=input_ids.device), full_attention_mask), dim=-1)
@@ -136,18 +99,20 @@ class ChatGLM2Model(BaseModel):
             full_attention_mask = full_attention_mask * padding_mask.unsqueeze(1)
         if not past_length and padding_mask is not None:
             full_attention_mask -= padding_mask.unsqueeze(-1) - 1
-        # full_attention_mask = (full_attention_mask < 0.5).bool()
+        full_attention_mask = (full_attention_mask < 0.5).bool()
         full_attention_mask.unsqueeze_(1)
         return full_attention_mask
     
     def forward(self, input_ids, position_ids=None, attention_mask=None, past_key_values=None, **kwargs):
-        if attention_mask is None or not attention_mask.all():
-            if past_key_values is not None and input_ids.size(0) == 1:
-                attention_mask = torch.tensor([[1]], dtype=torch.long, device=input_ids.device)
-            else:
-                attention_mask = self.get_masks(input_ids, past_key_values, padding_mask=attention_mask)
+        if attention_mask.ndim == 4:
+            pass
+        elif past_key_values is not None and input_ids.size(0) == 1:
+            attention_mask = torch.tensor([[1]], dtype=torch.long, device=input_ids.device)
+        else:
+            attention_mask = self.get_masks(input_ids, past_key_values, padding_mask=attention_mask)
         if attention_mask is not None and attention_mask.dtype is torch.bool:
-            attention_mask = (~attention_mask).long()
+            attention_mask = ~attention_mask
+        attention_mask = attention_mask.to(next(self.parameters()).dtype)
         if past_key_values is not None:
             input_ids = input_ids[:, -1:]
             position_ids = position_ids[..., -1:]

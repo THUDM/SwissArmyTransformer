@@ -15,5 +15,7 @@ response, history = model.chat(tokenizer, "你好", history=[])
 print(response)
 response, history = model.chat(tokenizer, "晚上睡不着应该怎么办", history=history)
 print(response)
+pred = model.batch_generate(tokenizer, ["今天天气怎么样？", "你好"])
+print(pred)
 
 breakpoint()

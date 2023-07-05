@@ -14,14 +14,14 @@ import random
 import torch
 
 from .base_model import BaseModel, BaseMixin, non_conflict
-from sat.model.transformer import standard_attention, split_tensor_along_last_dim
+from sat.transformer_defaults import attention_fn_default
 
 class CachedAutoregressiveMixin(BaseMixin):
     def __init__(self):
         super().__init__()     
            
     @non_conflict
-    def attention_fn(self, q, k, v, mask, dropout_fn, mems=None, cross_attention=False, old_impl=standard_attention,
+    def attention_fn(self, q, k, v, mask, dropout_fn, mems=None, cross_attention=False, old_impl=attention_fn_default,
                      **kw_args):
         if not cross_attention:
             mem = mems[kw_args['layer_id']] if mems is not None else None # 2, batch, head, seqlen, hidden_size
