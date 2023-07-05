@@ -48,8 +48,10 @@ def auto_create(name, *, path=None, url=None):
     lock = FileLock(model_path + '.lock')
     with lock:
         if url is None:
-                url = MODEL_URLS[name]
+            url = MODEL_URLS[name]
         if os.path.isdir(model_path) and not url.startswith('r2://'):
+            pass
+        elif os.path.isdir(model_path) and url.startswith('r2://') and url.endswith('.zip'):
             pass
         else:
             print(f'Downloading models {url} into {path} ...')

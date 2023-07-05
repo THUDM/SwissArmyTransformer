@@ -70,7 +70,7 @@ def attention_fn_default(query_layer, key_layer, value_layer, attention_mask,
 
 def attention_forward_default(self, hidden_states, mask, **kw_args):
     self = self.transformer.layers[kw_args['layer_id']].attention
-    attention_fn = standard_attention
+    attention_fn = attention_fn_default
     if 'attention_fn' in self.hooks:
         attention_fn = self.hooks['attention_fn']
 

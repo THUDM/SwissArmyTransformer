@@ -2,7 +2,13 @@
 
 This folder provides [ChatGLM2-6B](https://github.com/THUDM/ChatGLM2-6B) model in SAT.
 
-If you want to chat with ChatGLM2-6B with huggingface generation:
+If you want to inference or chat with ChatGLM-6B:
+
+```
+python chat_sat.py
+```
+
+If you want to chat with ChatGLM2-6B with huggingface generation instead of sat (legacy):
 
 ```
 python chat.py --mode inference --fp16 --skip-init

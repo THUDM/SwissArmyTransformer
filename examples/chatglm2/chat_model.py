@@ -159,7 +159,7 @@ class ChatModel(nn.Module, GenerationMixin):
         return inputs
 
     @torch.no_grad()
-    def chat(self, tokenizer, query: str, history: List[Tuple[str, str]] = None, max_length: int = 256, num_beams=1,
+    def chat(self, tokenizer, query: str, history: List[Tuple[str, str]] = None, max_length: int = 8192, num_beams=1,
              do_sample=True, top_p=0.8, temperature=0.8, logits_processor=None, **kwargs):
         if history is None:
             history = []
@@ -175,3 +175,14 @@ class ChatModel(nn.Module, GenerationMixin):
         response = self.process_response(response)
         history = history + [(query, response)]
         return response, history
+    
+    @torch.no_grad()
+    def batch_generate(self, tokenizer, queries, max_length: int = 8192, num_beams=1,
+             do_sample=True, top_p=0.8, temperature=0.8, **kwargs):
+        gen_kwargs = {"max_length": max_length, "num_beams": num_beams, "do_sample": do_sample, "top_p": top_p,
+                      "temperature": temperature, **kwargs}
+        inputs = tokenizer(queries, return_tensors="pt", padding=True)
+        inputs = {k:v.to(self.device) for k, v in inputs.items()}
+        outputs = self.generate(**inputs, **gen_kwargs)
+        texts = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        return texts
