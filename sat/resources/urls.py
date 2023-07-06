@@ -10,7 +10,7 @@ MODEL_URLS = {
     'cait-s24-224': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fcait-s24-224.zip&dl=1',
     'gpt2': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fgpt2.zip&dl=1',
     'chatglm-6b': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fchatglm-6b.zip&dl=1',
-    'chatglm2-6b': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fchatglm2-6b.zip&dl=1',
+    'chatglm2-6b': 'r2://chatglm2-6b.zip',
     'eva02_L_pt_m38m_p14': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Feva02_L_pt_m38m_p14.zip&dl=1',
     'llama-7b': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fllama-7b.zip&dl=1',
     'llama-13b': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fllama-13b.zip&dl=1',

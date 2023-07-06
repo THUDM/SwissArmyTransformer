@@ -69,10 +69,10 @@ map_cls = {
 }
 
 class LoraLinear(nn.Module):
-    def __init__(self, original_cls, partition, in_dim, out_dim, r, lora_alpha=1., lora_dropout=0., head_first=False, num_attention_heads=None, hidden_size_per_attention_head=None, qlora=False):
+    def __init__(self, original_cls, partition, in_dim, out_dim, r, lora_alpha=1., lora_dropout=0., head_first=False, num_attention_heads=None, hidden_size_per_attention_head=None, qlora=False, original_obj=None):
         """
         You can use safely with this layer, ONLY WHEN query_key_value output is query_key_value order.
-        If you use a different order like ChatGLM
+        If you use a different order like ChatGLM, pass head_first=True
         """
         super().__init__()
         if lora_dropout and lora_dropout > 0:
@@ -82,14 +82,21 @@ class LoraLinear(nn.Module):
         self.r = r
         self.lora_alpha = lora_alpha
         self.scaling = self.lora_alpha / self.r
+        bias = True
+        if original_obj:
+            bias = original_obj.bias is not None
         if qlora:
             try:
-                self.original = HackLinearNF4(in_dim, out_dim)
+                self.original = HackLinearNF4(in_dim, out_dim, bias=bias)
             except:
                 raise Exception('Build 4bit layer failed. You need to install the latest bitsandbytes. Try `pip install bitsandbytes`. If you still meet error after installation, try running `from bitsandbytes.nn import LinearNF4` with python and fix the error.')
         else:
             base_cls, kwargs = map_cls[original_cls]
-            self.original = base_cls(in_dim, out_dim, **kwargs)
+            self.original = base_cls(in_dim, out_dim, **kwargs, bias=bias)
+        if original_obj:
+            self.original.weight.data.copy_(original_obj.weight.data)
+            if bias:
+                self.original.bias.data.copy_(original_obj.bias.data)
         self.matrix_A = HackParameterList([nn.Parameter(torch.empty((r, in_dim))) for _ in range(partition)])
         self.matrix_B = HackParameterList([nn.Parameter(torch.empty((out_dim // partition, r))) for _ in range(partition)])
         for i in range(partition):
@@ -131,11 +138,11 @@ class LoraLinear(nn.Module):
 
 
 def replace_linear_with_lora(lin, partition, r, *args, **kw_args):
-    # not supported for linear without bias for now
     out_dim, in_dim = lin.weight.shape
     original_cls = type(lin)
+    new_layer = LoraLinear(original_cls, partition, in_dim, out_dim, r, *args, **kw_args, original_obj=lin)
     del lin
-    return LoraLinear(original_cls, partition, in_dim, out_dim, r, *args, **kw_args)
+    return new_layer
 
 def merge_linear_lora(lin):
     if lin.original.weight.data.dtype is not torch.uint8:
@@ -147,7 +154,8 @@ def merge_linear_lora(lin):
         weight = F.dequantize_fp4(lin.original.weight.data, lin.original.weight.quant_state).to(lin.original.bias.data.dtype)
         out_dim, in_dim = weight.shape
         new_lin = HackLinearNF4(in_dim, out_dim)
-    new_lin.bias.data = lin.original.bias.data
+    if lin.original.bias:
+        new_lin.bias.data = lin.original.bias.data
     new_qkv = []
     for i in range(lin.partition):
         new_qkv.append(lin.matrix_A[i].data.T.float() @ lin.matrix_B[i].data.T.float() * lin.scaling)

@@ -16,13 +16,13 @@ python chat.py --mode inference --fp16 --skip-init
 
 Models will be downloaded and cached automatically into `~/.sat_models`.
 
-For finetuning 0 ChatGLM-6B, we adapt the [official finetune code](https://github.com/THUDM/ChatGLM-6B/tree/main/ptuning) to SAT, and provide two parameter-efficient tuning methods, i.e., ptuning and lora.
+For finetuning ChatGLM-6B, we adapt the [official finetune code](https://github.com/THUDM/ChatGLM-6B/tree/main/ptuning) to SAT, and provide two parameter-efficient tuning methods, i.e., ptuning and lora.
 
 For ptuning:
 
 ```
 bash scripts/finetune_adgen_ptuning.sh
-python inference_adgen.py --mode inference --skip-init --fp16 --use_ptuning --ckpt_path checkpoints/finetune-chatglm-6b-adgen-05-02-10-32/
+python inference_adgen.py --mode inference --skip-init --fp16 --ckpt_path checkpoints/finetune-chatglm-6b-adgen-05-02-10-32/
 ```
 
 Examples of ptuning finetuned model:
@@ -53,7 +53,7 @@ For lora:
 
 ```
 bash scripts/finetune_adgen_lora.sh
-python inference_adgen.py --mode inference --skip-init --fp16 --use_lora --ckpt_path checkpoints/finetune-chatglm-6b-adgen-04-03-06-48/
+python inference_adgen.py --mode inference --skip-init --fp16 --ckpt_path checkpoints/finetune-chatglm-6b-adgen-04-03-06-48/
 ```
 
 ```
