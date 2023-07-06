@@ -52,8 +52,7 @@ def attention_fn_default(query_layer, key_layer, value_layer, attention_mask,
     key_layer = key_layer.unsqueeze(2).expand(-1, -1, num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, num_query_heads, *key_layer.shape[2:])
     value_layer = value_layer.unsqueeze(2).expand(-1, -1, num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, num_query_heads, *value_layer.shape[2:])
 
-    if int(torch.__version__.split('.')[0]) >= 2:
-        assert scaling_attention_score == True
+    if int(torch.__version__.split('.')[0]) >= 2 and scaling_attention_score:
         dropout_p = 0. if attention_dropout is None or not attention_dropout.training else attention_dropout.p
         attention_mask = (attention_mask >= 0.5).bool()
         return torch.nn.functional.scaled_dot_product_attention(

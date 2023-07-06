@@ -521,7 +521,7 @@ class BaseTransformer(torch.nn.Module):
                         else:
                             layer_ret = layer(
                                 x_, mask, layer_id=layer.layer_id,
-                                **kw_args, **output_cross_layer,
+                                **kw_args, position_ids=position_ids, **output_cross_layer,
                                 output_this_layer=output_this_layer_obj,
                                 output_cross_layer=output_cross_layer_obj
                             )
