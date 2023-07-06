@@ -15,8 +15,8 @@ MODEL_URLS = {
     'llama-7b': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fllama-7b.zip&dl=1',
     'llama-13b': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fllama-13b.zip&dl=1',
     'clip': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fclip.zip&dl=1',
-    'clip-vit-base-patch16': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fclip-vit-base-patch16.zip&dl=1',
-    'clip-vit-large-patch14': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fclip-vit-large-patch14.zip&dl=1',
+    'clip-vit-base-patch16': 'https://lfs.aminer.cn/misc/clip/clip-vit-base-patch16.zip',
+    'clip-vit-large-patch14': 'https://lfs.aminer.cn/misc/clip/clip-vit-large-patch14.zip',
     'yolos-tiny': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fyolos-tiny.zip&dl=1',
     'mae-vit-base': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fmae-vit-base.zip&dl=1',
 
