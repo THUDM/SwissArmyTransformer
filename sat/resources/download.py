@@ -39,13 +39,18 @@ def download_with_progress_bar(save_path, url, chunk_size=2048):
                     file.write(chunk)
                     pbar.update(len(chunk))
 
+LOCAL_LOCK = os.environ.get('LOCAL_LOCK', 0)
+
 def auto_create(name, *, path=None, url=None):
     if path is None:
         path = os.getenv('SAT_HOME', '~/.sat_models') # TODO Rename
     path = os.path.expanduser(path)
     model_path = os.path.join(path, name)
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    lock = FileLock(model_path + '.lock')
+    if LOCAL_LOCK:
+        lock = FileLock('./' + name + '.lock')
+    else:
+        lock = FileLock(model_path + '.lock')
     with lock:
         if url is None:
             url = MODEL_URLS[name]
