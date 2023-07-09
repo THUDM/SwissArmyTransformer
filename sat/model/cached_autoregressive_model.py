@@ -35,6 +35,7 @@ class VectorKvCache():
         self.num_layers = num_layers
         self.head_nums = head_nums
         self.hidden_units = hidden_units
+        self.size_per_head = int(hidden_units / head_nums)
 
     def append_kv(self, k, v, layer_id):
         b, nh, seq_len, hidden_size = k.shape
@@ -61,7 +62,7 @@ class VectorKvCache():
     def reMalloc(self, seq_len, batch_size, dtype, device):
         new_capacity = seq_len + self.mem_size
         if new_capacity > self.capacity:
-            new_mems_size = [self.num_layers, batch_size, self.head_nums, 0, self.hidden_units] # [num_layers, batch_size, head_num, seq_len, size_per_head]
+            new_mems_size = [self.num_layers, batch_size, self.head_nums, 0, self.size_per_head] # [num_layers, batch_size, head_num, seq_len, size_per_head]
             if int(new_capacity * self.factor) <= self.max_len:
                 new_mems_size[3] = int(new_capacity * self.factor)
                 self.capacity = int(new_capacity * self.factor)
@@ -80,7 +81,7 @@ class CachedAutoregressiveMixin(BaseMixin):
     def __init__(self, num_layers, head_nums, hidden_units, max_len, capacity=0, factor=2):
         super().__init__()
         self.num_layers = num_layers  
-        self.mems = vector_kv_cache = VectorKvCache(num_layers, head_nums, hidden_units, max_len, capacity=capacity, factor=factor)
+        self.mems = VectorKvCache(num_layers, head_nums, hidden_units, max_len, capacity=capacity, factor=factor)
            
     @non_conflict
     def attention_fn(self, q, k, v, mask, dropout_fn, cross_attention=False, old_impl=standard_attention,
@@ -91,9 +92,9 @@ class CachedAutoregressiveMixin(BaseMixin):
             if layer_id == 0 :
                 self.mems.reMalloc(seq_len, b, k.dtype, k.device)
             self.mems.append_kv(k, v, layer_id)
-            k, v = self.mems.get_kv(layer_id)
+            k, v = self.mems.get_kv(layer_id, seq_len)
             if layer_id == self.num_layers - 1 :
-                self.mems.update_mems_size(seq_len)
+                self.mems.update_mem_size(seq_len)
 
         return old_impl(q, k, v, mask, dropout_fn, cross_attention=cross_attention, **kw_args)
 
