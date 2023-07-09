@@ -136,7 +136,7 @@ if __name__ == "__main__":
         use_gpu_initialization=True,
     ))
     model = model.eval()
-    model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
+    model.add_mixin('auto-regressive', CachedAutoregressiveMixin(args.num_layers, args.head_nums, args.hidden_units, args.max_length))
 
     tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True)
     history = None

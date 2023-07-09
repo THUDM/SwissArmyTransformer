@@ -16,27 +16,86 @@ import torch
 from .base_model import BaseModel, BaseMixin, non_conflict
 from sat.model.transformer import standard_attention, split_tensor_along_last_dim
 
+
+class VectorKvCache():
+    def __init__(self, num_layers, head_nums, hidden_units, max_len, capacity=0, factor=2):
+        """
+        1. capacity: the size of the storage space currently allocated for the cache
+        2. max_len: the max length of tokens
+        3. self.mem_size: the number of elements in the cache, like size in c++ vector
+        """
+        self.factor = factor
+        if self.factor <= 1.0 :
+            raise ValueError("factor should be greater than 1.")
+        self.max_len = max_len
+        self.mem_size = 0
+        self.capacity = capacity
+        self.mems_k = None
+        self.mems_v = None
+        self.num_layers = num_layers
+        self.head_nums = head_nums
+        self.hidden_units = hidden_units
+
+    def append_kv(self, k, v, layer_id):
+        b, nh, seq_len, hidden_size = k.shape
+        mem_len = self.mem_size
+        self.mems_k[layer_id][:, :, mem_len:mem_len+seq_len, :] = k
+        self.mems_v[layer_id][:, :, mem_len:mem_len+seq_len, :] = v
+        
+
+    def get_kv(self, layer_id, seq_len):
+        #  return key value for attention forward
+        mem_k = self.mems_k[layer_id]
+        mem_v = self.mems_v[layer_id]
+        seq_len = self.mem_size + seq_len
+        k = mem_k[:, :, :seq_len, :]
+        v = mem_v[:, :, :seq_len, :]
+        return k, v
+    
+    def get_mem_size(self):
+        return self.mem_size
+
+    def update_mem_size(self, seq_len):
+        self.mem_size += seq_len
+
+    def reMalloc(self, seq_len, batch_size, dtype, device):
+        new_capacity = seq_len + self.mem_size
+        if new_capacity > self.capacity:
+            new_mems_size = [self.num_layers, batch_size, self.head_nums, 0, self.hidden_units] # [num_layers, batch_size, head_num, seq_len, size_per_head]
+            if int(new_capacity * self.factor) <= self.max_len:
+                new_mems_size[3] = int(new_capacity * self.factor)
+                self.capacity = int(new_capacity * self.factor)
+            else:
+                new_mems_size[3] = self.max_len
+                self.capacity = self.max_len
+            new_mems_k = torch.empty(*new_mems_size, dtype=dtype, device=device)
+            new_mems_v = torch.empty(*new_mems_size, dtype=dtype, device=device)
+            if self.mems_k is not None and self.mems_v is not None :
+                new_mems_k[:, :, :, :self.mem_size, :] = self.mems_k
+                new_mems_v[:, :, :, :self.mem_size, :] = self.mems_v
+            self.mems_k = new_mems_k
+            self.mems_v = new_mems_v
+
 class CachedAutoregressiveMixin(BaseMixin):
-    def __init__(self):
-        super().__init__()     
+    def __init__(self, num_layers, head_nums, hidden_units, max_len, capacity=0, factor=2):
+        super().__init__()
+        self.num_layers = num_layers  
+        self.mems = vector_kv_cache = VectorKvCache(num_layers, head_nums, hidden_units, max_len, capacity=capacity, factor=factor)
            
     @non_conflict
-    def attention_fn(self, q, k, v, mask, dropout_fn, mems=None, cross_attention=False, old_impl=standard_attention,
+    def attention_fn(self, q, k, v, mask, dropout_fn, cross_attention=False, old_impl=standard_attention,
                      **kw_args):
         if not cross_attention:
-            mem = mems[kw_args['layer_id']] if mems is not None else None # 2, batch, head, seqlen, hidden_size
+            layer_id = kw_args['layer_id']
             b, nh, seq_len, hidden_size = k.shape
+            if layer_id == 0 :
+                self.mems.reMalloc(seq_len, b, k.dtype, k.device)
+            self.mems.append_kv(k, v, layer_id)
+            k, v = self.mems.get_kv(layer_id)
+            if layer_id == self.num_layers - 1 :
+                self.mems.update_mems_size(seq_len)
 
-            cache_kv = torch.stack((k, v)).permute(1, 3, 0, 2, 4).detach().contiguous().view(b, seq_len, nh * hidden_size * 2)
-            kw_args['output_this_layer']['mem_kv'] = cache_kv
-
-            if mem is not None: # the first time, mem is None
-                # might change batch_size
-                mem = mem.expand(b, -1, -1).reshape(b, mem.shape[1], 2, nh, hidden_size).permute(2, 0, 3, 1, 4)
-                memk, memv = mem[0], mem[1]
-                k = torch.cat((memk, k), dim=2)
-                v = torch.cat((memv, v), dim=2)
-        return old_impl(q, k, v, mask, dropout_fn, cross_attention=cross_attention, mems=mems, **kw_args)
+        return old_impl(q, k, v, mask, dropout_fn, cross_attention=cross_attention, **kw_args)
 
 
 class CachedAutoregressiveModel(BaseModel):

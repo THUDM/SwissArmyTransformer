@@ -113,8 +113,6 @@ def filling_sequence(
             log_attention_weights=log_attention_weights_part,
             **kw_args
         )
-        mem_kv = [o['mem_kv'] for o in output_per_layers]
-        mems = update_mems(mem_kv, mems, max_memory_length=max_memory_length)
         counter += 1
         index = counter
         # sampling
