@@ -39,7 +39,7 @@ from .mappings import gather_from_model_parallel_region
 from .mappings import reduce_from_model_parallel_region
 from .mappings import scatter_to_model_parallel_region
 
-from .operation import mp_split_model
+from .operation import mp_split_model, mp_split_model_rank0, mp_split_model_receive
 
 try:
     import torch
