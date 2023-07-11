@@ -83,7 +83,18 @@ class LLaMAMlpMixin(BaseMixin):
 class LMMixin(BaseMixin):
     def __init__(self, vocab_size, hidden_size):
         super().__init__()
-        self.lm_head = nn.Linear(hidden_size, vocab_size, bias=False)
+        self.lm_head = ColumnParallelLinear(
+            hidden_size,
+            vocab_size,
+            gather_output=True,
+            # init_method=init_method,
+            bias=False,
+            # params_dtype=params_dtype,
+            module=self,
+            name="lm_head",
+            # skip_init=skip_init,
+            # device=device
+        )
 
     def final_forward(self, logits, **kwargs):
         return self.lm_head(logits)

@@ -14,6 +14,8 @@ MODEL_URLS = {
     'eva02_L_pt_m38m_p14': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Feva02_L_pt_m38m_p14.zip&dl=1',
     'llama-7b': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fllama-7b.zip&dl=1',
     'llama-13b': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fllama-13b.zip&dl=1',
+    'llama-30b': 'r2://llama-30b',
+    'llama-65b': 'r2://llama-65b',
     'clip': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fclip.zip&dl=1',
     'clip-vit-base-patch16': 'https://lfs.aminer.cn/misc/clip/clip-vit-base-patch16.zip',
     'clip-vit-large-patch14': 'https://lfs.aminer.cn/misc/clip/clip-vit-large-patch14.zip',

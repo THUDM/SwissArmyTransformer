@@ -40,44 +40,52 @@ def mp_split_model(model, new_model_parallel_size):
             iter_repartition(sub_module)
     iter_repartition(model)
 
+from .initialize import get_node_group, get_node_src_rank, get_node_world_size
+
 def mp_split_model_rank0(model, model_full):
     """
     This function loads partitions from rank 0.
     It takes less memory when world size is large.
     """
+    group = get_node_group()
+    src = get_node_src_rank()
+    local_world_size = get_node_world_size()
     def iter_repartition(new_model, module):
         for (new_name, sub_new_model), (name, sub_module) in zip(new_model.named_children(), module.named_children()):
             if isinstance(sub_module, (ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding)):
                 new_weights, new_biases = sub_module.partition()
-                for i, w in enumerate(new_weights):
+                for i in range(local_world_size):
                     if i == 0:
-                        sub_new_model.weight.data.copy_(w)
+                        sub_new_model.weight.data.copy_(new_weights[src%len(new_weights)])
                     else:
-                        torch.distributed.send(w.cuda(), i)
-                for i, b in enumerate(new_biases):
-                    if i == 0:
-                        sub_new_model.bias.data.copy_(b)
-                    else:
-                        torch.distributed.send(b.cuda(), i)
+                        torch.distributed.send(new_weights[(src+i)%len(new_weights)].cuda(), src+i)
+                if new_biases:
+                    for i in range(local_world_size):
+                        if i == 0:
+                            sub_new_model.bias.data.copy_(new_biases[src%len(new_weights)])
+                        else:
+                            torch.distributed.send(new_biases[(src+i)%len(new_biases)].cuda(), src+i)
             else:
                 for (nn, np), (n, p) in zip(sub_new_model.named_parameters(recurse=False), sub_module.named_parameters(recurse=False)):
                     np.data.copy_(torch.clone(p.data).detach())
-                    torch.distributed.broadcast(np.data, 0)
+                    torch.distributed.broadcast(np.data, src, group=group)
             iter_repartition(sub_new_model, sub_module)
     iter_repartition(model, model_full)
 
 def mp_split_model_receive(model):
+    group = get_node_group()
+    src = get_node_src_rank()
     def iter_repartition(module):
         for name, sub_module in module.named_children():
             if isinstance(sub_module, VocabParallelEmbedding):
-                torch.distributed.recv(sub_module.weight.data, 0)
+                torch.distributed.recv(sub_module.weight.data, src)
             elif isinstance(sub_module, (ColumnParallelLinear, RowParallelLinear)):
-                torch.distributed.recv(sub_module.weight.data, 0)
+                torch.distributed.recv(sub_module.weight.data, src)
                 if sub_module.bias is not None:
-                    torch.distributed.recv(sub_module.bias.data, 0)
+                    torch.distributed.recv(sub_module.bias.data, src)
             else:
                 for n, p in sub_module.named_parameters(recurse=False):
-                    torch.distributed.broadcast(p.data, 0)
+                    torch.distributed.broadcast(p.data, src, group=group)
             iter_repartition(sub_module)
     iter_repartition(model)
     

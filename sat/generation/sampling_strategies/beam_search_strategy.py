@@ -10,6 +10,7 @@
 import torch
 import torch.nn.functional as F
 from .base_strategy import top_k_logits
+from sat.mpu.initialize import get_model_parallel_world_size, get_model_parallel_src_rank, get_model_parallel_group
 
 class BeamSearchStrategy:
     def __init__(self, num_beams, length_penalty=1., 
@@ -110,6 +111,8 @@ class BeamSearchStrategy:
         probs = F.softmax(logits.view(batch_size * vocab_size), dim=0)
         next_tokens = torch.multinomial(probs, 
             num_samples=(max(1,len(self.end_tokens))+1) * self.num_beams) # [2*nb]
+        if get_model_parallel_world_size() > 1:
+            torch.distributed.broadcast(next_tokens, get_model_parallel_src_rank(), group=get_model_parallel_group())
         next_token_scores = next_token_scores[next_tokens]
         next_token_scores, _indices = torch.sort(next_token_scores, descending=True, dim=0)
         next_tokens = next_tokens[_indices]
