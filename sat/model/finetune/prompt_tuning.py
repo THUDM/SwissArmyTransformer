@@ -13,7 +13,7 @@ import math
 import random
 import torch
 
-from sat.model.transformer import standard_attention
+from sat.transformer_defaults import attention_fn_default
 from sat.model.base_model import BaseModel, BaseMixin, non_conflict
 
 
@@ -27,7 +27,7 @@ class PrefixTuningMixin(BaseMixin):
         self.prefix_len = prefix_len
 
     @non_conflict
-    def attention_fn(self, q, k, v, mask, dropout_fn, old_impl=standard_attention, **kw_args):
+    def attention_fn(self, q, k, v, mask, dropout_fn, old_impl=attention_fn_default, **kw_args):
         prefix_k, prefix_v = self.prefix[kw_args['layer_id']]
 
         b, nh, seq_len, hidden_size = k.shape

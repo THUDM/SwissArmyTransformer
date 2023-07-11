@@ -7,6 +7,7 @@ from sat.transformer_defaults import standard_attention
 from sat.mpu.utils import split_tensor_along_last_dim
 from sat.model.position_embedding.rotary_embeddings import RotaryEmbedding, rotate_half
 import torch.nn.functional as F
+from sat.mpu import ColumnParallelLinear
 
 def apply_rotary_pos_emb_index_bhs(q, k, cos, sin, position_id):
     # batch_size, num_head, seq_len, hidden_size
@@ -60,7 +61,18 @@ class LLaMAMlpMixin(BaseMixin):
     def __init__(self, num_layers, in_features, hidden_features):
         super().__init__()
         hidden_features = 4 * in_features if hidden_features is None else hidden_features
-        self.gate_proj = nn.ModuleList([nn.Linear(in_features, hidden_features, bias=False) for i in range(num_layers)])
+        self.gate_proj = nn.ModuleList([ColumnParallelLinear(
+            in_features,
+            hidden_features,
+            gather_output=False,
+            # init_method=init_method,
+            bias=False,
+            # params_dtype=params_dtype,
+            module=self,
+            name="dense_h_to_4h_gate",
+            # skip_init=skip_init,
+            # device=device
+        ) for i in range(num_layers)])
 
     def mlp_forward(self, hidden_states, **kw_args):
         origin = self.transformer.layers[kw_args['layer_id']].mlp
@@ -71,7 +83,18 @@ class LLaMAMlpMixin(BaseMixin):
 class LMMixin(BaseMixin):
     def __init__(self, vocab_size, hidden_size):
         super().__init__()
-        self.lm_head = nn.Linear(hidden_size, vocab_size, bias=False)
+        self.lm_head = ColumnParallelLinear(
+            hidden_size,
+            vocab_size,
+            gather_output=True,
+            # init_method=init_method,
+            bias=False,
+            # params_dtype=params_dtype,
+            module=self,
+            name="lm_head",
+            # skip_init=skip_init,
+            # device=device
+        )
 
     def final_forward(self, logits, **kwargs):
         return self.lm_head(logits)

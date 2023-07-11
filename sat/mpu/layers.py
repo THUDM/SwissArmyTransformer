@@ -144,6 +144,24 @@ class VocabParallelEmbedding(torch.nn.Module):
             ).detach())
         del self.original_weight
 
+    def partition(self, new_model_parallel_size=None):
+        assert self.num_embeddings_per_partition == self.num_embeddings
+        if new_model_parallel_size is None:
+            new_model_parallel_size = get_model_parallel_world_size()
+        new_weights = []
+        for rank in range(new_model_parallel_size):
+            self.vocab_start_index, self.vocab_end_index = \
+                VocabUtility.vocab_range_from_global_vocab_size(
+                    self.num_embeddings, rank,
+                    new_model_parallel_size)
+            self.num_embeddings_per_partition = self.vocab_end_index - \
+                                                self.vocab_start_index
+            weight = torch.clone(
+                self.weight[self.vocab_start_index:self.vocab_end_index],
+                ).detach()
+            new_weights.append(weight)
+        return new_weights, []
+
 
 class ParallelEmbedding(torch.nn.Module):
     """Embedding parallelized in the embedding dimension.
@@ -308,6 +326,48 @@ class ColumnParallelLinear(torch.nn.Module):
             self.bias = torch.nn.Parameter(new_bias)
             del self.original_bias
 
+    def partition(self, new_model_parallel_size=None):
+        assert self.output_size_per_partition == self.output_size
+        if new_model_parallel_size is None:
+            new_model_parallel_size = get_model_parallel_world_size()
+        output_size_per_partition = divide(self.output_size, new_model_parallel_size)
+        new_weights = []
+        new_biases = []
+        for rank in range(new_model_parallel_size):
+            mp_rank = rank
+            mp_size = new_model_parallel_size
+            # weight is arranged as [stride0...stride1...stride2] * [input_size], extract non-contiguous parts
+            strides = [1]*self.stride if isinstance(self.stride, int) else self.stride # int means equal number of qkv, or ratios
+            assert self.weight.shape[0] % sum(strides) == 0, 'cannot divide weight evenly'
+            factor = self.weight.shape[0] // sum(strides)
+            # decompose weight according to strides
+            strided_weights, _acm = [], 0
+            for i in range(len(strides)):
+                strided_weights.append(self.weight[_acm:_acm+factor*strides[i], :].detach())
+                _acm += factor*strides[i]
+            new_weight = torch.cat([
+                strided_weight[
+                    (strided_weight.shape[0]//mp_size)*mp_rank:
+                    (strided_weight.shape[0]//mp_size)*(mp_rank+1)
+                    ]
+                for strided_weight in strided_weights
+            ], dim=0).contiguous().view(output_size_per_partition, self.input_size)
+            new_weights.append(torch.clone(new_weight).detach())
+            if self.bias is not None:
+                # decompose bias according to strides
+                strided_biases, _acm = [], 0
+                for i in range(len(strides)):
+                    strided_biases.append(self.bias[_acm:_acm+factor*strides[i]].detach())
+                    _acm += factor*strides[i]
+                new_bias = torch.cat([
+                    strided_bias[
+                        (strided_bias.shape[0]//mp_size)*mp_rank:
+                        (strided_bias.shape[0]//mp_size)*(mp_rank+1)
+                        ]
+                    for strided_bias in strided_biases
+                ], dim=0).contiguous().view(output_size_per_partition)
+                new_biases.append(torch.clone(new_bias).detach())
+        return new_weights, new_biases
 
 class RowParallelLinear(torch.nn.Module):
     """Linear layer with row parallelism.
@@ -398,3 +458,21 @@ class RowParallelLinear(torch.nn.Module):
                             :(mp_rank+1)*self.input_size_per_partition],
             ).detach())
         del self.original_weight
+
+    def partition(self, new_model_parallel_size=None):
+        assert self.input_size_per_partition == self.input_size
+        if new_model_parallel_size is None:
+            new_model_parallel_size = get_model_parallel_world_size()
+        input_size_per_partition = divide(self.input_size, new_model_parallel_size)
+        new_weights = []
+        new_biases = []
+        for rank in range(new_model_parallel_size):
+            mp_rank = rank
+            weight = torch.clone(
+                self.weight[:, mp_rank*input_size_per_partition
+                                :(mp_rank+1)*input_size_per_partition],
+                ).detach()
+            new_weights.append(weight)
+            if self.bias is not None:
+                new_biases.append(torch.clone(self.bias.data).detach())
+        return new_weights, new_biases

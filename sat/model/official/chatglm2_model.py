@@ -103,8 +103,15 @@ class ChatGLM2Model(BaseModel):
         full_attention_mask.unsqueeze_(1)
         return full_attention_mask
     
+    def get_position_ids(self, input_ids):
+        batch_size, seq_length = input_ids.shape
+        position_ids = torch.arange(seq_length, dtype=torch.long, device=input_ids.device).unsqueeze(0).repeat(batch_size, 1)
+        return position_ids
+    
     def forward(self, input_ids, position_ids=None, attention_mask=None, past_key_values=None, **kwargs):
-        if attention_mask.ndim == 4:
+        if position_ids is None:
+            position_ids = self.get_position_ids(input_ids)
+        if attention_mask is not None and attention_mask.ndim == 4:
             pass
         elif past_key_values is not None and input_ids.size(0) == 1:
             attention_mask = torch.tensor([[1]], dtype=torch.long, device=input_ids.device)

@@ -26,7 +26,10 @@ from sat.helpers import print_rank0
 _MODEL_PARALLEL_GROUP = None
 # Data parallel group that the current rank belongs to.
 _DATA_PARALLEL_GROUP = None
+# Node group that current rank belongs to.
+_NODE_GROUP = None
 
+import os
 
 def initialize_model_parallel(model_parallel_size_):
     """
@@ -77,6 +80,20 @@ def initialize_model_parallel(model_parallel_size_):
         group = torch.distributed.new_group(ranks)
         if i == (rank // model_parallel_size):
             _MODEL_PARALLEL_GROUP = group
+    
+    local_world_size = os.environ.get('LOCAL_WORLD_SIZE', None)
+    if local_world_size is not None:
+        local_world_size = int(local_world_size)
+        # Build the node groups.
+        global _NODE_GROUP
+        assert _NODE_GROUP is None, \
+            'node group is already initialized'
+        for i in range(world_size // local_world_size):
+            ranks = range(i * local_world_size,
+                        (i + 1) * local_world_size)
+            group = torch.distributed.new_group(ranks)
+            if i == (rank // local_world_size):
+                _NODE_GROUP = group
 
 
 def model_parallel_is_initialized():
@@ -100,9 +117,21 @@ def get_data_parallel_group():
     return _DATA_PARALLEL_GROUP
 
 
+def get_node_group():
+    """Get the data parallel group the caller rank belongs to."""
+    assert _NODE_GROUP is not None, \
+        'node group is not initialized, please pass LOCAL_WORLD_SIZE environment variable.'
+    return _NODE_GROUP
+
+
 def get_model_parallel_world_size():
     """Return world size for the model parallel group."""
     return torch.distributed.get_world_size(group=get_model_parallel_group())
+
+
+def get_node_world_size():
+    """Return world size for the node group."""
+    return torch.distributed.get_world_size(group=get_node_group())
 
 
 def get_model_parallel_rank():
@@ -110,11 +139,24 @@ def get_model_parallel_rank():
     return torch.distributed.get_rank(group=get_model_parallel_group())
 
 
+def get_node_rank():
+    """Return my rank for the node group."""
+    return torch.distributed.get_rank(group=get_node_group())
+
+
 def get_model_parallel_src_rank():
     """Calculate the global rank corresponding to a local rank zero
     in the model parallel group."""
     global_rank = torch.distributed.get_rank()
     local_world_size = get_model_parallel_world_size()
+    return (global_rank // local_world_size) * local_world_size
+
+
+def get_node_src_rank():
+    """Calculate the global rank corresponding to a local rank zero
+    in the node group."""
+    global_rank = torch.distributed.get_rank()
+    local_world_size = get_node_world_size()
     return (global_rank // local_world_size) * local_world_size
 
 
@@ -134,3 +176,5 @@ def destroy_model_parallel():
     _MODEL_PARALLEL_GROUP = None
     global _DATA_PARALLEL_GROUP
     _DATA_PARALLEL_GROUP = None
+    global _NODE_GROUP
+    _NODE_GROUP = None
