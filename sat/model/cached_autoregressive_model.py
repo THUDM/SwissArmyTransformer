@@ -30,8 +30,7 @@ class VectorKvCache():
         self.max_len = max_len
         self.mem_size = 0
         self.capacity = capacity
-        self.mems_k = None
-        self.mems_v = None
+        self.mems_kv = None # [2, num_layers, batch_size, head_nums, seq_len, size_per_head]
         self.num_layers = num_layers
         self.head_nums = head_nums
         self.hidden_units = hidden_units
@@ -40,17 +39,15 @@ class VectorKvCache():
     def append_kv(self, k, v, layer_id):
         b, nh, seq_len, hidden_size = k.shape
         mem_len = self.mem_size
-        self.mems_k[layer_id][:, :, mem_len:mem_len+seq_len, :] = k
-        self.mems_v[layer_id][:, :, mem_len:mem_len+seq_len, :] = v
+        self.mems_kv[0, layer_id, :, :, mem_len:mem_len+seq_len, :] = k
+        self.mems_kv[1, layer_id, :, :, mem_len:mem_len+seq_len, :] = v
         
 
     def get_kv(self, layer_id, seq_len):
         #  return key value for attention forward
-        mem_k = self.mems_k[layer_id]
-        mem_v = self.mems_v[layer_id]
         seq_len = self.mem_size + seq_len
-        k = mem_k[:, :, :seq_len, :]
-        v = mem_v[:, :, :seq_len, :]
+        k = self.mems_kv[0, layer_id, :, :, :seq_len, :]
+        v = self.mems_kv[1, layer_id, :, :, :seq_len, :]
         return k, v
     
     def get_mem_size(self):
@@ -62,20 +59,17 @@ class VectorKvCache():
     def reMalloc(self, seq_len, batch_size, dtype, device):
         new_capacity = seq_len + self.mem_size
         if new_capacity > self.capacity:
-            new_mems_size = [self.num_layers, batch_size, self.head_nums, 0, self.size_per_head] # [num_layers, batch_size, head_num, seq_len, size_per_head]
+            new_mems_size = [2, self.num_layers, batch_size, self.head_nums, 0, self.size_per_head] # [num_layers, batch_size, head_num, seq_len, size_per_head]
             if int(new_capacity * self.factor) <= self.max_len:
-                new_mems_size[3] = int(new_capacity * self.factor)
+                new_mems_size[4] = int(new_capacity * self.factor)
                 self.capacity = int(new_capacity * self.factor)
             else:
-                new_mems_size[3] = self.max_len
+                new_mems_size[4] = self.max_len
                 self.capacity = self.max_len
-            new_mems_k = torch.empty(*new_mems_size, dtype=dtype, device=device)
-            new_mems_v = torch.empty(*new_mems_size, dtype=dtype, device=device)
-            if self.mems_k is not None and self.mems_v is not None :
-                new_mems_k[:, :, :, :self.mem_size, :] = self.mems_k
-                new_mems_v[:, :, :, :self.mem_size, :] = self.mems_v
-            self.mems_k = new_mems_k
-            self.mems_v = new_mems_v
+            new_mems_kv = torch.empty(*new_mems_size, dtype=dtype, device=device)
+            if self.mems_kv is not None :
+                new_mems_kv[:, :, :, :, :self.mem_size, :] = self.mems_kv
+            self.mems_kv = new_mems_kv
 
 class CachedAutoregressiveMixin(BaseMixin):
     def __init__(self, num_layers, head_nums, hidden_units, max_len, capacity=0, factor=2):

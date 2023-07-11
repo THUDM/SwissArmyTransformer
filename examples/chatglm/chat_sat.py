@@ -89,8 +89,7 @@ def chat(model, tokenizer,
         [inputs, torch.tensor([-1]*(max_length-len(inputs)), device=inputs.device)], dim=0
     )
     # ---------------
-    strategy = BaseStrategy(temperature=temperature, top_p=top_p, top_k=0, end_tokens=[tokenizer.eos_token_id])
-    strategy = BeamSearchStrategy(temperature=temperature, top_p=top_p, top_k=0, end_tokens=[tokenizer.eos_token_id], num_beams=num_beams, consider_end=True)
+    strategy = BaseStrategy(temperature=temperature, top_p=top_p, top_k=top_k, end_tokens=[tokenizer.eos_token_id])
     output = filling_sequence(
         model, seq,
         batch_size=1,
@@ -136,7 +135,7 @@ if __name__ == "__main__":
         use_gpu_initialization=True,
     ))
     model = model.eval()
-    model.add_mixin('auto-regressive', CachedAutoregressiveMixin(model_args.num_layers, model_args.num_attention_heads, model_args.hidden_size, args.max_length))
+    model.add_mixin('auto-regressive', CachedAutoregressiveMixin(model_args.num_layers, model_args.num_attention_heads, model_args.hidden_size, 10000))
 
     tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm-6b", trust_remote_code=True)
     history = None
