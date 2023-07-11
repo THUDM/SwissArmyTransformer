@@ -44,6 +44,8 @@ def auto_create(name, *, path=None, url=None):
         path = os.getenv('SAT_HOME', '~/.sat_models') # TODO Rename
     path = os.path.expanduser(path)
     model_path = os.path.join(path, name)
+    if url == 'local':
+        return model_path
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     lock = FileLock(model_path + '.lock', mode=0o777)
     with lock:

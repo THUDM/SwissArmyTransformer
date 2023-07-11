@@ -4,8 +4,9 @@ from transformers import LlamaTokenizer
 from sat.model.mixins import CachedAutoregressiveMixin
 from sat.generation.autoregressive_sampling import filling_sequence
 from sat.generation.sampling_strategies import BaseStrategy, BeamSearchStrategy
-from sat.mpu import mp_split_model, mp_split_model_rank0, mp_split_model_receive, destroy_model_parallel, initialize_model_parallel
-from sat.helpers import print_rank0
+from sat.mpu import mp_split_model
+from sat.mpu.mp_model import get_mp_split_model
+from sat.mpu.initialize import get_model_parallel_rank
 import os
 
 def chat(model, tokenizer, 
@@ -30,7 +31,9 @@ def chat(model, tokenizer,
     output_list = list(output)
 
     response = tokenizer.decode(output_list[0])
-    print_rank0(response)
+    if get_model_parallel_rank() == 0:
+        with open(f"{torch.distributed.get_rank()}.txt", 'w') as f:
+            f.write(response)
 
 if __name__ == "__main__":
     import argparse
@@ -41,46 +44,16 @@ if __name__ == "__main__":
     parser.add_argument("--top_k", type=int, default=10)
     parser.add_argument("--temperature", type=float, default=0.8)
     args = parser.parse_args()
-    local_rank = int(os.getenv('LOCAL_RANK'))
 
-    if True:
-        # load model
-        model, model_args = AutoModel.from_pretrained('llama-30b', args=argparse.Namespace(
-            fp16=True,
-            skip_init=True,
-            use_gpu_initialization=True
-        ), overwrite_args={'model_parallel_size': 2}, build_only=True)
-        model = model.eval()
-        destroy_model_parallel()
-        initialize_model_parallel(1)
-        if local_rank == 0:
-            model_full, args_ = AutoModel.from_pretrained('llama-30b', args=argparse.Namespace(
-                fp16=True,
-                skip_init=True,
-                # use_gpu_initialization=True,
-                device='cpu'
-            ))
-        torch.distributed.barrier()
-        destroy_model_parallel()
-        initialize_model_parallel(2)
-        if local_rank == 0:
-            mp_split_model_rank0(model, model_full)
-            del model_full
-        else:
-            mp_split_model_receive(model)
-    else:
-        # load model
-        model, model_args = AutoModel.from_pretrained('llama-30b', args=argparse.Namespace(
-            fp16=True,
-            skip_init=True,
-            use_gpu_initialization=True
-        ))
-        model = model.eval()
-        mp_split_model(model, 2)
-        model = model.to(local_rank)
+    # load model
+    model, model_args = get_mp_split_model('llama-30b', 4, argparse.Namespace(
+        fp16=True,
+        skip_init=True,
+        use_gpu_initialization=True
+    )) #, url='local')
     model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
 
-    tokenizer = LlamaTokenizer.from_pretrained("llama-30b-hf")
+    tokenizer = LlamaTokenizer.from_pretrained("decapoda-research/llama-30b-hf")
     with torch.no_grad():
         chat(model, tokenizer, max_length=args.max_length, num_beams=args.num_beams, top_p=args.top_p, temperature=args.temperature, top_k=args.top_k)
 

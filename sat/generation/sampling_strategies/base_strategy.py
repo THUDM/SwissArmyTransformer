@@ -13,6 +13,7 @@ import math
 import random
 import torch
 import torch.nn.functional as F
+from sat.mpu.initialize import get_model_parallel_world_size, get_model_parallel_src_rank, get_model_parallel_group
 
 def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-65504):
     # This function has been mostly taken from huggingface conversational ai code at
@@ -90,6 +91,8 @@ class BaseStrategy:
         logits = top_k_logits(logits, self.topk, self.top_p)
         probs = F.softmax(logits, dim=-1)  # float is essetial, due to a bug in Pytorch
         pred = torch.multinomial(probs, num_samples=1)
+        if get_model_parallel_world_size() > 1:
+            torch.distributed.broadcast(pred, get_model_parallel_src_rank(), group=get_model_parallel_group())
         if pred.numel() == 1 and pred.item() in self.end_tokens:
             self._is_done = True
         tokens = torch.cat((tokens, pred.view(tokens.shape[0], 1)), dim=1)
