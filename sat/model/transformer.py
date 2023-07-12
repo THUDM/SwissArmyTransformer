@@ -410,9 +410,12 @@ class BaseTransformer(torch.nn.Module):
         # create embedding parameters
         self.embedding_dropout = torch.nn.Dropout(embedding_dropout_prob)
 
-        self.word_embeddings = VocabParallelEmbedding(
-            num_embeddings=vocab_size, embedding_dim=hidden_size, 
-            params_dtype=params_dtype, skip_init=skip_init, device=device)
+        if vocab_size < 1000:
+            self.word_embeddings = torch.nn.Embedding(vocab_size, hidden_size, dtype=params_dtype, device=device)
+        else:
+            self.word_embeddings = VocabParallelEmbedding(
+                num_embeddings=vocab_size, embedding_dim=hidden_size, 
+                params_dtype=params_dtype, skip_init=skip_init, device=device)
 
         self.position_embeddings = torch.nn.Embedding(max_sequence_length, hidden_size)
         torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)
