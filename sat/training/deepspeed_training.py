@@ -529,6 +529,8 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
     if args.fp16:
         log_string += ' loss scale {:.1f} |'.format(
             optimizer.cur_scale if args.deepspeed else optimizer.loss_scale)
+    log_string += 'speed {:.2f} samples/(min*GPU)'.format(
+        (args.gradient_accumulation_steps * args.batch_size / args.model_parallel_size / (elapsed_time / 60000.0)))
     print_rank0(log_string)
     if summary_writer is not None:
         summary_writer.add_scalar(f'Train/lr', lr, step)
