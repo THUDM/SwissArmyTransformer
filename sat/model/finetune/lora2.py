@@ -69,11 +69,7 @@ map_cls = {
 }
 
 class LoraLinear(nn.Module):
-    def __init__(self, original_cls, partition, in_dim, out_dim, r, lora_alpha=1., lora_dropout=0., head_first=False, num_attention_heads=None, hidden_size_per_attention_head=None, qlora=False, original_obj=None):
-        """
-        You can use safely with this layer, ONLY WHEN query_key_value output is query_key_value order.
-        If you use a different order like ChatGLM, pass head_first=True
-        """
+    def __init__(self, original_cls, partition, in_dim, out_dim, r, lora_alpha=1., lora_dropout=0., qlora=False, original_obj=None):
         super().__init__()
         if lora_dropout and lora_dropout > 0:
             self.lora_dropout = nn.Dropout(p=lora_dropout)
@@ -102,12 +98,7 @@ class LoraLinear(nn.Module):
         for i in range(partition):
             nn.init.kaiming_uniform_(self.matrix_A[i], a=math.sqrt(5))
             nn.init.zeros_(self.matrix_B[i])
-        self.head_first = head_first
         self.partition = partition
-        if head_first:
-            assert num_attention_heads is not None and hidden_size_per_attention_head is not None, "You should set num_attention_heads and hidden_size_per_attention_head if you use head_first=True!"
-            self.num_attention_heads = num_attention_heads
-            self.hidden_size_per_attention_head = hidden_size_per_attention_head
 
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
         # This is not a perfect version, becuase it doesn't handle errors and unexpected keys.
@@ -123,16 +114,7 @@ class LoraLinear(nn.Module):
         lora_outputs = []
         for i in range(self.partition):
             lora_outputs.append((self.lora_dropout(x) @ self.matrix_A[i].T @ self.matrix_B[i].T) * self.scaling)
-        if self.head_first:
-            new_tensor_shape = lora_outputs[0].size()[:-1] + (
-                self.num_attention_heads,
-                self.hidden_size_per_attention_head,
-            )
-            for i in range(self.partition):
-                lora_outputs[i] = lora_outputs[i].view(*new_tensor_shape)
-            mixed_raw_layer = mixed_raw_layer + torch.cat(lora_outputs, -1).view(*mixed_raw_layer.size())
-        else:
-            mixed_raw_layer = mixed_raw_layer + torch.cat(lora_outputs, -1)
+        mixed_raw_layer = mixed_raw_layer + torch.cat(lora_outputs, -1)
 
         return mixed_raw_layer
 
@@ -159,12 +141,7 @@ def merge_linear_lora(lin):
     new_qkv = []
     for i in range(lin.partition):
         new_qkv.append(lin.matrix_A[i].data.T.float() @ lin.matrix_B[i].data.T.float() * lin.scaling)
-    if lin.head_first:
-        ini_shape = new_qkv[0].shape
-        new_qkv = [x.view(ini_shape[0], lin.num_attention_heads, -1) for x in new_qkv]
-        new_qkv = torch.cat(new_qkv, -1).view(ini_shape[0], lin.partition*ini_shape[1])
-    else:
-        new_qkv = torch.cat(new_qkv, -1)
+    new_qkv = torch.cat(new_qkv, -1)
     new_lin.weight.data = weight + new_qkv.T.to(lin.original.bias.data.dtype)
     return new_lin.cuda() if torch.cuda.is_available() else new_lin
 
@@ -175,9 +152,6 @@ class LoraMixin(BaseMixin):
                 lora_alpha: int = 1,
                 lora_dropout: float = 0.,
                 layer_range = None,
-                head_first = False,
-                num_attention_heads = None,
-                hidden_size_per_attention_head = None,
                 qlora = False,
                 cross_attention = True):
         super().__init__()
@@ -190,9 +164,6 @@ class LoraMixin(BaseMixin):
         self.layer_range = layer_range
 
         self.scaling = self.lora_alpha / self.r
-        self.head_first = head_first
-        self.num_attention_heads = num_attention_heads
-        self.hidden_size_per_attention_head = hidden_size_per_attention_head
         self.qlora = qlora
         self.cross_attention = cross_attention
 
@@ -200,7 +171,7 @@ class LoraMixin(BaseMixin):
         for i in self.layer_range:
             print(f'replacing layer {i} attention with lora')
             parent_model.transformer.layers[i].attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].attention.dense, 1, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora)
-            parent_model.transformer.layers[i].attention.query_key_value = replace_linear_with_lora(parent_model.transformer.layers[i].attention.query_key_value, 3, self.r, self.lora_alpha, self.lora_dropout, head_first=self.head_first, num_attention_heads=self.num_attention_heads, hidden_size_per_attention_head=self.hidden_size_per_attention_head, qlora=self.qlora)
+            parent_model.transformer.layers[i].attention.query_key_value = replace_linear_with_lora(parent_model.transformer.layers[i].attention.query_key_value, 3, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora)
             if self.cross_attention and parent_model.transformer.layers[i].is_decoder:
                 print(f'replacing layer {i} cross attention with lora')
                 parent_model.transformer.layers[i].cross_attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].cross_attention.dense, 1, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora)
