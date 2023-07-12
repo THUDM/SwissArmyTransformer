@@ -16,11 +16,23 @@ def gelu(x):
     return gelu_impl(x)
 
 from sat.model.position_embedding.rotary_embeddings import RotaryEmbedding, apply_rotary_pos_emb_index
+from sat.mpu.layers import ColumnParallelLinear
 
 class ChatGLMFinalMixin(BaseMixin):
     def __init__(self, vocab_size, hidden_size):
         super().__init__()
-        self.lm_head = nn.Linear(hidden_size, vocab_size, bias=False)
+        self.lm_head = ColumnParallelLinear(
+            hidden_size,
+            vocab_size,
+            gather_output=True,
+            # init_method=init_method,
+            bias=False,
+            # params_dtype=params_dtype,
+            module=self,
+            name="lm_head",
+            # skip_init=skip_init,
+            # device=device
+        )
 
     def final_forward(self, logits, **kwargs):
         return self.lm_head(logits)
@@ -35,54 +47,25 @@ class ChatGLMAttnMixin(BaseMixin):
             learnable=False,
         )
 
-    def attention_fn(self, query_layer, key_layer, value_layer, attention_mask,
-                        attention_dropout=None, log_attention_weights=None, scaling_attention_score=True, **kwargs):
-        # We disable the PB-relax-Attention and only changes the order of computation, because it is enough for most of training. 
-        # The implementation in the paper can be done very easily, if you really need it to train very deep transformers. 
-        query_key_layer_scaling_coeff = float(kwargs['layer_id'] + 1)
-        if scaling_attention_score:
-            query_layer = query_layer / (math.sqrt(query_layer.shape[-1]) * query_key_layer_scaling_coeff)
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        dtype = attention_scores.dtype
-        if log_attention_weights is not None:
-            attention_scores += log_attention_weights
-
-        if not (attention_mask.shape[-2] == 1 and (attention_mask > 0).all()):
-            # if auto-regressive, skip
-            attention_scores = torch.mul(attention_scores, attention_mask) - \
-                            10000.0 * (1.0 - attention_mask)
-        attention_scores = attention_scores.float()
-        attention_scores = attention_scores * query_key_layer_scaling_coeff
-        attention_probs = F.softmax(attention_scores, dim=-1)
-        attention_probs = attention_probs.type(dtype)
-
-        if attention_dropout is not None:
-            if mpu.get_cuda_rng_tracker is not None:
-                with mpu.get_cuda_rng_tracker().fork():
-                    attention_probs = attention_dropout(attention_probs)
-            else:
-                attention_probs = attention_dropout(attention_probs)
-
-        context_layer = torch.matmul(attention_probs, value_layer)
-        return context_layer
-
     def attention_forward(self, hidden_states, mask, **kw_args):
         mixin_self = self
         position_ids = kw_args['position_ids']
         self = self.transformer.layers[kw_args['layer_id']].attention
         attention_fn = self.hooks['attention_fn']
-
-        hidden_states = hidden_states.transpose(0, 1)
         mixed_raw_layer = self.query_key_value(hidden_states)
+        (mixed_query_layer,
+            mixed_key_layer,
+            mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, self.stride)
 
-        new_tensor_shape = mixed_raw_layer.size()[:-1] + (
-            self.num_attention_heads_per_partition,
-            3 * self.hidden_size_per_attention_head,
-        )
-        mixed_raw_layer = mixed_raw_layer.view(*new_tensor_shape)
+        dropout_fn = self.attention_dropout if self.training else None
 
-        # [seq_len, batch, num_attention_heads, hidden_size_per_attention_head]
-        (query_layer, key_layer, value_layer) = split_tensor_along_last_dim(mixed_raw_layer, 3)
+        query_layer = self._transpose_for_scores(mixed_query_layer)
+        key_layer = self._transpose_for_scores(mixed_key_layer)
+        value_layer = self._transpose_for_scores(mixed_value_layer)
+        
+        query_layer = query_layer.permute(2, 0, 1, 3)
+        key_layer = key_layer.permute(2, 0, 1, 3)
+        value_layer = value_layer.permute(2, 0, 1, 3)
 
         q1, q2 = query_layer.chunk(2, dim=(query_layer.ndim - 1))
         k1, k2 = key_layer.chunk(2, dim=(key_layer.ndim - 1))
@@ -185,7 +168,7 @@ class ChatGLMModel(BaseModel):
         self.bos_token_id = args.bos_token_id
         self.mask_token_id = args.mask_token_id
         self.gmask_token_id = args.gmask_token_id
-        self.pad_token_id = 3
+        self.pad_token_id = args.pad_token_id
 
     def position_embedding_forward(self, position_ids, output_cross_layer, **kw_args):
         return None
@@ -274,4 +257,5 @@ class ChatGLMModel(BaseModel):
         group.add_argument('--bos-token-id', type=int)
         group.add_argument('--mask-token-id', type=int)
         group.add_argument('--gmask-token-id', type=int)
+        group.add_argument('--pad-token-id', type=int)
         return super().add_model_specific_args(parser)

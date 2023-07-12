@@ -17,8 +17,7 @@ class FineTuneModel(ChatGLMModel):
         if args.use_ptuning:
             self.add_mixin("ptuning", PTuningV2Mixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.pre_seq_len))
         if args.use_lora:
-            # If you use lora on other "normal" Transformer, just use it with head_first=False (by default)
-            self.add_mixin("lora", LoraMixin(args.num_layers, args.lora_rank, head_first=True, num_attention_heads=args.num_attention_heads, hidden_size_per_attention_head=args.hidden_size // args.num_attention_heads), reinit=True)
+            self.add_mixin("lora", LoraMixin(args.num_layers, args.lora_rank), reinit=True)
 
     @classmethod
     def add_model_specific_args(cls, parser):

@@ -61,7 +61,7 @@ class SelfAttention(torch.nn.Module):
             qkv_size = 3 * self.inner_hidden_size
             self.stride = 3
         else: # multi-query 
-            qkv_size = self.inner_hidden_size + self.hidden_size_per_attention_head * self.num_multi_query_heads_per_partition * 2 
+            qkv_size = self.inner_hidden_size + self.hidden_size_per_attention_head * self.num_multi_query_heads * 2 
             self.stride = [self.num_attention_heads_per_partition, self.num_multi_query_heads_per_partition, self.num_multi_query_heads_per_partition]
         self.query_key_value = ColumnParallelLinear(
             hidden_size,
