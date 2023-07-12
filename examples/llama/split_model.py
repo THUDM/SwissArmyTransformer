@@ -51,7 +51,7 @@ if __name__ == "__main__":
     ), overwrite_args={'model_parallel_size': 4})
     model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
 
-    tokenizer = LlamaTokenizer.from_pretrained("/gpfs/gpfs1/zphz/official_pretrains/hugging_face/llama-30b-hf")
+    tokenizer = LlamaTokenizer.from_pretrained("decapoda-research/llama-30b-hf")
     with torch.no_grad():
         chat(model, tokenizer, max_length=args.max_length, num_beams=args.num_beams, top_p=args.top_p, temperature=args.temperature, top_k=args.top_k)
     print(torch.cuda.max_memory_allocated() / 1024 / 1024)

@@ -49,6 +49,8 @@ if __name__ == "__main__":
     model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
 
     tokenizer = LlamaTokenizer.from_pretrained("decapoda-research/llama-7b-hf")
-    chat(model, tokenizer, max_length=args.max_length, num_beams=args.num_beams, top_p=args.top_p, temperature=args.temperature, top_k=args.top_k)
+    tokenizer.eos_token_id = 1
+    with torch.no_grad():
+        chat(model, tokenizer, max_length=args.max_length, num_beams=args.num_beams, top_p=args.top_p, temperature=args.temperature, top_k=args.top_k)
 
             
