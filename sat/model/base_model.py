@@ -25,6 +25,8 @@ from sat.helpers import print_rank0
 
 from sat.transformer_defaults import HOOKS_DEFAULT, ARGS_DEFAULT
 from sat.resources import auto_create
+from sat.mpu.initialize import get_node_rank, destroy_model_parallel, initialize_model_parallel
+from sat.mpu.operation import mp_split_model_rank0, mp_split_model_receive
 
 def non_conflict(func):
     '''mark a hook function as non-conflict,
@@ -181,7 +183,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
         return parser
 
     @classmethod
-    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', build_only=False, overwrite_args={}, **kwargs):
+    def from_pretrained_base(cls, name, args=None, *, home_path=None, url=None, prefix='', build_only=False, overwrite_args={}, **kwargs):
         '''Load a pretrained checkpoint of the current model.
             Args:
                 name: The identifier of the pretrained model.
@@ -206,6 +208,33 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
         if not build_only:
             load_checkpoint(model, args, load_path=model_path, prefix=prefix)
         return model, args
+    
+    @classmethod
+    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', build_only=False, overwrite_args={}, **kwargs):
+        if build_only or 'model_parallel_size' not in overwrite_args:
+            return cls.from_pretrained_base(name, args=args, home_path=home_path, url=url, prefix=prefix, build_only=build_only, overwrite_args=overwrite_args, **kwargs)
+        else:
+            new_model_parallel_size = overwrite_args['model_parallel_size']
+            model, model_args = cls.from_pretrained_base(name, args=args, home_path=home_path, url=url, prefix=prefix, build_only=True, overwrite_args=overwrite_args, **kwargs)
+            local_rank = get_node_rank()
+            world_size = torch.distributed.get_world_size()
+            assert world_size % new_model_parallel_size == 0, "world size should be a multiplier of new model_parallel_size."
+            destroy_model_parallel()
+            initialize_model_parallel(1)
+            if local_rank == 0:
+                args.use_gpu_initialization = False
+                args.device = 'cpu'
+                overwrite_args.pop('model_parallel_size')
+                model_full, args_ = cls.from_pretrained_base(name, args=args, home_path=home_path, url=url, prefix=prefix, build_only=False, overwrite_args=overwrite_args, **kwargs)
+            torch.distributed.barrier()
+            destroy_model_parallel()
+            initialize_model_parallel(new_model_parallel_size)
+            if local_rank == 0:
+                mp_split_model_rank0(model, model_full)
+                del model_full
+            else:
+                mp_split_model_receive(model)
+            return model, model_args
     
     @classmethod
     def list_avail_args(cls, print=True):
@@ -242,7 +271,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
 
 class AutoModel():
     @classmethod
-    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', build_only=False, overwrite_args={}, **kwargs):
+    def from_pretrained_base(cls, name, args=None, *, home_path=None, url=None, prefix='', build_only=False, overwrite_args={}, **kwargs):
         '''Automatically find the class and instantiate it. Auto-download.
             Args:
                 name: The identifier of the pretrained model.
@@ -274,6 +303,33 @@ class AutoModel():
         if not build_only:
             load_checkpoint(model, args, load_path=model_path, prefix=prefix)
         return model, args
+    
+    @classmethod
+    def from_pretrained(cls, name, args=None, *, home_path=None, url=None, prefix='', build_only=False, overwrite_args={}, **kwargs):
+        if build_only or 'model_parallel_size' not in overwrite_args:
+            return cls.from_pretrained_base(name, args=args, home_path=home_path, url=url, prefix=prefix, build_only=build_only, overwrite_args=overwrite_args, **kwargs)
+        else:
+            new_model_parallel_size = overwrite_args['model_parallel_size']
+            model, model_args = cls.from_pretrained_base(name, args=args, home_path=home_path, url=url, prefix=prefix, build_only=True, overwrite_args=overwrite_args, **kwargs)
+            local_rank = get_node_rank()
+            world_size = torch.distributed.get_world_size()
+            assert world_size % new_model_parallel_size == 0, "world size should be a multiplier of new model_parallel_size."
+            destroy_model_parallel()
+            initialize_model_parallel(1)
+            if local_rank == 0:
+                args.use_gpu_initialization = False
+                args.device = 'cpu'
+                overwrite_args.pop('model_parallel_size')
+                model_full, args_ = cls.from_pretrained_base(name, args=args, home_path=home_path, url=url, prefix=prefix, build_only=False, overwrite_args=overwrite_args, **kwargs)
+            torch.distributed.barrier()
+            destroy_model_parallel()
+            initialize_model_parallel(new_model_parallel_size)
+            if local_rank == 0:
+                mp_split_model_rank0(model, model_full)
+                del model_full
+            else:
+                mp_split_model_receive(model)
+            return model, model_args
     
 def get_model(args, model_cls, **kwargs):
     """Build the model."""
