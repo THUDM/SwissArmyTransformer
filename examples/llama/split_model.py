@@ -4,8 +4,6 @@ from transformers import LlamaTokenizer
 from sat.model.mixins import CachedAutoregressiveMixin
 from sat.generation.autoregressive_sampling import filling_sequence
 from sat.generation.sampling_strategies import BaseStrategy, BeamSearchStrategy
-from sat.mpu import mp_split_model
-from sat.mpu.mp_model import get_mp_split_model
 from sat.mpu.initialize import get_model_parallel_rank
 import os
 
@@ -46,15 +44,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # load model
-    model, model_args = get_mp_split_model('llama-30b', 4, argparse.Namespace(
+    model, model_args = AutoModel.from_pretrained('llama-30b', argparse.Namespace(
         fp16=True,
         skip_init=True,
         use_gpu_initialization=True
-    )) #, url='local')
+    ), overwrite_args={'model_parallel_size': 4})
     model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
 
     tokenizer = LlamaTokenizer.from_pretrained("decapoda-research/llama-30b-hf")
+    tokenizer.eos_token_id = 1
     with torch.no_grad():
         chat(model, tokenizer, max_length=args.max_length, num_beams=args.num_beams, top_p=args.top_p, temperature=args.temperature, top_k=args.top_k)
-
-            
+    print(torch.cuda.max_memory_allocated() / 1024 / 1024)

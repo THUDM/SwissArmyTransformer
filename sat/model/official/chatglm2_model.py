@@ -7,6 +7,7 @@ from sat.mpu.utils import split_tensor_along_last_dim
 from sat.model.normalization import RMSNorm
 from sat.transformer_defaults import attention_fn_default
 from sat.model.position_embedding.rotary_embeddings_original import RotaryEmbedding, apply_rotary_pos_emb
+from sat.mpu.layers import ColumnParallelLinear
 
 class ChatGLM2AttnMixin(BaseMixin):
     def __init__(self, hidden_size, num_heads, max_seq_len):
@@ -61,7 +62,18 @@ class ChatGLM2AttnMixin(BaseMixin):
 class SwiGLUMixin(BaseMixin):
     def __init__(self, num_layers, in_features, hidden_features, bias=False):
         super().__init__()
-        self.w2 = nn.ModuleList([nn.Linear(in_features, hidden_features, bias=bias) for i in range(num_layers)])
+        self.w2 = nn.ModuleList([ColumnParallelLinear(
+            in_features,
+            hidden_features,
+            gather_output=False,
+            # init_method=init_method,
+            bias=bias,
+            # params_dtype=params_dtype,
+            module=self,
+            name="dense_h_to_4h_gate",
+            # skip_init=skip_init,
+            # device=device
+        ) for i in range(num_layers)])
 
     def mlp_forward(self, hidden_states, **kw_args):
         x = hidden_states
