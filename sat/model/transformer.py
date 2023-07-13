@@ -469,9 +469,16 @@ class BaseTransformer(torch.nn.Module):
         batch_size, query_length = input_ids.shape[:2]
 
         if attention_mask is None:
-            attention_mask = torch.ones(1, 1, device=input_ids.device).type_as(
+            # Definition: None means full attention
+            attention_mask = torch.ones(1, 1, device=input_ids.device)
+        elif isinstance(attention_mask, int) and (attention_mask < 0):
+            # Definition: -1 means lower triangular attention mask
+            attention_mask = torch.ones(query_length, query_length, 
+                                        device=input_ids.device).tril()
+            
+        attention_mask = attention_mask.type_as(
                 next(self.parameters())
-            )  # None means full attention
+            )
         assert len(attention_mask.shape) == 2 or \
                len(attention_mask.shape) == 4 and attention_mask.shape[1] == 1
 

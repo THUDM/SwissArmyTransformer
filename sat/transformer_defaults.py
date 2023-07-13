@@ -52,13 +52,17 @@ def attention_fn_default(query_layer, key_layer, value_layer, attention_mask,
     key_layer = key_layer.unsqueeze(2).expand(-1, -1, num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, num_query_heads, *key_layer.shape[2:])
     value_layer = value_layer.unsqueeze(2).expand(-1, -1, num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, num_query_heads, *value_layer.shape[2:])
 
-    if int(torch.__version__.split('.')[0]) >= 2 and scaling_attention_score:
+    is_low_triangle = (attention_mask == torch.ones_like(attention_mask, dtype=torch.float).tril()).all()
+    is_full = (attention_mask is None) or (attention_mask > 0).all()
+
+    if int(torch.__version__.split('.')[0]) >= 2 and scaling_attention_score and (is_full or is_low_triangle):
+        # Pytorch 2.0 attention uses very much memory if attention_mask is float, and has NaN bug if attention_mask is None.
         dropout_p = 0. if attention_dropout is None or not attention_dropout.training else attention_dropout.p
-        attention_mask = torch.finfo(query_layer.dtype).min * (1.0 - attention_mask.to(query_layer.dtype))
         return torch.nn.functional.scaled_dot_product_attention(
             query_layer, key_layer, value_layer, 
-            attention_mask,
-            dropout_p
+            attn_mask=None,
+            dropout_p=dropout_p,
+            is_causal=is_low_triangle.item()
         )
     else:
         return standard_attention(

@@ -373,9 +373,11 @@ def get_args(args_list=None, parser=None):
             override_deepspeed_config = True
         else:
             override_deepspeed_config = False
-    if args.zero_stage > 0:
-        if args.rank == 0 and not args.fp16:
-            print_rank0('Automatically set fp16=True to use ZeRO.')     
+
+    assert not (args.fp16 and args.bf16), 'cannot specify both fp16 and bf16.'
+
+    if args.zero_stage > 0 and not args.fp16 and not args.bf16:
+        print_rank0('Automatically set fp16=True to use ZeRO.')     
         args.fp16 = True
         args.bf16 = False
 
@@ -391,6 +393,9 @@ def get_args(args_list=None, parser=None):
         if override_deepspeed_config: # not specify deepspeed_config, use args
             if args.fp16:
                 deepspeed_config["fp16"]["enabled"] = True
+            elif args.bf16:
+                deepspeed_config["bf16"]["enabled"] = True
+                deepspeed_config["fp16"]["enabled"] = False
             else:
                 deepspeed_config["fp16"]["enabled"] = False
             deepspeed_config["train_micro_batch_size_per_gpu"] = args.batch_size
@@ -405,6 +410,10 @@ def get_args(args_list=None, parser=None):
                 args.fp16 = True
             else:
                 args.fp16 = False
+            if "bf16" in deepspeed_config and deepspeed_config["bf16"]["enabled"]:
+                args.bf16 = True
+            else:
+                args.bf16 = False
             if "train_micro_batch_size_per_gpu" in deepspeed_config:
                 args.batch_size = deepspeed_config["train_micro_batch_size_per_gpu"]
             if "gradient_accumulation_steps" in deepspeed_config:

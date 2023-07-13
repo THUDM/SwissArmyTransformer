@@ -38,8 +38,8 @@ class RotaryEmbedding(torch.nn.Module):
             # [sx, 1 (b * np), hn]
             cos_cached = emb.cos()[:, None, :]
             sin_cached = emb.sin()[:, None, :]
-            cos_cached = cos_cached.to(self.precision)
-            sin_cached = sin_cached.to(self.precision)
+            cos_cached = cos_cached.to(x.dtype)
+            sin_cached = sin_cached.to(x.dtype)
             if self.learnable:
                 return cos_cached, sin_cached
             self.cos_cached, self.sin_cached = cos_cached, sin_cached
