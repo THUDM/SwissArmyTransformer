@@ -54,7 +54,7 @@ def attention_fn_default(query_layer, key_layer, value_layer, attention_mask,
 
     if int(torch.__version__.split('.')[0]) >= 2 and scaling_attention_score:
         dropout_p = 0. if attention_dropout is None or not attention_dropout.training else attention_dropout.p
-        attention_mask = (attention_mask >= 0.5).bool()
+        attention_mask = torch.finfo(query_layer.dtype).min * (1.0 - attention_mask.to(query_layer.dtype))
         return torch.nn.functional.scaled_dot_product_attention(
             query_layer, key_layer, value_layer, 
             attention_mask,
