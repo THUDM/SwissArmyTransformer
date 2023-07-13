@@ -125,3 +125,11 @@ v. 0.4.0
 3. add llama and chatglm2.
 4. add split model for model-parallel in inference mode.
 5. add r2 download
+
+# 2023.7.13
+v. 0.4.1
+1. better model parallel support (training mode split)
+2. better default zero 1/2 config
+3. test bf16 training
+4. change qkv order of chatglm1
+5. only use pytorch 2.0 attention when full / causal.
