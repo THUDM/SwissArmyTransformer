@@ -5,6 +5,7 @@ from sat.model.base_model import BaseMixin, BaseModel
 import math
 from sat import mpu
 from sat.mpu.utils import split_tensor_along_last_dim
+from sat.transformer_defaults import attention_fn_default
 
 @torch.jit.script
 def gelu_impl(x):
@@ -51,7 +52,9 @@ class ChatGLMAttnMixin(BaseMixin):
         mixin_self = self
         position_ids = kw_args['position_ids']
         self = self.transformer.layers[kw_args['layer_id']].attention
-        attention_fn = self.hooks['attention_fn']
+        attention_fn = attention_fn_default
+        if 'attention_fn' in self.hooks:
+            attention_fn = self.hooks['attention_fn']
         mixed_raw_layer = self.query_key_value(hidden_states)
         (mixed_query_layer,
             mixed_key_layer,
