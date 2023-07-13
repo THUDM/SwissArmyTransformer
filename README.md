@@ -166,7 +166,8 @@ Here `attention_fn` is a hook function, replacing the default action by the new 
 Now we can use `add_mixin` to apply our change to all the transformers, such as BERT, Vit and CogView. See the tutorial for more details. 
 
 ## Tutorials 
-TO BE RELEASED SOON...
+* [How to use pretrained models collected in sat?](tutorials/model_usage)
+* [Why and how to train models in sat?](tutorials/training)
 
 # Citation
 Currently we don't have a paper, so you don't need to formally cite us!~ 
