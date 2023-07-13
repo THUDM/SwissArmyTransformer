@@ -220,7 +220,7 @@ class ChatGLMModel(BaseModel):
     def get_masks(self, input_ids, device, **kwargs):
         batch_size, seq_length = input_ids.shape
         context_lengths = [seq.tolist().index(self.bos_token_id) for seq in input_ids]
-        attention_mask = torch.ones((batch_size, seq_length, seq_length), device=device)
+        attention_mask = torch.ones((batch_size, seq_length, seq_length), dtype=next(self.parameters()).dtype, device=device)
         attention_mask.tril_()
         for i, context_length in enumerate(context_lengths):
             attention_mask[i, :, :context_length] = 1

@@ -99,13 +99,13 @@ class ChatGLM2Model(BaseModel):
     
     def get_masks(self, input_ids, past_key_values, padding_mask=None):
         batch_size, seq_length = input_ids.shape
-        full_attention_mask = torch.ones(batch_size, seq_length, seq_length, device=input_ids.device)
+        full_attention_mask = torch.ones(batch_size, seq_length, seq_length, dtype=next(self.parameters()).dtype, device=input_ids.device)
         full_attention_mask.tril_()
         past_length = 0
         if past_key_values:
             past_length = past_key_values[0][0].shape[2]
         if past_length:
-            full_attention_mask = torch.cat((torch.ones(batch_size, seq_length, past_length,
+            full_attention_mask = torch.cat((torch.ones(batch_size, seq_length, past_length, dtype=next(self.parameters()).dtype,
                                                         device=input_ids.device), full_attention_mask), dim=-1)
         if padding_mask is not None:
             full_attention_mask = full_attention_mask * padding_mask.unsqueeze(1)
