@@ -165,6 +165,7 @@ class ChatGLMLayerMixin(BaseMixin):
 class ChatGLMModel(BaseModel):
     def __init__(self, args, transformer=None, **kwargs):
         super(ChatGLMModel, self).__init__(args, transformer=transformer, activation_func=gelu, **kwargs)
+        del self.transformer.position_embeddings
         self.add_mixin("chatglm-final", ChatGLMFinalMixin(args.vocab_size, args.hidden_size))
         self.add_mixin("chatglm-attn", ChatGLMAttnMixin(args.hidden_size, args.num_attention_heads))
         self.add_mixin("chatglm-layer", ChatGLMLayerMixin(args.num_layers))

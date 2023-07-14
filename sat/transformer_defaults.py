@@ -101,7 +101,7 @@ def attention_forward_default(self, hidden_states, mask, **kw_args):
 
 def cross_attention_forward_default(self, hidden_states, cross_attention_mask, encoder_outputs, **kw_args):
     self = self.transformer.layers[kw_args['layer_id']].cross_attention
-    attention_fn = standard_attention
+    attention_fn = attention_fn_default
     if 'attention_fn' in self.hooks:
         attention_fn = self.hooks['attention_fn']
 

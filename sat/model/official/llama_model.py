@@ -2,8 +2,7 @@ from sat.model import BaseMixin, BaseModel
 import torch
 import torch.nn as nn
 
-from sat.model.official.gpt2_model import GPT2AttnMixin
-from sat.transformer_defaults import standard_attention
+from sat.transformer_defaults import attention_fn_default
 from sat.mpu.utils import split_tensor_along_last_dim
 from sat.model.position_embedding.rotary_embeddings import RotaryEmbedding, rotate_half
 import torch.nn.functional as F
@@ -29,7 +28,7 @@ class RotaryMixin(BaseMixin):
     def attention_forward(self, hidden_states, mask, **kw_args):
         origin = self
         self = self.transformer.layers[kw_args['layer_id']].attention
-        attention_fn = standard_attention
+        attention_fn = attention_fn_default
         if 'attention_fn' in self.hooks:
             attention_fn = self.hooks['attention_fn']
 
@@ -108,7 +107,6 @@ class LLaMAModel(BaseModel):
         self.add_mixin("rotary", RotaryMixin(args.hidden_size, args.num_attention_heads))
         self.add_mixin("lm", LMMixin(args.vocab_size, args.hidden_size))
         self.add_mixin("mlp", LLaMAMlpMixin(args.num_layers, args.hidden_size, args.inner_hidden_size))
-        self.add_mixin("causal", GPT2AttnMixin(args.max_sequence_length))
     
     def position_embedding_forward(self, *args, **kwargs):
         return None

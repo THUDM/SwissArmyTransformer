@@ -124,8 +124,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--max_length", type=int, default=2048)
     parser.add_argument("--num_beams", type=int, default=1)
-    parser.add_argument("--top_p", type=float, default=0.)
-    parser.add_argument("--top_k", type=int, default=10)
+    parser.add_argument("--top_p", type=float, default=0.7)
+    parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--temperature", type=float, default=0.95)
     args = parser.parse_args()
 
