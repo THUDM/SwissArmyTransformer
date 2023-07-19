@@ -136,7 +136,7 @@ def merge_linear_lora(lin):
         weight = F.dequantize_fp4(lin.original.weight.data, lin.original.weight.quant_state).to(lin.original.bias.data.dtype)
         out_dim, in_dim = weight.shape
         new_lin = HackLinearNF4(in_dim, out_dim)
-    if lin.original.bias:
+    if lin.original.bias is not None:
         new_lin.bias.data = lin.original.bias.data
     new_qkv = []
     for i in range(lin.partition):
