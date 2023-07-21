@@ -62,7 +62,7 @@ def attention_fn_default(query_layer, key_layer, value_layer, attention_mask,
             query_layer, key_layer, value_layer, 
             attn_mask=None,
             dropout_p=dropout_p,
-            is_causal=is_low_triangle.item()
+            is_causal=not is_full
         )
     else:
         return standard_attention(

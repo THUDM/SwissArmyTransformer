@@ -106,7 +106,7 @@ def filling_sequence(
             log_attention_weights_part = None
 
         logits, *output_per_layers = model(
-            tokens[:, index:], 
+            input_ids=tokens[:, index:], 
             position_ids=position_ids[..., index: counter+1],
             attention_mask=attention_mask[..., index: counter+1, :counter+1], # TODO memlen
             mems=mems,

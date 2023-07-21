@@ -1,8 +1,13 @@
 from transformers import LlamaForCausalLM, LlamaTokenizer, LlamaConfig
 
-config = LlamaConfig.from_pretrained("llama-7b-hf")
-tokenizer = LlamaTokenizer.from_pretrained("llama-7b-hf")
-hugging = LlamaForCausalLM.from_pretrained("llama-7b-hf").eval().half().cuda()
+prefix = 'meta-llama/'
+model_type = 'Llama-2-70b-chat-hf'
+
+config = LlamaConfig.from_pretrained(prefix+model_type)
+tokenizer = LlamaTokenizer.from_pretrained(prefix+model_type)
+hugging = LlamaForCausalLM.from_pretrained(prefix+model_type).eval().half()
+if '70b' not in model_type:
+    hugging = hugging.cuda()
 
 from sat.model import LLaMAModel
 import torch
@@ -13,6 +18,7 @@ args = argparse.Namespace(
     vocab_size=config.vocab_size,
     hidden_size=config.hidden_size,
     num_attention_heads=config.num_attention_heads,
+    num_multi_query_heads=0 if config.num_attention_heads == config.num_key_value_heads else config.num_key_value_heads,
     max_sequence_length=config.max_position_embeddings,
     bos_token_id=config.bos_token_id,
     eos_token_id=config.eos_token_id,
@@ -29,16 +35,16 @@ args = argparse.Namespace(
     rank=0,
     skip_init=True,
     use_gpu_initialization=None,
-    save='llama-7b',
+    save=model_type[:-3].lower(),
     deepspeed=None,
     mode='inference',
-    tokenizer_type="llama-7b-hf"
+    tokenizer_type=model_type
     )
 
 model = LLaMAModel(args=args)
 model.eval()
-model.get_mixin("rotary").cuda()
-model.get_mixin("causal").cuda()
+if '70b' not in model_type:
+    model.get_mixin("rotary").cuda()
 
 def copy_layer_param(src, dst):
     """
@@ -85,8 +91,9 @@ with torch.no_grad():
         add_special_tokens=False
     )
     batch['position_ids'] = torch.arange(batch['input_ids'].shape[1]).unsqueeze(0)
-    batch = {k: v.cuda() for k, v in batch.items()}
+    if '70b' not in model_type:
+        batch = {k: v.cuda() for k, v in batch.items()}
     out_h = hugging(**batch)
-    batch['attention_mask'] = batch['attention_mask'][:, None, None, :]
+    batch['attention_mask'] = batch['attention_mask'].unsqueeze(1).repeat_interleave(batch['attention_mask'].shape[-1], 1).tril().unsqueeze(1)
     out_s = model(**batch)
     breakpoint()

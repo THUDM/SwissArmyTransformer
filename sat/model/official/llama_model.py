@@ -35,7 +35,7 @@ class RotaryMixin(BaseMixin):
         mixed_raw_layer = self.query_key_value(hidden_states)
         (mixed_query_layer,
             mixed_key_layer,
-            mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, 3)
+            mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, self.stride)
 
         dropout_fn = self.attention_dropout if self.training else None
 
