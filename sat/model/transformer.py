@@ -22,7 +22,7 @@ import torch
 import torch.nn.functional as F
 
 from sat import mpu
-from sat.mpu import get_model_parallel_world_size,ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding, gather_from_model_parallel_region, copy_to_model_parallel_region, checkpoint
+from sat.mpu import get_model_parallel_world_size, ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding, gather_from_model_parallel_region, copy_to_model_parallel_region, checkpoint
 
 
 from sat.mpu.utils import divide, sqrt, scaled_init_method, unscaled_init_method, gelu
@@ -370,7 +370,7 @@ class BaseTransformer(torch.nn.Module):
                  inner_hidden_size=None,
                  hidden_size_per_attention_head=None,
                  layernorm_order='pre',
-                 parallel_output=True,
+                 parallel_output=False,
                  is_decoder=False,
                  cross_attn_hidden_size=None,
                  use_bias=True,
