@@ -623,12 +623,9 @@ class BaseTransformer(torch.nn.Module):
 
         logits = copy_to_model_parallel_region(logits)
         if 'final_forward' in self.hooks:
-            logits_parallel = self.hooks['final_forward'](logits, **kw_args)
+            logits_parallel = self.hooks['final_forward'](logits, **kw_args, parallel_output=self.parallel_output)
         else:
-            logits_parallel = HOOKS_DEFAULT['final_forward'](self, logits, **kw_args)
-
-        if not self.parallel_output:
-            logits_parallel = gather_from_model_parallel_region(logits_parallel)
+            logits_parallel = HOOKS_DEFAULT['final_forward'](self, logits, **kw_args, parallel_output=self.parallel_output)
 
         outputs = [logits_parallel]
         outputs.extend(output_per_layers)

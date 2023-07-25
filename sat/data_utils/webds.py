@@ -151,7 +151,7 @@ class MetaDistributedWebDataset(DataPipeline):
                     n = 1
                 for cur_dir, dirs, files in os.walk(include_dir):
                     for f in files:
-                        if f.endswith('tar'):
+                        if f.endswith('tar') and os.path.getsize(os.path.join(cur_dir,f)) > 0:
                             # other_paths.append(os.path.join(cur_dir,f))
                             other_paths.extend([os.path.join(cur_dir,f)]*n)
             # print(f'Adding dataset paths {",".join(other_paths)}')

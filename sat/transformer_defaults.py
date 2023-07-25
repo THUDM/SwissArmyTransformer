@@ -140,8 +140,12 @@ def word_embedding_forward_default(self, input_ids, output_cross_layer, **kw_arg
 def position_embedding_forward_default(self, position_ids, output_cross_layer, **kw_args):
     return self.transformer.position_embeddings(position_ids)
 
+from sat.mpu import gather_from_model_parallel_region
 def final_forward_default(self, logits, **kw_args):
-    return F.linear(logits, self.transformer.word_embeddings.weight)
+    logits_parallel = F.linear(logits, self.transformer.word_embeddings.weight)
+    if not kw_args['parallel_output']:
+        logits_parallel = gather_from_model_parallel_region(logits_parallel)
+    return logits_parallel
 
 def layer_forward_default(self, hidden_states, mask, *args, **kw_args):
     '''
