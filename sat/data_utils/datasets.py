@@ -48,7 +48,7 @@ class LMDBDataset(Dataset):
             return self.process_fn(row)
 
 class BinaryDataset(Dataset):
-    def __init__(self, path, process_fn, length_per_sample=64+1024+4096, dtype='int32', preload=False, **kwargs): # TODO ARGS
+    def __init__(self, path, process_fn, length_per_sample=64+1024+4096, dtype='int32', preload=False, **kwargs):
         assert length_per_sample is not None
         self.length_per_sample = length_per_sample
         self.dtype = np.dtype(dtype)

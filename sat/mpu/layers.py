@@ -228,7 +228,7 @@ class ColumnParallelLinear(torch.nn.Module):
         init_method: method to initialize weights. Note that bias is always set
                      to zero.
         stride: For the strided linear layers. Seems like only used in initialization, 
-                     but it is homogenerous, so always 1 is okay. # TODO check this conclusion
+                     but it is homogenerous, so always 1 is okay.
         keep_master_weight_for_test: This was added for testing and should be
                                      set to False. It returns the master weights
                                      used for initialization.

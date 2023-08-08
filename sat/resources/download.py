@@ -41,7 +41,7 @@ def download_with_progress_bar(save_path, url, chunk_size=2048):
 
 def auto_create(name, *, path=None, url=None):
     if path is None:
-        path = os.getenv('SAT_HOME', '~/.sat_models') # TODO Rename
+        path = os.getenv('SAT_HOME', '~/.sat_models')
     path = os.path.expanduser(path)
     model_path = os.path.join(path, name)
     if url == 'local':
@@ -72,7 +72,7 @@ def auto_create(name, *, path=None, url=None):
             file_path = os.path.join(path, name + '.zip')
             print(f'Unzipping {file_path}...')
             f = zipfile.ZipFile(file_path, 'r')
-            f.extractall(path=path) # TODO check hierarcy of folders and name consistency
+            f.extractall(path=path)
             assert os.path.isdir(model_path), f'Unzip failed, or the first-level folder in zip is not {name}.'
     return model_path # must return outside the `with lock` block
 
