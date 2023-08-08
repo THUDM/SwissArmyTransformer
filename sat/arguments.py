@@ -102,7 +102,7 @@ def add_training_args(parser):
     group.add_argument('--experiment-name', type=str, default="MyModel",
                        help="The experiment name for summary and checkpoint."
                        "Will load the previous name if mode==pretrain and with --load ")
-    group.add_argument('--train-iters', type=int, default=1000000,
+    group.add_argument('--train-iters', type=int, default=None,
                        help='total number of iterations to train over all training runs')
     group.add_argument('--batch-size', type=int, default=4,
                        help='batch size on a single GPU. batch-size * world_size = total batch_size.')
