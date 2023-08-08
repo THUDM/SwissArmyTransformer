@@ -50,13 +50,11 @@ def make_data_loader(dataset, batch_size, args, split, collate_fn=None):
             )
 
     sampler = torch.utils.data.SequentialSampler(dataset)
-    # drop_last = distributed
-    drop_last = False # TODO will always drop last to keep the consistency.
-    # or, how to avg in eval last batch?
+
+    drop_last = False # COMMENT: this is already solved by the complex logic of last_shape and drop_number.
 
     # the GPUs in the same model parallel group receive the same data
     if distributed: # TODO reformat this, but it is not urgent
-        # args.has_last = True if rank * batch_per_worker < last_len else False
         gradient_accumulation_steps = getattr(args, 'gradient_accumulation_steps', 1)
         batch_sampler = DistributedBatchSampler(sampler,
                                                 batch_size,
@@ -160,7 +158,8 @@ def make_dataset_full(path, split, args, create_dataset_function,
                 group=mpu.get_data_parallel_group())
             scale = max(200, 1 + (args.train_iters * args.batch_size * world_size) // len(train_ds))
             train_ds = RandomMappingDataset(train_ds, scale=scale)
-            valid_ds = RandomMappingDataset(valid_ds) # TODO precise scale 
+            scale = max(200, 1 + ((1 + args.train_iters // args.eval_interval) * args.eval_iters * args.eval_batch_size * args.gradient_accumulation_steps * world_size) // len(valid_ds))
+            valid_ds = RandomMappingDataset(valid_ds, scale=scale)
             test_ds = RandomMappingDataset(test_ds)
         return train_ds, valid_ds, test_ds
 
