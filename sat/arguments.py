@@ -329,12 +329,12 @@ def get_args(args_list=None, parser=None):
     args = parser.parse_args(args_list)
 
     if not args.train_data:
-        print_rank0('WARNING: No training data specified', level='WARNING')
+        print_rank0('No training data specified', level='WARNING')
 
     assert (args.train_iters is None) or (args.epochs is None), 'only one of train_iters and epochs should be set.'
     if args.train_iters is None and args.epochs is None:
         args.train_iters = 10000 # default 10k iters
-        print_rank0('WARNING: No train_iters (recommended) or epochs specified, use default 10k iters.', level='WARNING')
+        print_rank0('No train_iters (recommended) or epochs specified, use default 10k iters.', level='WARNING')
 
     args.cuda = torch.cuda.is_available()
 
