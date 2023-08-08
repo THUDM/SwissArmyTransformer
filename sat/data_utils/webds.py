@@ -32,10 +32,17 @@ class ConfiguredResampledShards(ResampledShards):
 
 class SimpleDistributedWebDataset(DataPipeline):
     def __init__(self, path, process_fn, seed, *, shuffle_buffer=1000):
+        # set shuffle_buffer = 1 to disable it, model-parallel will be different due to shuffle
+        try:
+            from sat.mpu import get_model_parallel_world_size
+            if get_model_parallel_world_size() > 1:
+                shuffle_buffer = 1
+        except Exception:
+            pass
         super().__init__(
             ConfiguredResampledShards(path, seed), # Lots of shards are recommended, or not evenly
             tarfile_to_samples(),
-            wds.shuffle(shuffle_buffer), # set shuffle_buffer = 1 to disable it, TODO model-parallel with different due to shuffle
+            wds.shuffle(shuffle_buffer),
             process_fn
         )
 
@@ -163,6 +170,14 @@ class MetaDistributedWebDataset(DataPipeline):
         
         tarfile_samples = partial(tarfile_samples_with_meta, meta_names=meta_names)
         tarfile_to_samples = pipelinefilter(tarfile_samples)
+
+        # if model parallel, shuffle_buffer should be 1 to disable shuffling
+        try:
+            from sat.mpu import get_model_parallel_world_size
+            if get_model_parallel_world_size() > 1:
+                shuffle_buffer = 1
+        except Exception:
+            pass
         
         super().__init__(
             ConfiguredResampledShards(path, seed, nshards=nshards),

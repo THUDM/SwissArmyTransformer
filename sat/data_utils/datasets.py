@@ -86,5 +86,6 @@ class TSVDataset(Dataset):
 try:
     from .webds import SimpleDistributedWebDataset, MetaDistributedWebDataset
         
-except ModuleNotFoundError: # webdataset not install, use pip to install
-    pass
+except ModuleNotFoundError as e: # webdataset not install, use pip to install
+    from sat.helpers import print_rank0
+    print_rank0('webdataset not install, use pip to install, or you cannot use SimpleDistributedWebDataset and MetaDistributedWebDataset.', level='INFO')
