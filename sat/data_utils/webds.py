@@ -97,7 +97,7 @@ def tar_file_iterator_with_meta(fileobj, meta_names, skip_meta=r"__[^/]*__($|/)"
                 meta_data_fid = meta_data.get(fid, {})
                 for meta_name in meta_names:
                     meta_fname = fid + '.' + meta_name
-                    meta = meta_data_fid.get(meta_name, "").encode()
+                    meta = meta_data_fid.get(meta_name, None)
                     yield dict(fname=meta_fname, data=meta)
             stream.members = []
         except Exception as exn:
