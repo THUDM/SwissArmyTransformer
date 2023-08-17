@@ -93,7 +93,8 @@ def download_s3(local_dir, remote_uri):
     client = boto3.client('s3',
         endpoint_url = f'https://{SAT_ACCOUNT}.r2.cloudflarestorage.com',
         aws_access_key_id = f'{SAT_ACCESS_KEY}',
-        aws_secret_access_key = f'{SAT_SECRET_KEY}'
+        aws_secret_access_key = f'{SAT_SECRET_KEY}',
+        verify=False
         )
     bucket = s3_resource.Bucket(SAT_BUCKET) 
     transfer_config = boto3.s3.transfer.TransferConfig(
