@@ -87,15 +87,25 @@ class LoraLinear(nn.Module):
                 raise Exception('Build 4bit layer failed. You need to install the latest bitsandbytes. Try `pip install bitsandbytes`. If you still meet error after installation, try running `from bitsandbytes.nn import LinearNF4` with python and fix the error.')
         else:
             base_cls, kwargs = map_cls[original_cls]
+            if type(partition) is not int and original_cls is ColumnParallelLinear:
+                kwargs['stride'] = partition
             self.original = base_cls(in_dim, out_dim, **kwargs, bias=bias)
         self.original.weight.data.copy_(original_obj.weight.data.detach().clone())
         if bias:
             self.original.bias.data.copy_(original_obj.bias.data.detach().clone())
-        self.matrix_A = HackParameterList([nn.Parameter(torch.empty((r, original_obj.weight.shape[1]))) for _ in range(partition)])
-        self.matrix_B = HackParameterList([nn.Parameter(torch.empty((original_obj.weight.shape[0] // partition, r))) for _ in range(partition)])
-        for i in range(partition):
-            nn.init.kaiming_uniform_(self.matrix_A[i], a=math.sqrt(5))
-            nn.init.zeros_(self.matrix_B[i])
+        if type(partition) is int:
+            self.matrix_A = HackParameterList([nn.Parameter(torch.empty((r, original_obj.weight.shape[1]))) for _ in range(partition)])
+            self.matrix_B = HackParameterList([nn.Parameter(torch.empty((original_obj.weight.shape[0] // partition, r))) for _ in range(partition)])
+            for i in range(partition):
+                nn.init.kaiming_uniform_(self.matrix_A[i], a=math.sqrt(5))
+                nn.init.zeros_(self.matrix_B[i])
+        else:
+            new_sizes = [original_obj.weight.shape[0] // sum(partition) * i for i in partition]
+            self.matrix_A = HackParameterList([nn.Parameter(torch.empty((r, original_obj.weight.shape[1]))) for _ in partition])
+            self.matrix_B = HackParameterList([nn.Parameter(torch.empty((sz, r))) for sz in new_sizes])
+            for i in range(len(partition)):
+                nn.init.kaiming_uniform_(self.matrix_A[i], a=math.sqrt(5))
+                nn.init.zeros_(self.matrix_B[i])
         self.partition = partition
 
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
@@ -110,17 +120,20 @@ class LoraLinear(nn.Module):
     def forward(self, x):
         mixed_raw_layer = self.original(x)
         lora_outputs = []
-        for i in range(self.partition):
-            lora_outputs.append((self.lora_dropout(x) @ self.matrix_A[i].T @ self.matrix_B[i].T) * self.scaling)
+        for mA, mB in zip(self.matrix_A, self.matrix_B):
+            lora_outputs.append((self.lora_dropout(x) @ mA.T @ mB.T) * self.scaling)
         mixed_raw_layer = mixed_raw_layer + torch.cat(lora_outputs, -1)
 
         return mixed_raw_layer
 
 
 def replace_linear_with_lora(lin, partition, r, *args, **kw_args):
-    if kw_args.get('hidden_size', None) is not None:
-        hidden_size = kw_args.pop('hidden_size')
-        out_dim, in_dim = hidden_size * partition, hidden_size
+    if kw_args.get('in_size', None) is not None:
+        in_size = kw_args.pop('in_size')
+        out_size = kw_args.pop('out_size')
+        if out_size is None:
+            out_size = in_size * partition
+        out_dim, in_dim = out_size , in_size
     else:
         out_dim, in_dim = lin.weight.shape
     original_cls = type(lin)
@@ -141,8 +154,8 @@ def merge_linear_lora(lin):
     if lin.original.bias is not None:
         new_lin.bias.data = lin.original.bias.data
     new_qkv = []
-    for i in range(lin.partition):
-        new_qkv.append(lin.matrix_A[i].data.T.float() @ lin.matrix_B[i].data.T.float() * lin.scaling)
+    for mA, mB in zip(lin.matrix_A, lin.matrix_B):
+        new_qkv.append(mA.data.T.float() @ mB.data.T.float() * lin.scaling)
     new_qkv = torch.cat(new_qkv, -1)
     new_lin.weight.data = weight + new_qkv.T.to(lin.original.bias.data.dtype)
     return new_lin.cuda() if torch.cuda.is_available() else new_lin
@@ -172,8 +185,8 @@ class LoraMixin(BaseMixin):
     def reinit(self, parent_model):
         for i in self.layer_range:
             print_rank0(f'replacing layer {i} attention with lora')
-            parent_model.transformer.layers[i].attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].attention.dense, 1, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora, hidden_size=parent_model.transformer.hidden_size)
-            parent_model.transformer.layers[i].attention.query_key_value = replace_linear_with_lora(parent_model.transformer.layers[i].attention.query_key_value, 3, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora, hidden_size=parent_model.transformer.hidden_size)
+            parent_model.transformer.layers[i].attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].attention.dense, 1, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora, in_size=parent_model.transformer.hidden_size, out_size=None)
+            parent_model.transformer.layers[i].attention.query_key_value = replace_linear_with_lora(parent_model.transformer.layers[i].attention.query_key_value, parent_model.transformer.layers[i].attention.stride, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora, in_size=parent_model.transformer.hidden_size, out_size=None if not parent_model.transformer.num_multi_query_heads else parent_model.transformer.layers[i].attention.inner_hidden_size + parent_model.transformer.layers[i].attention.hidden_size_per_attention_head * parent_model.transformer.layers[i].attention.num_multi_query_heads * 2)
             if self.cross_attention and parent_model.transformer.layers[i].is_decoder:
                 print_rank0(f'replacing layer {i} cross attention with lora')
                 parent_model.transformer.layers[i].cross_attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].cross_attention.dense, 1, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora)
