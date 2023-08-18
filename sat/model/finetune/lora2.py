@@ -71,6 +71,7 @@ map_cls = {
 class LoraLinear(nn.Module):
     def __init__(self, original_cls, partition, in_dim, out_dim, r, lora_alpha=1., lora_dropout=0., qlora=False, original_obj=None):
         super().__init__()
+        assert original_obj is not None, "original linear object must be given!"
         if lora_dropout and lora_dropout > 0:
             self.lora_dropout = nn.Dropout(p=lora_dropout)
         else:
@@ -78,9 +79,7 @@ class LoraLinear(nn.Module):
         self.r = r
         self.lora_alpha = lora_alpha
         self.scaling = self.lora_alpha / self.r
-        bias = True
-        if original_obj:
-            bias = original_obj.bias is not None
+        bias = original_obj.bias is not None
         if qlora:
             try:
                 self.original = HackLinearNF4(in_dim, out_dim, bias=bias)
@@ -89,12 +88,11 @@ class LoraLinear(nn.Module):
         else:
             base_cls, kwargs = map_cls[original_cls]
             self.original = base_cls(in_dim, out_dim, **kwargs, bias=bias)
-        if original_obj:
-            self.original.weight.data.copy_(original_obj.weight.data.detach().clone())
-            if bias:
-                self.original.bias.data.copy_(original_obj.bias.data.detach().clone())
-        self.matrix_A = HackParameterList([nn.Parameter(torch.empty((r, in_dim))) for _ in range(partition)])
-        self.matrix_B = HackParameterList([nn.Parameter(torch.empty((out_dim // partition, r))) for _ in range(partition)])
+        self.original.weight.data.copy_(original_obj.weight.data.detach().clone())
+        if bias:
+            self.original.bias.data.copy_(original_obj.bias.data.detach().clone())
+        self.matrix_A = HackParameterList([nn.Parameter(torch.empty((r, original_obj.weight.shape[1]))) for _ in range(partition)])
+        self.matrix_B = HackParameterList([nn.Parameter(torch.empty((original_obj.weight.shape[0] // partition, r))) for _ in range(partition)])
         for i in range(partition):
             nn.init.kaiming_uniform_(self.matrix_A[i], a=math.sqrt(5))
             nn.init.zeros_(self.matrix_B[i])
@@ -120,7 +118,11 @@ class LoraLinear(nn.Module):
 
 
 def replace_linear_with_lora(lin, partition, r, *args, **kw_args):
-    out_dim, in_dim = lin.weight.shape
+    if kw_args.get('hidden_size', None) is not None:
+        hidden_size = kw_args.pop('hidden_size')
+        out_dim, in_dim = hidden_size * partition, hidden_size
+    else:
+        out_dim, in_dim = lin.weight.shape
     original_cls = type(lin)
     new_layer = LoraLinear(original_cls, partition, in_dim, out_dim, r, *args, **kw_args, original_obj=lin)
     del lin
@@ -170,8 +172,8 @@ class LoraMixin(BaseMixin):
     def reinit(self, parent_model):
         for i in self.layer_range:
             print_rank0(f'replacing layer {i} attention with lora')
-            parent_model.transformer.layers[i].attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].attention.dense, 1, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora)
-            parent_model.transformer.layers[i].attention.query_key_value = replace_linear_with_lora(parent_model.transformer.layers[i].attention.query_key_value, 3, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora)
+            parent_model.transformer.layers[i].attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].attention.dense, 1, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora, hidden_size=parent_model.transformer.hidden_size)
+            parent_model.transformer.layers[i].attention.query_key_value = replace_linear_with_lora(parent_model.transformer.layers[i].attention.query_key_value, 3, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora, hidden_size=parent_model.transformer.hidden_size)
             if self.cross_attention and parent_model.transformer.layers[i].is_decoder:
                 print_rank0(f'replacing layer {i} cross attention with lora')
                 parent_model.transformer.layers[i].cross_attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].cross_attention.dense, 1, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora)

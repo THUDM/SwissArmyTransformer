@@ -388,6 +388,7 @@ class BaseTransformer(torch.nn.Module):
         super(BaseTransformer, self).__init__()
 
         # recording parameters
+        self.hidden_size = hidden_size
         self.inner_hidden_size = inner_hidden_size
         self.hidden_size_per_attention_head = hidden_size_per_attention_head
         self.is_decoder = is_decoder
