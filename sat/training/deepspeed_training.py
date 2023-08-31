@@ -199,8 +199,8 @@ def add_param_by_lr(dic, p, no_weight_decay=False):
         dic[p.lr_scale]['params'].append(p)
 
 def get_params_for_weight_decay_optimization(module):
-    weight_decay_params = {None: {'params': []}}
-    no_weight_decay_params = {None: {'params': [], 'weight_decay': 0.0}}
+    weight_decay_params = {None: {'params': [], 'lr': 1.}}
+    no_weight_decay_params = {None: {'params': [], 'weight_decay': 0.0, 'lr': 1.}}
     for module_ in module.modules():
         if isinstance(module_, (LayerNorm, torch.nn.LayerNorm)):
             for p in module_._parameters.values():
