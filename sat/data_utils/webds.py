@@ -63,7 +63,14 @@ def tar_file_iterator_with_meta(fileobj, meta_names, skip_meta=r"__[^/]*__($|/)"
         meta_path = os.path.join(data_dir, meta_file_name)
         if os.path.exists(meta_path):
             with open(meta_path, 'r') as meta_file:
-                meta_list = [json.loads(line) for line in meta_file]
+                meta_list = []
+                for lineno, line in enumerate(meta_file):
+                    try:
+                        meta_list.append(json.loads(line))
+                    except Exception as exn:
+                        from sat.helpers import print_rank0
+                        print_rank0(f'Error in loading jsonl {meta_file_name}, lineno {lineno}: {line}', level='DEBUG')
+                        continue
                 for item in meta_list:
                     if not item['key'] in meta_data:
                         meta_data[item['key']] = {}
