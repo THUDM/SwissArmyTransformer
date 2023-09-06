@@ -165,22 +165,28 @@ def layer_forward_default(self, hidden_states, mask, *args, **kw_args):
     # Residual connection.
     if self.layernorm_order == 'post':
         hidden_states = attention_input + attention_output
+        mlp_input = self.post_attention_layernorm(hidden_states)
     else:
         hidden_states = hidden_states + attention_output
-
-    
-    mlp_input = self.post_attention_layernorm(hidden_states)
 
     if self.is_decoder:
         encoder_outputs = kw_args['encoder_outputs']
         if encoder_outputs is not None:
             assert 'cross_attention_mask' in kw_args
             # Cross attention
-            attention_output = self.cross_attention(mlp_input, **kw_args)
-            # Residual connection.
-            hidden_states = mlp_input + attention_output
-            # Layer norm post the cross attention
-            mlp_input = self.post_cross_attention_layernorm(hidden_states)
+            if self.layernorm_order == 'post':
+                attention_output = self.cross_attention(mlp_input, **kw_args)
+                # Residual connection.
+                hidden_states = mlp_input + attention_output
+                # Layer norm post the cross attention
+                mlp_input = self.post_cross_attention_layernorm(hidden_states)
+            else:
+                cross_input = self.post_cross_attention_layernorm(hidden_states)
+                attention_output = self.cross_attention(cross_input, **kw_args)
+                hidden_states = hidden_states + attention_output
+
+    if self.layernorm_order != 'post':
+        mlp_input = self.post_attention_layernorm(hidden_states)
 
     # MLP.
     mlp_output = self.mlp(mlp_input, **kw_args)

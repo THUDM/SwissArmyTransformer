@@ -18,6 +18,7 @@ from torch.optim.lr_scheduler import _LRScheduler
 import math
 
 from sat.helpers import print_rank0
+from copy import deepcopy
 
 
 class AnnealingLR(_LRScheduler):
@@ -28,6 +29,7 @@ class AnnealingLR(_LRScheduler):
     def __init__(self, optimizer, start_lr, warmup_iter, num_iters, decay_style=None, last_iter=-1, decay_ratio=0.5, auto_warmup_steps=50, auto_warmup_rate=0.05):
         assert warmup_iter <= num_iters
         self.optimizer = optimizer
+        self.lr_scale = deepcopy([x['lr'] if 'lr' in x else 1. for x in optimizer.param_groups])
         self.start_lr = start_lr
         self.warmup_iter = warmup_iter
         self.init_step = last_iter
@@ -64,8 +66,8 @@ class AnnealingLR(_LRScheduler):
             step_num = self.num_iters + 1
         self.num_iters = step_num
         new_lr = self.get_lr()
-        for group in self.optimizer.param_groups:
-            group['lr'] = new_lr
+        for group, scale in zip(self.optimizer.param_groups, self.lr_scale):
+            group['lr'] = new_lr * scale
 
     def state_dict(self):
         sd = {

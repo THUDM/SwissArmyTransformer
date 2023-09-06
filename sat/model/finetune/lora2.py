@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from sat.model.base_model import BaseMixin
 import math
-from sat.helpers import print_all
+from sat.helpers import print_all, print_rank0
 from sat.model.transformer import RowParallelLinear, ColumnParallelLinear
 
 class HackLinear(nn.Linear):
@@ -71,6 +71,7 @@ map_cls = {
 class LoraLinear(nn.Module):
     def __init__(self, original_cls, partition, in_dim, out_dim, r, lora_alpha=1., lora_dropout=0., qlora=False, original_obj=None):
         super().__init__()
+        assert original_obj is not None, "original linear object must be given!"
         if lora_dropout and lora_dropout > 0:
             self.lora_dropout = nn.Dropout(p=lora_dropout)
         else:
@@ -78,9 +79,7 @@ class LoraLinear(nn.Module):
         self.r = r
         self.lora_alpha = lora_alpha
         self.scaling = self.lora_alpha / self.r
-        bias = True
-        if original_obj:
-            bias = original_obj.bias is not None
+        bias = original_obj.bias is not None
         if qlora:
             try:
                 self.original = HackLinearNF4(in_dim, out_dim, bias=bias)
@@ -88,16 +87,25 @@ class LoraLinear(nn.Module):
                 raise Exception('Build 4bit layer failed. You need to install the latest bitsandbytes. Try `pip install bitsandbytes`. If you still meet error after installation, try running `from bitsandbytes.nn import LinearNF4` with python and fix the error.')
         else:
             base_cls, kwargs = map_cls[original_cls]
+            if type(partition) is not int and original_cls is ColumnParallelLinear:
+                kwargs['stride'] = partition
             self.original = base_cls(in_dim, out_dim, **kwargs, bias=bias)
-        if original_obj:
-            self.original.weight.data.copy_(original_obj.weight.data)
-            if bias:
-                self.original.bias.data.copy_(original_obj.bias.data)
-        self.matrix_A = HackParameterList([nn.Parameter(torch.empty((r, in_dim))) for _ in range(partition)])
-        self.matrix_B = HackParameterList([nn.Parameter(torch.empty((out_dim // partition, r))) for _ in range(partition)])
-        for i in range(partition):
-            nn.init.kaiming_uniform_(self.matrix_A[i], a=math.sqrt(5))
-            nn.init.zeros_(self.matrix_B[i])
+        self.original.weight.data.copy_(original_obj.weight.data.detach().clone())
+        if bias:
+            self.original.bias.data.copy_(original_obj.bias.data.detach().clone())
+        if type(partition) is int:
+            self.matrix_A = HackParameterList([nn.Parameter(torch.empty((r, original_obj.weight.shape[1]))) for _ in range(partition)])
+            self.matrix_B = HackParameterList([nn.Parameter(torch.empty((original_obj.weight.shape[0] // partition, r))) for _ in range(partition)])
+            for i in range(partition):
+                nn.init.kaiming_uniform_(self.matrix_A[i], a=math.sqrt(5))
+                nn.init.zeros_(self.matrix_B[i])
+        else:
+            new_sizes = [original_obj.weight.shape[0] // sum(partition) * i for i in partition]
+            self.matrix_A = HackParameterList([nn.Parameter(torch.empty((r, original_obj.weight.shape[1]))) for _ in partition])
+            self.matrix_B = HackParameterList([nn.Parameter(torch.empty((sz, r))) for sz in new_sizes])
+            for i in range(len(partition)):
+                nn.init.kaiming_uniform_(self.matrix_A[i], a=math.sqrt(5))
+                nn.init.zeros_(self.matrix_B[i])
         self.partition = partition
 
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
@@ -112,15 +120,22 @@ class LoraLinear(nn.Module):
     def forward(self, x):
         mixed_raw_layer = self.original(x)
         lora_outputs = []
-        for i in range(self.partition):
-            lora_outputs.append((self.lora_dropout(x) @ self.matrix_A[i].T @ self.matrix_B[i].T) * self.scaling)
+        for mA, mB in zip(self.matrix_A, self.matrix_B):
+            lora_outputs.append((self.lora_dropout(x) @ mA.T @ mB.T) * self.scaling)
         mixed_raw_layer = mixed_raw_layer + torch.cat(lora_outputs, -1)
 
         return mixed_raw_layer
 
 
 def replace_linear_with_lora(lin, partition, r, *args, **kw_args):
-    out_dim, in_dim = lin.weight.shape
+    if kw_args.get('in_size', None) is not None:
+        in_size = kw_args.pop('in_size')
+        out_size = kw_args.pop('out_size')
+        if out_size is None:
+            out_size = in_size * partition
+        out_dim, in_dim = out_size , in_size
+    else:
+        out_dim, in_dim = lin.weight.shape
     original_cls = type(lin)
     new_layer = LoraLinear(original_cls, partition, in_dim, out_dim, r, *args, **kw_args, original_obj=lin)
     del lin
@@ -139,8 +154,8 @@ def merge_linear_lora(lin):
     if lin.original.bias is not None:
         new_lin.bias.data = lin.original.bias.data
     new_qkv = []
-    for i in range(lin.partition):
-        new_qkv.append(lin.matrix_A[i].data.T.float() @ lin.matrix_B[i].data.T.float() * lin.scaling)
+    for mA, mB in zip(lin.matrix_A, lin.matrix_B):
+        new_qkv.append(mA.data.T.float() @ mB.data.T.float() * lin.scaling)
     new_qkv = torch.cat(new_qkv, -1)
     new_lin.weight.data = weight + new_qkv.T.to(lin.original.bias.data.dtype)
     return new_lin.cuda() if torch.cuda.is_available() else new_lin
@@ -169,20 +184,25 @@ class LoraMixin(BaseMixin):
 
     def reinit(self, parent_model):
         for i in self.layer_range:
-            print(f'replacing layer {i} attention with lora')
-            parent_model.transformer.layers[i].attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].attention.dense, 1, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora)
-            parent_model.transformer.layers[i].attention.query_key_value = replace_linear_with_lora(parent_model.transformer.layers[i].attention.query_key_value, 3, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora)
+            print_rank0(f'replacing layer {i} attention with lora')
+            parent_model.transformer.layers[i].attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].attention.dense, 1, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora, in_size=parent_model.transformer.hidden_size, out_size=None)
+            parent_model.transformer.layers[i].attention.query_key_value = replace_linear_with_lora(parent_model.transformer.layers[i].attention.query_key_value, parent_model.transformer.layers[i].attention.stride, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora, in_size=parent_model.transformer.hidden_size, out_size=None if not parent_model.transformer.num_multi_query_heads else parent_model.transformer.layers[i].attention.inner_hidden_size + parent_model.transformer.layers[i].attention.hidden_size_per_attention_head * parent_model.transformer.layers[i].attention.num_multi_query_heads * 2)
             if self.cross_attention and parent_model.transformer.layers[i].is_decoder:
-                print(f'replacing layer {i} cross attention with lora')
+                print_rank0(f'replacing layer {i} cross attention with lora')
                 parent_model.transformer.layers[i].cross_attention.dense = replace_linear_with_lora(parent_model.transformer.layers[i].cross_attention.dense, 1, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora)
                 parent_model.transformer.layers[i].cross_attention.query = replace_linear_with_lora(parent_model.transformer.layers[i].cross_attention.query, 1, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora)
                 parent_model.transformer.layers[i].cross_attention.key_value = replace_linear_with_lora(parent_model.transformer.layers[i].cross_attention.key_value, 2, self.r, self.lora_alpha, self.lora_dropout, qlora=self.qlora)
         if self.qlora:
-            print('replacing chatglm linear layer with 4bit')
+            print_rank0('replacing chatglm linear layer with 4bit')
             def replace_linear_with_nf4(model, name=None, cache={}):
                 if type(model) in (nn.Linear, RowParallelLinear, ColumnParallelLinear):
                     out_dim, in_dim = model.weight.shape
-                    return HackLinearNF4(in_dim, out_dim)
+                    bias = model.bias is not None
+                    new_linear = HackLinearNF4(in_dim, out_dim, bias=bias)
+                    new_linear.weight.data.copy_(model.weight.data.detach().clone())
+                    if bias:
+                        new_linear.bias.data.copy_(model.bias.data.detach().clone())
+                    return new_linear
                 names = set()
                 for name, child in model.named_children():
                     if name not in names:
@@ -206,34 +226,11 @@ class LoraMixin(BaseMixin):
 
     def merge_lora(self):
         for i in self.layer_range:
-            print(f'merge layer {i} lora attention back to linear')
+            print_rank0(f'merge layer {i} lora attention back to linear')
             self.transformer.layers[i].attention.dense = merge_linear_lora(self.transformer.layers[i].attention.dense)
             self.transformer.layers[i].attention.query_key_value = merge_linear_lora(self.transformer.layers[i].attention.query_key_value)
             if self.transformer.layers[i].is_decoder:
-                print(f'merge layer {i} lora cross attention back to linear')
+                print_rank0(f'merge layer {i} lora cross attention back to linear')
                 self.transformer.layers[i].cross_attention.dense = merge_linear_lora(self.transformer.layers[i].cross_attention.dense)
                 self.transformer.layers[i].cross_attention.query = merge_linear_lora(self.transformer.layers[i].cross_attention.query)
                 self.transformer.layers[i].cross_attention.key_value = merge_linear_lora(self.transformer.layers[i].cross_attention.key_value)
-
-if __name__ == '__main__':
-    class Model(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.child = nn.Linear(100, 200)
-        
-        def forward(self, x):
-            return self.child(x)
-
-    model = Model()
-    torch.save(model.state_dict(), "linear.pt")
-    x = torch.randn(2, 100)
-    out1 = model(x)
-    model.child = LoraLinear(100, 200, 10)
-    model.load_state_dict(torch.load("linear.pt"), strict=False)
-    out2 = model(x)
-    torch.save(model.state_dict(), "lora.pt")
-    ckpt = torch.load("lora.pt")
-    breakpoint()
-    model.load_state_dict(ckpt, strict=False)
-    out3 = model(x)
-    breakpoint()

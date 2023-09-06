@@ -192,28 +192,37 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
     return model, optimizer
 
 
+def add_param_by_lr(dic, p, no_weight_decay=False):
+    if not hasattr(p, 'lr_scale'):
+        dic[None]['params'].append(p)
+    else:
+        if p.lr_scale not in dic:
+            dic[p.lr_scale] = {'params': [], 'lr': p.lr_scale} if not no_weight_decay else {'params': [], 'weight_decay': 0.0, 'lr': p.lr_scale}
+        dic[p.lr_scale]['params'].append(p)
+
 def get_params_for_weight_decay_optimization(module):
-    weight_decay_params = {'params': []}
-    no_weight_decay_params = {'params': [], 'weight_decay': 0.0}
+    weight_decay_params = {None: {'params': [], 'lr': 1.}}
+    no_weight_decay_params = {None: {'params': [], 'weight_decay': 0.0, 'lr': 1.}}
     for module_ in module.modules():
         if isinstance(module_, (LayerNorm, torch.nn.LayerNorm)):
-            no_weight_decay_params['params'].extend(
-                [p for p in list(module_._parameters.values())
-                 if p is not None and p.requires_grad])
+            for p in module_._parameters.values():
+                if p is not None and p.requires_grad:
+                    add_param_by_lr(no_weight_decay_params, p, no_weight_decay=True)
         else:
-            weight_decay_params['params'].extend(
-                [p for n, p in list(module_._parameters.items())
-                 if p is not None and n != 'bias' and p.requires_grad])
-            no_weight_decay_params['params'].extend(
-                [p for n, p in list(module_._parameters.items())
-                 if p is not None and n == 'bias' and p.requires_grad])
-
-    if len(weight_decay_params['params']) == 0:
-        return (no_weight_decay_params,)
-    elif len(no_weight_decay_params['params']) == 0:
-        return (weight_decay_params,)
-
-    return weight_decay_params, no_weight_decay_params
+            for n, p in module_._parameters.items():
+                if p is not None and n != 'bias' and p.requires_grad:
+                    add_param_by_lr(weight_decay_params, p, no_weight_decay=False)
+            for n, p in module_._parameters.items():
+                if p is not None and n == 'bias' and p.requires_grad:
+                    add_param_by_lr(no_weight_decay_params, p, no_weight_decay=True)
+    ret = []
+    for v in weight_decay_params.values():
+        if len(v['params']) != 0:
+            ret.append(v)
+    for v in no_weight_decay_params.values():
+        if len(v['params']) != 0:
+            ret.append(v)
+    return ret
 
 
 def get_optimizer_param_groups(model):
