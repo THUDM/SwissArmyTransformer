@@ -145,19 +145,22 @@ def merge_linear_lora(lin):
     if lin.original.weight.data.dtype is not torch.uint8:
         weight = lin.original.weight
         out_dim, in_dim = weight.shape
-        new_lin = nn.Linear(in_dim, out_dim)
+        new_lin = nn.Linear(in_dim, out_dim, dtype=weight.data.dtype, bias=lin.original.bias is not None)
     else:
         import bitsandbytes.functional as F
         weight = F.dequantize_fp4(lin.original.weight.data, lin.original.weight.quant_state).to(lin.original.bias.data.dtype)
         out_dim, in_dim = weight.shape
-        new_lin = HackLinearNF4(in_dim, out_dim)
+        new_lin = HackLinearNF4(in_dim, out_dim, bias=lin.original.bias is not None)
     if lin.original.bias is not None:
         new_lin.bias.data = lin.original.bias.data
     new_qkv = []
     for mA, mB in zip(lin.matrix_A, lin.matrix_B):
         new_qkv.append(mA.data.T.float() @ mB.data.T.float() * lin.scaling)
     new_qkv = torch.cat(new_qkv, -1)
-    new_lin.weight.data = weight + new_qkv.T.to(lin.original.bias.data.dtype)
+    guess_type = lin.original.bias.data.dtype if lin.original.bias is not None else lin.original.weight.data.dtype
+    if guess_type is torch.uint8:
+        guess_type = torch.float32
+    new_lin.weight.data = weight + new_qkv.T.to(guess_type)
     return new_lin.cuda() if torch.cuda.is_available() else new_lin
 
 class LoraMixin(BaseMixin):
