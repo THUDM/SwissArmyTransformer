@@ -136,7 +136,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
                     )
 
     # final save
-    if args.save and iteration != 0:  # TODO save
+    if args.save and iteration != 0:
         save_checkpoint(iteration, model, optimizer, lr_scheduler, args)
 
     # final testing
@@ -144,6 +144,8 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         prefix = 'the end of training for test data'
         test_loss = evaluate_and_print_results(prefix, iter(test_data),
             model, len(test_data) if args.strict_eval else args.eval_iters, args, timers, True, split='test', hooks=hooks)
+
+    return model
 
 
 def setup_model_untrainable_params_and_optimizer(args, model, config_params=None):
@@ -227,7 +229,7 @@ def get_optimizer_param_groups(model):
     # Build parameter groups (weight decay and non-decay).
     if hasattr(model, 'module'):
         model = model.module
-    param_groups = get_params_for_weight_decay_optimization(model)  # TODO move to here
+    param_groups = get_params_for_weight_decay_optimization(model)
     # Add model parallel attribute if it is not set.
     for param_group in param_groups:
         for param in param_group['params']:

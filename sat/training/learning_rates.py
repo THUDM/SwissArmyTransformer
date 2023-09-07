@@ -57,7 +57,6 @@ class AnnealingLR(_LRScheduler):
                 return self.start_lr / self.decay_ratio * (
                         (math.cos(math.pi * decay_step_ratio) + 1) * (self.decay_ratio - 1) / 2 + 1)
             elif self.decay_style == self.DECAY_STYLES[2]:
-                #TODO: implement exponential decay
                 return self.start_lr
             else:
                 return self.start_lr
