@@ -266,6 +266,7 @@ class BaseTransformerLayer(torch.nn.Module):
             use_bias=True,
             use_qkv_bias=False,
             num_multi_query_heads=0,
+            drop_path=0,
             activation_func=gelu,
             hooks={},
             transformer_pointer=None,
@@ -280,6 +281,7 @@ class BaseTransformerLayer(torch.nn.Module):
         self.layer_id = layer_id
         self.is_decoder = is_decoder[layer_id] if type(is_decoder) is list else is_decoder
         self.layernorm_order = layernorm_order
+        self.drop_path = drop_path
         self.hooks = hooks
         object.__setattr__(self, 'transformer', transformer_pointer)
         assert transformer_pointer is not None
@@ -363,8 +365,10 @@ class BaseTransformer(torch.nn.Module):
                  embedding_dropout_prob=0,
                  attention_dropout_prob=0,
                  output_dropout_prob=0,
+                 drop_path=0,
                  checkpoint_activations=False,
                  checkpoint_num_layers=1,
+                 checkpoint_skip_layers=0,
                  layernorm_epsilon=1.0e-5,
                  init_method_std=0.02,
                  inner_hidden_size=None,
@@ -403,6 +407,8 @@ class BaseTransformer(torch.nn.Module):
         self.parallel_output = parallel_output
         self.checkpoint_activations = checkpoint_activations
         self.checkpoint_num_layers = checkpoint_num_layers
+        self.checkpoint_skip_layers = checkpoint_skip_layers
+        assert checkpoint_skip_layers <= num_layers - checkpoint_num_layers, f'checkpoint_skip_layers too large. Please consider remove checkpoint_activations.'
         self.max_sequence_length = max_sequence_length
         self.layernorm_order = layernorm_order
         self.hooks = copy.copy(hooks)  # hooks will be updated each forward
@@ -448,6 +454,7 @@ class BaseTransformer(torch.nn.Module):
                 use_bias=use_bias,
                 use_qkv_bias=use_qkv_bias,
                 num_multi_query_heads=num_multi_query_heads,
+                drop_path=drop_path,
                 activation_func=activation_func,
                 hooks=self.hooks,
                 transformer_pointer=self,
@@ -577,7 +584,12 @@ class BaseTransformer(torch.nn.Module):
                     flat_inputs.append(v)
                     cross_layer_index[k] = len(flat_inputs) - 1
                 # --------------------
-                hidden_states, output_per_layers_part, output_cross_layer, *flat_outputs = \
+                if l + self.checkpoint_skip_layers >= num_layers:
+                    # no checkpointing
+                    hidden_states, output_per_layers_part, output_cross_layer, *flat_outputs = \
+                    custom(l, l + chunk_length, kw_args_index, cross_layer_index), *args, *flat_inputs
+                else:
+                    hidden_states, output_per_layers_part, output_cross_layer, *flat_outputs = \
                     checkpoint(custom(l, l + chunk_length, kw_args_index, cross_layer_index), *args, *flat_inputs)
                 
                 # recover output_per_layers_part, output_cross_layer

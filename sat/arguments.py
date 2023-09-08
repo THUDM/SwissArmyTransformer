@@ -82,6 +82,7 @@ def add_model_config_args(parser):
                        help='dropout probability for hidden state transformer')
     group.add_argument('--attention-dropout', type=float, default=0.1,
                        help='dropout probability for attention weights')
+    group.add_argument('--drop-path', type=float, default=0., help='drop path probability')
     group.add_argument('--make-vocab-size-divisible-by', type=int, default=128,
                        help='Pad the vocab size to be divisible by this value.'
                             'This is added for computational efficieny reasons.')
@@ -125,11 +126,15 @@ def add_training_args(parser):
     group.add_argument('--checkpoint-activations', action='store_true',
                        help='checkpoint activation to allow for training '
                             'with larger models and sequences. become slow (< 1.5x), save CUDA memory.')
-    group.add_argument('--checkpoint-num-layers', type=int, default=1, # Inessential
+    # Inessential
+    group.add_argument('--checkpoint-num-layers', type=int, default=1, 
                        help='chunk size (number of layers) for checkpointing. ')
+    group.add_argument('--checkpoint-skip-layers', type=int, default=0,
+                       help='skip the last N layers for checkpointing.')
+    
     group.add_argument('--fp16', action='store_true',
                        help='Run model in fp16 mode')
-    group.add_argument('--bf16', action='store_true', # only A100 supports it. Not fully tested.
+    group.add_argument('--bf16', action='store_true',
                        help='Run model in bf16 mode')
     group.add_argument('--gradient-accumulation-steps', type=int, default=1, 
                        help='run optimizer after every gradient-accumulation-steps backwards.')
@@ -236,7 +241,6 @@ def add_data_args(parser):
                        help="""Size of block to reduce memory in dataset, ignore it for most users.""")
     group.add_argument('--prefetch-factor', type=int, default=4, 
                        help='prefetching number of batches.')
-
     return parser
 
 

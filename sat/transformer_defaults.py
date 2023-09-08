@@ -153,6 +153,7 @@ def layer_forward_default(self, hidden_states, mask, *args, **kw_args):
         mask: [(1, 1), seq_len, seq_len]
     '''
     self = self.transformer.layers[kw_args['layer_id']]
+    
     # Layer norm at the begining of the transformer layer.
     attention_input = self.input_layernorm(hidden_states)
     # Self attention.
@@ -161,6 +162,18 @@ def layer_forward_default(self, hidden_states, mask, *args, **kw_args):
     # Third LayerNorm
     if self.layernorm_order == 'sandwich':
         attention_output = self.third_layernorm(attention_output)
+
+    # DropPath for attention
+    if self.training and self.drop_path > 0.:
+        if mpu.get_cuda_rng_tracker is not None:
+            # drop_path must use model parallel rng tracker
+            # the tracker is initialized as seed of `seed + model_parallel_rank`
+            # deepspeed act-ckpt record the model parallel tracker states
+            with mpu.get_cuda_rng_tracker().fork():
+                # drop_path percentage 0, others 1/(1-p)
+                random_tensor = (1-self.drop_path
+                                  + torch.rand((attention_output.shape[0],), dtype=attention_output.dtype, device=attention_output.device)).floor_() / (1-self.drop_path)
+                attention_output = random_tensor.view(-1, 1, 1) * attention_output
     
     # Residual connection.
     if self.layernorm_order == 'post':
@@ -186,7 +199,7 @@ def layer_forward_default(self, hidden_states, mask, *args, **kw_args):
                 hidden_states = hidden_states + attention_output
 
     if self.layernorm_order != 'post':
-        mlp_input = self.post_attention_layernorm(hidden_states)
+        mlp_input = self.post_attention_layernorm(hidden_states)    
 
     # MLP.
     mlp_output = self.mlp(mlp_input, **kw_args)
@@ -194,6 +207,14 @@ def layer_forward_default(self, hidden_states, mask, *args, **kw_args):
     # Fourth LayerNorm
     if self.layernorm_order == 'sandwich':
         mlp_output = self.fourth_layernorm(mlp_output)
+
+    # DropPath for mlp
+    if self.training and self.drop_path > 0.:
+        if mpu.get_cuda_rng_tracker is not None:
+            with mpu.get_cuda_rng_tracker().fork():
+                random_tensor = (1-self.drop_path
+                                  + torch.rand((mlp_output.shape[0],), dtype=mlp_output.dtype, device=mlp_output.device)).floor_() / (1-self.drop_path)
+                mlp_output = random_tensor.view(-1, 1, 1) * mlp_output
 
     # Second residual connection.
     if self.layernorm_order == 'post':
