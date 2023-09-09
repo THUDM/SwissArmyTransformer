@@ -74,7 +74,8 @@ def tar_file_iterator_with_meta(fileobj, meta_names, skip_meta=r"__[^/]*__($|/)"
                 for item in meta_list:
                     if not item['key'] in meta_data:
                         meta_data[item['key']] = {}
-                    meta_data[item['key']][meta_name] = item[meta_name]
+                    if meta_name in item:
+                        meta_data[item['key']][meta_name] = item[meta_name]
     
     for tarinfo in stream:
         fname = tarinfo.name
