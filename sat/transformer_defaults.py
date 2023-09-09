@@ -243,11 +243,13 @@ ARGS_DEFAULT = {
     'hidden_size_per_attention_head': ('hidden_size_per_attention_head', None),
     'checkpoint_activations': ('checkpoint_activations', False),
     'checkpoint_num_layers': ('checkpoint_num_layers', 1),
+    'checkpoint_skip_layers': ('checkpoint_skip_layers', 0),
     'is_decoder': ('is_decoder', False),
     'cross_attn_hidden_size': ('cross_attn_hidden_size', None),
     'use_final_layernorm': ('use_final_layernorm', True),
     'layernorm_epsilon': ('layernorm_epsilon', 1e-5),
     'use_bias': ('use_bias', True),
     'use_qkv_bias': ('use_qkv_bias', False),
-    'num_multi_query_heads': ('num_multi_query_heads', 0)
+    'num_multi_query_heads': ('num_multi_query_heads', 0),
+    'drop_path': ('drop_path', 0.),
 }
