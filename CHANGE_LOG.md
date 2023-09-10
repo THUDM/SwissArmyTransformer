@@ -133,3 +133,10 @@ v. 0.4.1
 3. test bf16 training
 4. change qkv order of chatglm1
 5. only use pytorch 2.0 attention when full / causal.
+
+# 2023.9.10
+v. 0.4.6
+1. add droppath and checkpoint last layer skip
+2. support multiple webdataset weighting
+3. fix lora merging
+4. add different lr in different parts, add a 'lr' attr for parameters in the `disable_untrainable_params`.
