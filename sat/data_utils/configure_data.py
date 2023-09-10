@@ -107,14 +107,14 @@ def make_dataset_full(path, split, args, create_dataset_function,
         valid_types = (ConfiguredResampledShards, DataPipeline)
         
         assert split[0] == 1, 'Iterable dataset cannot auto split.'
-        assert dataset_weights is None
         for p in path:
             ds = []
             for p in path:
                 d = create_dataset_function(p, args)
                 assert isinstance(d, valid_types)
                 ds.append(d)
-            ds = ChainDataset(ds)
+            # ds = ChainDataset(ds) # please merge them in a url if chain
+            ds = AlterDataset(ds, weights=dataset_weights, seed=args.seed)
         return ds
 
     if split is None:
@@ -395,3 +395,44 @@ class BlockedRandomSplitDataset(data.Dataset):
 
     def __getitem__(self, index):
         return self.wrapped_data[(index // len(self.indices)) * self.block_size + self.indices[index % len(self.indices)]]
+
+class AlterDataset(IterableDataset):
+    def __init__(self, datasets, weights=None, seed=0):
+        super().__init__()
+        self.seed = seed
+        self.datasets = datasets
+        if weights is None:
+            self.weights = [1. /  len(self.datasets)] * len(self.datasets)
+        else:
+            s = sum(weights)
+            self.weights = [w / s for w in weights]
+    
+    def __iter__(self):
+        iterators = [iter(d) for d in self.datasets]
+        # Assume that all datasets iterate follow the seed (mprank, seed, dataloader-worker-id(0 if not used in dataloader)), auto-detect at iter()
+        try:
+            from sat.mpu import get_data_parallel_rank
+            dp_rank = get_data_parallel_rank()
+        except Exception:
+            dp_rank = 0
+        rng = np.random.default_rng(seed=[dp_rank, self.seed])
+
+        # sampling according to weights from streaming data
+        while True:
+            index = rng.choice(len(iterators), p=self.weights)
+            # if stop iteration, remove the iterator
+            try:
+                yield next(iterators[index])
+            except StopIteration:
+                del iterators[index]
+                del self.weights[index]
+                if len(iterators) == 0:
+                    break
+                s = sum(self.weights)
+                self.weights = [w / s for w in self.weights]
+                from sat.helpers import print_rank0
+                print_rank0(f'AlterDataset: remove a dataset, {len(iterators)} left.')
+        
+        
+
+        
