@@ -173,6 +173,8 @@ class QuantizedColumnParallelLinear(ColumnParallelLinear):
 
         self.weight = Parameter(self.weight.to(kwargs["device"]), requires_grad=False)
         self.weight_scale = Parameter(self.weight_scale.to(kwargs["device"]), requires_grad=False)
+        if kwargs["bias"]:
+            self.bias = kwargs["bias_val"]
 
     def forward(self, input_):
         # Set up backprop all-reduce.
@@ -210,6 +212,8 @@ class QuantizedRowParallelLinear(RowParallelLinear):
 
         self.weight = Parameter(self.weight.to(kwargs["device"]), requires_grad=False)
         self.weight_scale = Parameter(self.weight_scale.to(kwargs["device"]), requires_grad=False)
+        if kwargs["bias"]:
+            self.bias = kwargs["bias_val"]
 
     def forward(self, input_):
         # Set up backprop all-reduce.
@@ -249,6 +253,7 @@ def quantize(model, weight_bit_width):
                     name=name,
                     skip_init=True,
                     device=sub_module.weight.device,
+                    bias_val=getattr(sub_module, 'bias', None),
                     )
                 )
                 quantized_cnt[0] += sub_module.weight.numel()
@@ -265,6 +270,7 @@ def quantize(model, weight_bit_width):
                     name=name,
                     skip_init=True,
                     device=sub_module.weight.device,
+                    bias_val=getattr(sub_module, 'bias', None),
                     )
                 )
                 quantized_cnt[0] += sub_module.weight.numel()
