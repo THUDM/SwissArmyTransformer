@@ -154,6 +154,7 @@ class QuantizedLinear(Linear):
     
 class QuantizedColumnParallelLinear(ColumnParallelLinear):
     def __init__(self, weight_bit_width: int, weight=None, *args, **kwargs):
+        bias_val = kwargs.pop("bias_val")
         super(QuantizedColumnParallelLinear, self).__init__(*args, **kwargs)
         self.weight_bit_width = weight_bit_width
 
@@ -173,6 +174,8 @@ class QuantizedColumnParallelLinear(ColumnParallelLinear):
 
         self.weight = Parameter(self.weight.to(kwargs["device"]), requires_grad=False)
         self.weight_scale = Parameter(self.weight_scale.to(kwargs["device"]), requires_grad=False)
+        if kwargs["bias"]:
+            self.bias = bias_val
 
     def forward(self, input_):
         # Set up backprop all-reduce.
@@ -191,6 +194,7 @@ class QuantizedColumnParallelLinear(ColumnParallelLinear):
 
 class QuantizedRowParallelLinear(RowParallelLinear):
     def __init__(self, weight_bit_width: int, weight=None, *args, **kwargs):
+        bias_val = kwargs.pop("bias_val")
         super(QuantizedRowParallelLinear, self).__init__(*args, **kwargs)
         self.weight_bit_width = weight_bit_width
 
@@ -210,6 +214,8 @@ class QuantizedRowParallelLinear(RowParallelLinear):
 
         self.weight = Parameter(self.weight.to(kwargs["device"]), requires_grad=False)
         self.weight_scale = Parameter(self.weight_scale.to(kwargs["device"]), requires_grad=False)
+        if kwargs["bias"]:
+            self.bias = bias_val
 
     def forward(self, input_):
         # Set up backprop all-reduce.
@@ -249,6 +255,7 @@ def quantize(model, weight_bit_width):
                     name=name,
                     skip_init=True,
                     device=sub_module.weight.device,
+                    bias_val=getattr(sub_module, 'bias', None),
                     )
                 )
                 quantized_cnt[0] += sub_module.weight.numel()
@@ -265,6 +272,7 @@ def quantize(model, weight_bit_width):
                     name=name,
                     skip_init=True,
                     device=sub_module.weight.device,
+                    bias_val=getattr(sub_module, 'bias', None),
                     )
                 )
                 quantized_cnt[0] += sub_module.weight.numel()
