@@ -45,7 +45,9 @@ class AnnealingLR(_LRScheduler):
 
     def get_lr(self):
         if self.num_iters <= self.init_step + self.auto_warmup_steps:
-            return float(self.start_lr) * self.auto_warmup_rate
+            auto_lr = float(self.start_lr) * self.auto_warmup_rate
+            scheduled_lr = float(self.start_lr) * self.num_iters / self.warmup_iter
+            return min(auto_lr, scheduled_lr)
         
         if self.warmup_iter > 0 and self.num_iters <= self.warmup_iter:
             return float(self.start_lr) * self.num_iters / self.warmup_iter
