@@ -40,6 +40,6 @@ class CachedAutoregressiveMixin(BaseMixin):
 
 
 class CachedAutoregressiveModel(BaseModel):
-    def __init__(self, args, transformer=None):
-        super().__init__(args, transformer=transformer)
+    def __init__(self, args, transformer=None, **kwargs):
+        super().__init__(args, transformer=transformer, **kwargs)
         self.add_mixin('auto-regressive', CachedAutoregressiveMixin())
