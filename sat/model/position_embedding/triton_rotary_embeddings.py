@@ -220,9 +220,6 @@ class FastRotaryEmbedding(torch.nn.Module):
                 self._cos_k_cached = (torch.cos(freqs) / scale).to(dtype)
                 self._sin_k_cached = (torch.sin(freqs) / scale).to(dtype)
 
-            self.cos, self.sin = F.embedding(position_id, self._cos_cached), F.embedding(position_id, self._sin_cached)
-            
-
     def forward(
         self,
         q: torch.Tensor,
@@ -243,6 +240,7 @@ class FastRotaryEmbedding(torch.nn.Module):
 
         if (layer_id == 0):
             self._update_cos_sin_cache(max_seqlen, position_id, device=q.device, dtype=q.dtype)
+            self.cos, self.sin = F.embedding(position_id, self._cos_cached), F.embedding(position_id, self._sin_cached)
         
         q = apply_rotary_emb_func(
                 q,
