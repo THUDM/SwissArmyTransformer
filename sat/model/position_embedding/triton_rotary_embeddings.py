@@ -238,7 +238,7 @@ class FastRotaryEmbedding(torch.nn.Module):
         max_seqlen: int
         layer_id: int
             only if layer_id == 0, then update cons and sin
-        Apply rotary embedding *inplace* to qkv and / or kv.
+        Apply rotary embedding *inplace* to q k.
         """
 
         if (layer_id == 0):
@@ -249,14 +249,14 @@ class FastRotaryEmbedding(torch.nn.Module):
                 self.cos,
                 self.sin,
                 interleaved=self.interleaved,
-                inplace=False
+                inplace=True
             )
         k = apply_rotary_emb_func(
                 k,
                 self.cos,
                 self.sin,
                 interleaved=self.interleaved,
-                inplace=False
+                inplace=True
             )
         
         return q, k
