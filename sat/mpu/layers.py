@@ -398,7 +398,7 @@ class RowParallelLinear(torch.nn.Module):
     def __init__(self, input_size, output_size, bias=True,
                  input_is_parallel=False,
                  init_method=unscaled_init_method(0.02), stride=1,
-                 keep_master_weight_for_test=False, params_dtype=torch.float, module=None, name=None, skip_init=False, device=torch.device('cpu')):
+                 keep_master_weight_for_test=False, params_dtype=torch.float, module=None, name=None, skip_init=False, device=torch.device('cpu'), final_bias=True):
         super(RowParallelLinear, self).__init__()
 
         # Keep input parameters
@@ -408,6 +408,7 @@ class RowParallelLinear(torch.nn.Module):
         # Divide the weight matrix along the last dimension.
         world_size = get_model_parallel_world_size()
         self.input_size_per_partition = divide(input_size, world_size)
+        self.final_bias = final_bias
 
         # Parameters.
         # Note: torch.nn.functional.linear performs XA^T + b and as a result
@@ -439,10 +440,13 @@ class RowParallelLinear(torch.nn.Module):
         # Matrix multiply.
         # input_parallel: [seq_len, input_size // mp_size]
         # weight: [output_size, input_size // mp_size]
-        output_parallel = F.linear(input_parallel, self.weight)
+        if self.final_bias or self.bias is None:
+            output_parallel = F.linear(input_parallel, self.weight)
+        else:
+            output_parallel = F.linear(input_parallel, self.weight, self.bias / get_model_parallel_world_size())
         # All-reduce across all the partitions.
         output_ = reduce_from_model_parallel_region(output_parallel)
-        if self.bias is not None:
+        if self.final_bias and self.bias is not None:
             output = output_ + self.bias
         else:
             output = output_

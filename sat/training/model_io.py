@@ -74,9 +74,11 @@ def extract_model_specific_args_to_dump(args, model):
         ('use_qkv_bias', False),
         ('inner_hidden_size', None),
         ('hidden_size_per_attention_head', None),
+        ('cross_hidden_size_per_attention_head', None),
         ('use_final_layernorm', True),
         ('layernorm_epsilon', 1e-5),
-        ('num_multi_query_heads', 0)
+        ('num_multi_query_heads', 0),
+        ('row_parallel_linear_final_bias', True)
     ]
     if hasattr(module, 'transformer'):
         for name, default in optional_arch_args_list:

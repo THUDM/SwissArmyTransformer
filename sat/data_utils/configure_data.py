@@ -107,14 +107,13 @@ def make_dataset_full(path, split, args, create_dataset_function,
         valid_types = (ConfiguredResampledShards, DataPipeline)
         
         assert split[0] == 1, 'Iterable dataset cannot auto split.'
+        ds = []
         for p in path:
-            ds = []
-            for p in path:
-                d = create_dataset_function(p, args)
-                assert isinstance(d, valid_types)
-                ds.append(d)
-            # ds = ChainDataset(ds) # please merge them in a url if chain
-            ds = AlterDataset(ds, weights=dataset_weights, seed=args.seed)
+            d = create_dataset_function(p, args)
+            assert isinstance(d, valid_types)
+            ds.append(d)
+        # ds = ChainDataset(ds) # please merge them in a url if chain
+        ds = AlterDataset(ds, weights=dataset_weights, seed=args.seed)
         return ds
 
     if split is None:

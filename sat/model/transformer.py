@@ -34,7 +34,7 @@ from sat.transformer_defaults import HOOKS_DEFAULT, standard_attention, split_te
 class SelfAttention(torch.nn.Module):
     def __init__(self, hidden_size, num_attention_heads,
                  attention_dropout_prob, output_dropout_prob,
-                 init_method, layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, qkv_bias=False, num_multi_query_heads=0,
+                 init_method, layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, qkv_bias=False, num_multi_query_heads=0, row_parallel_linear_final_bias=True,
                  hooks={}, transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
         super(SelfAttention, self).__init__()
         # Set output layer initialization if not provided.
@@ -88,7 +88,8 @@ class SelfAttention(torch.nn.Module):
             module=self,
             name="dense",
             skip_init=skip_init,
-            device=device
+            device=device,
+            final_bias=row_parallel_linear_final_bias
         )
         self.output_dropout = torch.nn.Dropout(output_dropout_prob)
         
@@ -120,7 +121,7 @@ class CrossAttention(torch.nn.Module):
     """Parallel cross-attention layer for Transformer"""
 
     def __init__(self, hidden_size, num_attention_heads, attention_dropout_prob, output_dropout_prob, init_method,
-                 layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, hooks={},
+                 layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, row_parallel_linear_final_bias=True, hooks={},
                  cross_attn_hidden_size=None, transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
         super().__init__()
         # Set output layer initialization if not provided.
@@ -161,7 +162,7 @@ class CrossAttention(torch.nn.Module):
             hidden_size,
             input_is_parallel=True,
             init_method=output_layer_init_method, bias=bias, params_dtype=params_dtype, module=self, name="dense",skip_init=skip_init,
-            device=device)
+            device=device, final_bias=row_parallel_linear_final_bias)
         self.output_dropout = torch.nn.Dropout(output_dropout_prob)
 
         object.__setattr__(self, 'transformer', transformer_pointer)
@@ -192,7 +193,7 @@ class CrossAttention(torch.nn.Module):
 
 class MLP(torch.nn.Module):
     def __init__(self, hidden_size, output_dropout_prob, init_method, inner_hidden_size=None,
-                 output_layer_init_method=None, layer_id=None, hooks={}, bias=True, activation_func=gelu, transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
+                 output_layer_init_method=None, layer_id=None, row_parallel_linear_final_bias=True, hooks={}, bias=True, activation_func=gelu, transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
         super(MLP, self).__init__()
         self.layer_id = layer_id
         self.activation_func = activation_func
@@ -228,7 +229,8 @@ class MLP(torch.nn.Module):
             module=self,
             name="dense_4h_to_h",
             skip_init=skip_init,
-            device=device
+            device=device,
+            final_bias=row_parallel_linear_final_bias
         )
         self.dropout = torch.nn.Dropout(output_dropout_prob)
         object.__setattr__(self, 'transformer', transformer_pointer)
@@ -258,6 +260,7 @@ class BaseTransformerLayer(torch.nn.Module):
             layer_id,
             inner_hidden_size=None,
             hidden_size_per_attention_head=None,
+            cross_hidden_size_per_attention_head=None,
             output_layer_init_method=None,
             layernorm_order='pre',
             layernorm=LayerNorm,
@@ -266,6 +269,7 @@ class BaseTransformerLayer(torch.nn.Module):
             use_bias=True,
             use_qkv_bias=False,
             num_multi_query_heads=0,
+            row_parallel_linear_final_bias=True,
             drop_path=0,
             activation_func=gelu,
             hooks={},
@@ -302,6 +306,7 @@ class BaseTransformerLayer(torch.nn.Module):
             bias=use_bias,
             qkv_bias=use_qkv_bias,
             num_multi_query_heads=num_multi_query_heads,
+            row_parallel_linear_final_bias=row_parallel_linear_final_bias,
             hooks=hooks,
             transformer_pointer=transformer_pointer,
             params_dtype=params_dtype,
@@ -324,10 +329,11 @@ class BaseTransformerLayer(torch.nn.Module):
                 output_dropout_prob,
                 init_method,
                 layer_id,
-                hidden_size_per_attention_head=hidden_size_per_attention_head,
+                hidden_size_per_attention_head=cross_hidden_size_per_attention_head,
                 output_layer_init_method=output_layer_init_method,
                 cross_attn_hidden_size=cross_attn_hidden_size,
                 bias=use_bias,
+                row_parallel_linear_final_bias=row_parallel_linear_final_bias,
                 hooks=hooks,
                 transformer_pointer=transformer_pointer,
                 params_dtype=params_dtype
@@ -344,6 +350,7 @@ class BaseTransformerLayer(torch.nn.Module):
             bias=use_bias,
             layer_id=layer_id,
             activation_func=activation_func,
+            row_parallel_linear_final_bias=row_parallel_linear_final_bias,
             hooks=hooks,
             transformer_pointer=transformer_pointer,
             params_dtype=params_dtype,
@@ -373,6 +380,7 @@ class BaseTransformer(torch.nn.Module):
                  init_method_std=0.02,
                  inner_hidden_size=None,
                  hidden_size_per_attention_head=None,
+                 cross_hidden_size_per_attention_head=None,
                  layernorm_order='pre',
                  parallel_output=False,
                  is_decoder=False,
@@ -380,6 +388,7 @@ class BaseTransformer(torch.nn.Module):
                  use_bias=True,
                  use_qkv_bias=False,
                  num_multi_query_heads=0,
+                 row_parallel_linear_final_bias=True,
                  activation_func=gelu,
                  layernorm=LayerNorm,
                  init_method=None,
@@ -395,6 +404,7 @@ class BaseTransformer(torch.nn.Module):
         self.hidden_size = hidden_size
         self.inner_hidden_size = inner_hidden_size
         self.hidden_size_per_attention_head = hidden_size_per_attention_head
+        self.cross_hidden_size_per_attention_head = cross_hidden_size_per_attention_head
         self.is_decoder = is_decoder
         self.cross_attn_hidden_size = cross_attn_hidden_size
         if not is_decoder and cross_attn_hidden_size is not None:
@@ -411,6 +421,7 @@ class BaseTransformer(torch.nn.Module):
         assert checkpoint_skip_layers <= num_layers - checkpoint_num_layers, f'checkpoint_skip_layers too large. Please consider remove checkpoint_activations.'
         self.max_sequence_length = max_sequence_length
         self.layernorm_order = layernorm_order
+        self.row_parallel_linear_final_bias = row_parallel_linear_final_bias
         self.hooks = copy.copy(hooks)  # hooks will be updated each forward
         object.__setattr__(self, 'transformer', self) # to give the default hooks the same api as outer hooks
 
@@ -446,6 +457,7 @@ class BaseTransformer(torch.nn.Module):
                 layer_id,
                 inner_hidden_size=inner_hidden_size,
                 hidden_size_per_attention_head=hidden_size_per_attention_head,
+                cross_hidden_size_per_attention_head=cross_hidden_size_per_attention_head,
                 output_layer_init_method=self.output_layer_init_method,
                 is_decoder=self.is_decoder,
                 cross_attn_hidden_size=cross_attn_hidden_size,
@@ -454,6 +466,7 @@ class BaseTransformer(torch.nn.Module):
                 use_bias=use_bias,
                 use_qkv_bias=use_qkv_bias,
                 num_multi_query_heads=num_multi_query_heads,
+                row_parallel_linear_final_bias=row_parallel_linear_final_bias,
                 drop_path=drop_path,
                 activation_func=activation_func,
                 hooks=self.hooks,

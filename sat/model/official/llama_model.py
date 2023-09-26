@@ -15,15 +15,12 @@ def apply_rotary_pos_emb_index_bhs(q, k, cos, sin, position_id):
     q, k = (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
     return q, k
 
+from sat.model.position_embedding.triton_rotary_embeddings import FastRotaryEmbedding
+
 class RotaryMixin(BaseMixin):
     def __init__(self, hidden_size, num_heads):
         super().__init__()
-        self.rotary_emb = RotaryEmbedding(
-            hidden_size // num_heads,
-            base=10000,
-            precision=torch.half,
-            learnable=False,
-        )
+        self.rotary_emb = FastRotaryEmbedding(hidden_size // num_heads)
 
     def attention_forward(self, hidden_states, mask, **kw_args):
         origin = self
@@ -42,8 +39,7 @@ class RotaryMixin(BaseMixin):
         query_layer = self._transpose_for_scores(mixed_query_layer)
         key_layer = self._transpose_for_scores(mixed_key_layer)
         value_layer = self._transpose_for_scores(mixed_value_layer)
-        cos, sin = origin.rotary_emb(value_layer, seq_len=kw_args['position_ids'].max()+1)
-        query_layer, key_layer = apply_rotary_pos_emb_index_bhs(query_layer, key_layer, cos, sin, kw_args['position_ids'])
+        query_layer, key_layer = origin.rotary_emb(query_layer,key_layer, kw_args['position_ids'], max_seqlen=kw_args['position_ids'].max()+1, layer_id=kw_args['layer_id'])
 
         context_layer = attention_fn(query_layer, key_layer, value_layer, mask, dropout_fn, **kw_args)
 

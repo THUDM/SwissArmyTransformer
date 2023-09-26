@@ -241,6 +241,7 @@ ARGS_DEFAULT = {
     'output_dropout_prob': ('hidden_dropout', 0),
     'inner_hidden_size': ('inner_hidden_size', None),
     'hidden_size_per_attention_head': ('hidden_size_per_attention_head', None),
+    'cross_hidden_size_per_attention_head': ('cross_hidden_size_per_attention_head', None),
     'checkpoint_activations': ('checkpoint_activations', False),
     'checkpoint_num_layers': ('checkpoint_num_layers', 1),
     'checkpoint_skip_layers': ('checkpoint_skip_layers', 0),
@@ -252,4 +253,5 @@ ARGS_DEFAULT = {
     'use_qkv_bias': ('use_qkv_bias', False),
     'num_multi_query_heads': ('num_multi_query_heads', 0),
     'drop_path': ('drop_path', 0.),
+    'row_parallel_linear_final_bias': ('row_parallel_linear_final_bias', True),
 }

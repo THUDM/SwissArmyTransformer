@@ -51,7 +51,7 @@ if __name__ == "__main__":
     parser.add_argument("--temperature", type=float, default=0.8)
     args = parser.parse_args()
 
-    prefix = 'meta-llama/'
+    prefix = '/mnt/shared/official_pretrains/hf_home/'
     model_type = 'Llama-2-70b-chat-hf'
 
     # load model
@@ -59,7 +59,7 @@ if __name__ == "__main__":
         fp16=True,
         skip_init=True,
         use_gpu_initialization=True
-    ), overwrite_args={'model_parallel_size': 8})
+    ), url='local', overwrite_args={'model_parallel_size': 2})
     model.add_mixin('auto-regressive', CachedAutoregressiveMixin())
 
     tokenizer = LlamaTokenizer.from_pretrained(prefix+model_type)
