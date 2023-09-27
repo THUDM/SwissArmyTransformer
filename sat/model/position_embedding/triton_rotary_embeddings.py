@@ -201,9 +201,7 @@ class FastRotaryEmbedding(torch.nn.Module):
             else:
                 t = torch.arange(seqlen, device=device, dtype=self.inv_freq.dtype)
                 inv_freq = self.inv_freq
-            # Don't do einsum, it converts fp32 to fp16 under AMP
-            #freqs = torch.einsum("i,j->ij", t, self.inv_freq)
-            freqs = torch.outer(t, inv_freq)
+            freqs = torch.einsum("i,j->ij", t, inv_freq)
             if self.scale is None:
                 self._cos_cached = torch.cos(freqs).to(dtype)
                 self._sin_cached = torch.sin(freqs).to(dtype)
