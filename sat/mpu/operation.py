@@ -89,5 +89,33 @@ def mp_split_model_receive(model):
             iter_repartition(sub_module)
     iter_repartition(model)
     
-def mp_merge_model(model):
-    raise NotImplementedError
+def mp_merge_model_rank0(model, model_full):
+    assert get_model_parallel_world_size() == torch.distributed.get_world_size(), "Merging model is only supported for model_parallel_size == world_size!"
+    def iter_merge(new_model, module):
+        for (new_name, sub_new_model), (name, sub_module) in zip(new_model.named_children(), module.named_children()):
+            if isinstance(sub_module, (ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding)):
+                new_weights, new_biases = sub_module.partition()
+                new_weights = [x.cuda() for x in new_weights]
+                torch.distributed.gather(sub_new_model.weight.data, gather_list=new_weights, dst=0)
+                if new_biases:
+                    new_biases = [x.cuda() for x in new_biases]
+                    torch.distributed.gather(sub_new_model.bias.data, gather_list=new_biases, dst=0)
+                sub_module.merge([x.cpu() for x in new_weights], [x.cpu() for x in new_biases])
+            else:
+                for (nn, np), (n, p) in zip(sub_new_model.named_parameters(recurse=False), sub_module.named_parameters(recurse=False)):
+                    p.data.copy_(torch.clone(np.data).detach())
+            iter_merge(sub_new_model, sub_module)
+    iter_merge(model, model_full)
+
+def mp_merge_model_send(model):
+    assert get_model_parallel_world_size() == torch.distributed.get_world_size(), "Merging model is only supported for model_parallel_size == world_size!"
+    def iter_merge(module):
+        for name, sub_module in module.named_children():
+            if isinstance(sub_module, VocabParallelEmbedding):
+                torch.distributed.gather(sub_module.weight.data, dst=0)
+            elif isinstance(sub_module, (ColumnParallelLinear, RowParallelLinear)):
+                torch.distributed.gather(sub_module.weight.data, dst=0)
+                if sub_module.bias is not None:
+                    torch.distributed.gather(sub_module.bias.data, dst=0)
+            iter_merge(sub_module)
+    iter_merge(model)

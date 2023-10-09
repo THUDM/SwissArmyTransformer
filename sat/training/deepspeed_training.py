@@ -94,35 +94,35 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     if hooks['init_function'] is not None:
         hooks['init_function'](args, model)
 
-    # Optimization related things
-    model, optimizer = setup_model_untrainable_params_and_optimizer(args, model)
-
-    # initialize lr scheduler
-    lr_scheduler = get_learning_rate_scheduler(optimizer, args.iteration, args)
-
-    summary_writer = None
-    if torch.distributed.get_rank() == 0:
-        if args.mode == 'pretrain':
-            print_rank0('Pretraining or Continuing training the Model...')
-        elif args.mode == 'finetune':
-            print_rank0('Finetuning Model...')
-        print_args(args)
-        summary_writer = get_sample_writer(base=args.summary_dir, name=args.experiment_name, iteration=args.iteration)
-
-    # Resume data loader if necessary.
-    if args.resume_dataloader:
-        if not args.iterable_dataset:
-            if train_data is not None:
-                train_data.batch_sampler.start_iter = args.iteration % len(train_data)
-            if val_data is not None:
-                start_iter_val = (args.train_iters // args.save_interval) * args.eval_interval
-                val_data.batch_sampler.start_iter = start_iter_val % len(val_data)
-        else:
-            print_rank0('Warning: we cannot resume iterable dataloader. skipping...')
-
     # training 
     iteration = 0
     if args.train_iters > 0:
+        # Optimization related things
+        model, optimizer = setup_model_untrainable_params_and_optimizer(args, model)
+
+        # initialize lr scheduler
+        lr_scheduler = get_learning_rate_scheduler(optimizer, args.iteration, args)
+
+        summary_writer = None
+        if torch.distributed.get_rank() == 0:
+            if args.mode == 'pretrain':
+                print_rank0('Pretraining or Continuing training the Model...')
+            elif args.mode == 'finetune':
+                print_rank0('Finetuning Model...')
+            print_args(args)
+            summary_writer = get_sample_writer(base=args.summary_dir, name=args.experiment_name, iteration=args.iteration)
+
+        # Resume data loader if necessary.
+        if args.resume_dataloader:
+            if not args.iterable_dataset:
+                if train_data is not None:
+                    train_data.batch_sampler.start_iter = args.iteration % len(train_data)
+                if val_data is not None:
+                    start_iter_val = (args.train_iters // args.save_interval) * args.eval_interval
+                    val_data.batch_sampler.start_iter = start_iter_val % len(val_data)
+            else:
+                print_rank0('Warning: we cannot resume iterable dataloader. skipping...')
+
         if args.do_train:
             with ExitStack() as stack:
                 def save_on_exit(args_, model_, optimizer_, lr_scheduler_):

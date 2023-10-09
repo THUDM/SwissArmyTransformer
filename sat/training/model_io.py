@@ -115,14 +115,15 @@ def save_checkpoint(iteration, model, optimizer,
         if mpu.get_data_parallel_rank() == 0:
             print_rank0('Saving Model...')
             save_ds_checkpoint(iteration, model, lr_scheduler, args)
-        if optimizer.optimizer.__class__.__name__ ==  "FusedEmaAdam" :
+        if optimizer is not None and optimizer.optimizer.__class__.__name__ ==  "FusedEmaAdam" :
             update_ema_parameters_to_model(optimizer)
             if mpu.get_data_parallel_rank() == 0:
                 print_rank0('Saving Ema Model...')
                 save_ds_checkpoint(iteration, model, lr_scheduler, args, True)
     elif args.mode == 'inference':
         os.makedirs(os.path.join(args.save, str(iteration)), exist_ok=True)
-        torch.save({'module': model.state_dict()}, os.path.join(args.save, str(iteration), 'mp_rank_{:02d}_model_states.pt'.format(int(os.environ.get("RANK", 0)))))
+        if torch.distributed.get_rank() < args.model_parallel_size:
+            torch.save({'module': model.state_dict()}, os.path.join(args.save, str(iteration), 'mp_rank_{:02d}_model_states.pt'.format(torch.distributed.get_rank())))
     else:
         raise ValueError("training without deepspeed is not supported.")
     # Wait so everyone is done (necessary)

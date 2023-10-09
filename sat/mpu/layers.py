@@ -161,6 +161,9 @@ class VocabParallelEmbedding(torch.nn.Module):
                 ).detach()
             new_weights.append(weight)
         return new_weights, []
+    
+    def merge(self, new_weights, new_biases):
+        self.weight.data.copy_(torch.cat(new_weights))
 
 
 class ParallelEmbedding(torch.nn.Module):
@@ -333,18 +336,27 @@ class ColumnParallelLinear(torch.nn.Module):
         output_size_per_partition = divide(self.output_size, new_model_parallel_size)
         new_weights = []
         new_biases = []
+
+        mp_size = new_model_parallel_size
+        # weight is arranged as [stride0...stride1...stride2] * [input_size], extract non-contiguous parts
+        strides = [1]*self.stride if isinstance(self.stride, int) else self.stride # int means equal number of qkv, or ratios
+        assert self.weight.shape[0] % sum(strides) == 0, 'cannot divide weight evenly'
+        factor = self.weight.shape[0] // sum(strides)
+        # decompose weight according to strides
+        strided_weights, _acm = [], 0
+        for i in range(len(strides)):
+            strided_weights.append(self.weight[_acm:_acm+factor*strides[i], :].detach())
+            _acm += factor*strides[i]
+
+        if self.bias is not None:
+            # decompose bias according to strides
+            strided_biases, _acm = [], 0
+            for i in range(len(strides)):
+                strided_biases.append(self.bias[_acm:_acm+factor*strides[i]].detach())
+                _acm += factor*strides[i]
+
         for rank in range(new_model_parallel_size):
             mp_rank = rank
-            mp_size = new_model_parallel_size
-            # weight is arranged as [stride0...stride1...stride2] * [input_size], extract non-contiguous parts
-            strides = [1]*self.stride if isinstance(self.stride, int) else self.stride # int means equal number of qkv, or ratios
-            assert self.weight.shape[0] % sum(strides) == 0, 'cannot divide weight evenly'
-            factor = self.weight.shape[0] // sum(strides)
-            # decompose weight according to strides
-            strided_weights, _acm = [], 0
-            for i in range(len(strides)):
-                strided_weights.append(self.weight[_acm:_acm+factor*strides[i], :].detach())
-                _acm += factor*strides[i]
             new_weight = torch.cat([
                 strided_weight[
                     (strided_weight.shape[0]//mp_size)*mp_rank:
@@ -354,11 +366,6 @@ class ColumnParallelLinear(torch.nn.Module):
             ], dim=0).contiguous().view(output_size_per_partition, self.input_size)
             new_weights.append(torch.clone(new_weight).detach())
             if self.bias is not None:
-                # decompose bias according to strides
-                strided_biases, _acm = [], 0
-                for i in range(len(strides)):
-                    strided_biases.append(self.bias[_acm:_acm+factor*strides[i]].detach())
-                    _acm += factor*strides[i]
                 new_bias = torch.cat([
                     strided_bias[
                         (strided_bias.shape[0]//mp_size)*mp_rank:
@@ -368,6 +375,28 @@ class ColumnParallelLinear(torch.nn.Module):
                 ], dim=0).contiguous().view(output_size_per_partition)
                 new_biases.append(torch.clone(new_bias).detach())
         return new_weights, new_biases
+    
+    def merge(self, new_weights, new_biases):
+        strides = [1]*self.stride if isinstance(self.stride, int) else self.stride # int means equal number of qkv, or ratios
+        assert self.weight.shape[0] % sum(strides) == 0, 'cannot divide weight evenly'
+        all_weights = []
+        _acm = 0
+        for stride in strides:
+            for weight in new_weights:
+                factor = weight.shape[0] // sum(strides)
+                all_weights.append(weight[_acm:_acm+factor*stride])
+            _acm += factor*stride
+        self.weight.data.copy_(torch.cat(all_weights))
+        if self.bias is not None:
+            all_biases = []
+            _acm = 0
+            for stride in strides:
+                for bias in new_biases:
+                    factor = bias.shape[0] // sum(strides)
+                    all_biases.append(bias[_acm:_acm+factor*stride])
+                _acm += factor*stride
+            self.bias.data.copy_(torch.cat(all_biases))
+
 
 class RowParallelLinear(torch.nn.Module):
     """Linear layer with row parallelism.
@@ -480,3 +509,8 @@ class RowParallelLinear(torch.nn.Module):
             if self.bias is not None:
                 new_biases.append(torch.clone(self.bias.data).detach())
         return new_weights, new_biases
+    
+    def merge(self, new_weights, new_biases):
+        self.weight.data.copy_(torch.cat(new_weights, 1))
+        if self.bias is not None:
+            self.bias.data.copy_(new_biases[0])
