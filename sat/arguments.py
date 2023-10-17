@@ -294,7 +294,7 @@ def _adjust_vocab_size(args):
 def _simple_init(model_parallel_size=1):
     '''Necessary initialization for torch.distributed for model-only mode'''
     args = argparse.Namespace(
-        distributed_backend='nccl' if torch.distributed.is_nccl_available() else 'gloo',
+        distributed_backend='nccl' if torch.distributed.is_nccl_available() and torch.cuda.is_available() else 'gloo',
         model_parallel_size=model_parallel_size,
     )
     args.rank = int(os.getenv('RANK', '0'))
