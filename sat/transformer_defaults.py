@@ -115,7 +115,7 @@ def cross_attention_forward_default(self, hidden_states, cross_attention_mask, e
     key_layer = self._transpose_for_scores(mixed_key_layer)
     value_layer = self._transpose_for_scores(mixed_value_layer)
 
-    context_layer = attention_fn(query_layer, key_layer, value_layer, cross_attention_mask, dropout_fn, cross_attention=True, **kw_args)
+    context_layer = attention_fn(query_layer, key_layer, value_layer, cross_attention_mask, dropout_fn, cross_attention=True, encoder_outputs=encoder_outputs, **kw_args)
     context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
     new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
     # [b, s, hp]
