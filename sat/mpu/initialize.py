@@ -81,19 +81,22 @@ def initialize_model_parallel(model_parallel_size_):
         if i == (rank // model_parallel_size):
             _MODEL_PARALLEL_GROUP = group
     
+    guess_local_world_size = world_size if world_size < 8 else 8
     local_world_size = os.environ.get('LOCAL_WORLD_SIZE', None)
-    if local_world_size is not None:
-        local_world_size = int(local_world_size)
-        # Build the node groups.
-        global _NODE_GROUP
-        assert _NODE_GROUP is None, \
-            'node group is already initialized'
-        for i in range(world_size // local_world_size):
-            ranks = range(i * local_world_size,
-                        (i + 1) * local_world_size)
-            group = torch.distributed.new_group(ranks)
-            if i == (rank // local_world_size):
-                _NODE_GROUP = group
+    if local_world_size is None:
+        local_world_size = guess_local_world_size
+        print_rank0(f"You didn't pass in LOCAL_WORLD_SIZE environment variable. We use the guessed LOCAL_WORLD_SIZE={guess_local_world_size}. If this is wrong, please pass the LOCAL_WORLD_SIZE manually.")
+    local_world_size = int(local_world_size)
+    # Build the node groups.
+    global _NODE_GROUP
+    assert _NODE_GROUP is None, \
+        'node group is already initialized'
+    for i in range(world_size // local_world_size):
+        ranks = range(i * local_world_size,
+                    (i + 1) * local_world_size)
+        group = torch.distributed.new_group(ranks)
+        if i == (rank // local_world_size):
+            _NODE_GROUP = group
 
 
 def model_parallel_is_initialized():
