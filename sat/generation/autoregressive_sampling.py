@@ -84,7 +84,7 @@ def filling_sequence(
     # initialize generation
     counter = context_length - 1 # Last fixed index is ``counter'' 
     index = 0 if mems is None else mems.shape[2] # Next forward starting index, also the length of cache.
-    mem_cross = None
+    mems_cross = None
     # step-by-step generation
     while counter < len(seq) - 1:
         # Now, we want to generate seq[counter + 1],
@@ -111,12 +111,12 @@ def filling_sequence(
             position_ids=position_ids[..., index: counter+1],
             attention_mask=attention_mask[..., index: counter+1, :counter+1], # TODO memlen
             mems=mems,
-            mem_cross=mem_cross,
+            mems_cross=mems_cross,
             log_attention_weights=log_attention_weights_part,
             **kw_args
         )
         if len(output_per_layers) > 0 and 'mem_cross' in output_per_layers[0]:
-            mem_cross = output_per_layers[0]['mem_cross']
+            mems_cross = [mem['mem_cross'] for mem in output_per_layers]
         mem_kv = [o['mem_kv'] for o in output_per_layers]
         mems = update_mems(mem_kv, mems, max_memory_length=max_memory_length)
         counter += 1
