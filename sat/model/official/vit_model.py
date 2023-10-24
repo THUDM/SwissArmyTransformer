@@ -82,7 +82,8 @@ class InterpolatedPositionEmbeddingMixin(BaseMixin):
         pre_weight = old_weight[:self.transformer.property.pre_len]
         post_weight = old_weight[self.transformer.property.pre_len+self.transformer.property.num_patches:]
         image_weight = old_weight[self.transformer.property.pre_len:self.transformer.property.pre_len+self.transformer.property.num_patches].reshape(1, self.transformer.property.grid_size[0], self.transformer.property.grid_size[1], -1).permute(0, 3, 1, 2)
-        image_weight = F.interpolate(image_weight, size=property.grid_size, mode='bicubic', align_corners=False).permute(0, 2, 3, 1).reshape(property.num_patches, -1)
+        original_dtype = image_weight.dtype
+        image_weight = F.interpolate(image_weight.float(), size=property.grid_size, mode='bicubic', align_corners=False).permute(0, 2, 3, 1).reshape(property.num_patches, -1).to(original_dtype)
         self.transformer.position_embeddings = torch.nn.Embedding(property.seq_len, old_weight.shape[1]).type(old_weight.dtype).to(old_weight.device)
         torch.nn.init.normal_(self.transformer.position_embeddings.weight, mean=0.0, std=0.02)
         self.transformer.position_embeddings.weight.data[:self.transformer.property.pre_len] = pre_weight
