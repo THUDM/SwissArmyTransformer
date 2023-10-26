@@ -232,7 +232,7 @@ class LoraMixin(BaseMixin):
             print_rank0(f'merge layer {i} lora attention back to linear')
             self.transformer.layers[i].attention.dense = merge_linear_lora(self.transformer.layers[i].attention.dense)
             self.transformer.layers[i].attention.query_key_value = merge_linear_lora(self.transformer.layers[i].attention.query_key_value)
-            if self.transformer.layers[i].is_decoder:
+            if self.cross_attention and self.transformer.layers[i].is_decoder:
                 print_rank0(f'merge layer {i} lora cross attention back to linear')
                 self.transformer.layers[i].cross_attention.dense = merge_linear_lora(self.transformer.layers[i].cross_attention.dense)
                 self.transformer.layers[i].cross_attention.query = merge_linear_lora(self.transformer.layers[i].cross_attention.query)
