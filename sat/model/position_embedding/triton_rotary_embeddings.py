@@ -235,6 +235,8 @@ class FastRotaryEmbedding(torch.nn.Module):
             only if layer_id == 0, then update cons and sin
         Apply rotary embedding *inplace* to q k.
         """
+        if position_id.shape[0] != q.shape[0]:
+            position_id = position_id.expand(q.shape[0], -1)
 
         if (layer_id == 0):
             self._update_cos_sin_cache(max_seqlen, position_id, device=q.device, dtype=q.dtype)
