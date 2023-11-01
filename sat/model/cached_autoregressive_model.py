@@ -38,6 +38,10 @@ class CachedAutoregressiveMixin(BaseMixin):
                 v = torch.cat((memv, v), dim=2)
         else:
             kw_args['output_this_layer']['mem_cross'] = kw_args["encoder_outputs"]
+            if q.shape[0] != k.shape[0]:
+                k = k.expand(q.shape[0], *[-1]*(len(k.shape)-1))
+            if q.shape[0] != v.shape[0]:
+                v = v.expand(q.shape[0], *[-1]*(len(v.shape)-1))
         return old_impl(q, k, v, mask, dropout_fn, cross_attention=cross_attention, mems=mems, **kw_args)
 
 
