@@ -193,3 +193,68 @@ class MetaDistributedWebDataset(DataPipeline):
             wds.shuffle(shuffle_buffer),
             process_fn
         )
+
+# rclone support
+from webdataset.gopen import Pipe
+def gopen_rclone(url, mode="rb", bufsize=8192*2):
+    """Open a URL with `curl`.
+
+    :param url: rclone url, e.g. data:bucket1/foo.tar. data should be configured.
+    :param mode: file mode
+    :param bufsize: buffer size
+    """
+    url = url.replace("rclone://", "")
+    if mode[0] == "r":
+        cmd = f"rclone cat '{url}'"
+        return Pipe(
+            cmd,
+            mode=mode,
+            shell=True,
+            bufsize=bufsize,
+            ignore_status=[141, 23],
+        )  # skipcq: BAN-B604
+    elif mode[0] == "w":
+        cmd = f"rclone cp - '{url}'"
+        return Pipe(
+            cmd,
+            mode=mode,
+            shell=True,
+            bufsize=bufsize,
+            ignore_status=[141, 26],
+        )  # skipcq: BAN-B604
+    else:
+        raise ValueError(f"{mode}: unknown mode")
+
+def gopen_boto3(url, mode="rb", bufsize=8192*2):
+    """Open a URL with boto3 API.
+
+    :param url: boto3 url, e.g. boto3://bucket1/foo.tar. data should be configured.
+    :param mode: file mode
+    :param bufsize: buffer size
+    """
+    import boto3
+    # boto3.set_stream_logger('botocore', level='DEBUG')
+    url = url.replace("boto3://", "")
+    endpoint_url = os.environ.get("S3_ENDPOINT_URL", None)
+    access_key = os.environ.get("S3_ACCESS_KEY_ID", None)
+    secret_key = os.environ.get("S3_SECRET_ACCESS_KEY", None)
+    
+    if mode[0] == "r":
+        s3_client = boto3.client('s3',
+            endpoint_url=endpoint_url,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key
+            )
+        bucket, key = url.split('/', 1)
+        response = s3_client.get_object(Bucket=bucket, Key=key) # Range optional
+        return response['Body']
+    # elif mode[0] == "w":
+    #     pass
+    else:
+        raise ValueError(f"{mode}: unknown mode")
+
+from webdataset.gopen import gopen_schemes
+gopen_schemes['rclone'] = gopen_rclone
+gopen_schemes['boto3'] = gopen_boto3
+
+

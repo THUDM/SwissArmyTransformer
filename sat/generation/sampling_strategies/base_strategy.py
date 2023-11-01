@@ -24,7 +24,7 @@ def top_k_logits(logits, top_k=0, top_p=0.0, filter_value=-65504):
         indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
         logits[indices_to_remove] = filter_value
 
-    if top_p > 0.0:
+    # if top_p > 0.0:
         # convert to 1D
         # logits = logits.view(logits.size()[1])
         logits = logits.contiguous()
