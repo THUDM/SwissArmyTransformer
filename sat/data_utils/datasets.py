@@ -85,6 +85,8 @@ class TSVDataset(Dataset):
 
 try:
     from .webds import SimpleDistributedWebDataset, MetaDistributedWebDataset
+
+    from .jsonlds import JsonlIterableDataset
         
 except ModuleNotFoundError as e: # webdataset not install, use pip to install
     from sat.helpers import print_rank0
