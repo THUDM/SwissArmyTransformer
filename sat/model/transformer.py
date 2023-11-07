@@ -600,7 +600,7 @@ class BaseTransformer(torch.nn.Module):
                 if l + self.checkpoint_skip_layers >= num_layers:
                     # no checkpointing
                     hidden_states, output_per_layers_part, output_cross_layer, *flat_outputs = \
-                    custom(l, l + chunk_length, kw_args_index, cross_layer_index), *args, *flat_inputs
+                    custom(l, l + chunk_length, kw_args_index, cross_layer_index)(*args, *flat_inputs)
                 else:
                     hidden_states, output_per_layers_part, output_cross_layer, *flat_outputs = \
                     checkpoint(custom(l, l + chunk_length, kw_args_index, cross_layer_index), *args, *flat_inputs)
