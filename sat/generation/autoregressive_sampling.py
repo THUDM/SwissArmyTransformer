@@ -243,7 +243,7 @@ def evaluate_perplexity(model, tokens, attention_mask, position_ids, loss_mask, 
     pred = log_probs[:, :-1, :] 
     target = tokens[:, 1:].unsqueeze(-1) 
     loss_mask = loss_mask[..., 1:]
-    scores = torch.gather(pred, dim=2, index=target).squeeze(-1) # [batch_size, seq_len-1]
+    scores = -1 * torch.gather(pred, dim=2, index=target).squeeze(-1) # [batch_size, seq_len-1]
     if reduction == 'mean':
         return (scores * loss_mask).sum(dim=-1) / loss_mask.sum(dim=-1)
     elif reduction == 'none':
