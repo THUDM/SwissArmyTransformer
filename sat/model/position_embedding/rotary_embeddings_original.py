@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 
 class RotaryEmbedding(nn.Module):
-    def __init__(self, dim, original_impl=False, device=None, dtype=None):
+    def __init__(self, dim, original_impl=False, device=None, dtype=None, base_scale=1.):
         super().__init__()
-        inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2, device=device).to(dtype=dtype) / dim))
+        self.base_scale = base_scale
+        inv_freq = 1.0 / ((10000*base_scale) ** (torch.arange(0, dim, 2, device=device).to(dtype=dtype) / dim))
         self.register_buffer("inv_freq", inv_freq)
         self.dim = dim
         self.original_impl = original_impl
@@ -22,7 +23,7 @@ class RotaryEmbedding(nn.Module):
         if n_elem == self.dim:
             theta = self.inv_freq
         else:
-            theta = 1.0 / (base ** (torch.arange(0, n_elem, 2, dtype=dtype, device=device) / n_elem))
+            theta = 1.0 / ((base*self.base_scale) ** (torch.arange(0, n_elem, 2, dtype=dtype, device=device) / n_elem))
 
         # Create position indexes `[0, 1, ..., seq_len - 1]`
         seq_idx = torch.arange(seq_len, dtype=dtype, device=device)
