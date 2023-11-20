@@ -253,6 +253,7 @@ ARGS_DEFAULT = {
     'use_bias': ('use_bias', True),
     'use_qkv_bias': ('use_qkv_bias', False),
     'num_multi_query_heads': ('num_multi_query_heads', 0),
+    'cross_num_multi_query_heads': ('cross_num_multi_query_heads', 0),
     'drop_path': ('drop_path', 0.),
     'row_parallel_linear_final_bias': ('row_parallel_linear_final_bias', True),
 }
