@@ -179,7 +179,7 @@ class CrossAttention(torch.nn.Module):
         size [b, np, s, hn].
         """
         new_tensor_shape = tensor.size()[:-1] + \
-                           (self.num_attention_heads_per_partition,
+                           (-1, # flexible for multi-query
                             self.hidden_size_per_attention_head)
         tensor = tensor.view(*new_tensor_shape)
         return tensor.permute(0, 2, 1, 3)
