@@ -150,15 +150,11 @@ def stream_filling_sequence(
         usage example:
             filling_stream = stream_filling_sequence(
                 model, seq,
-                batch_size=1,
-                get_masks_and_position_ids=get_func,
-                strategy=strategy,
-                pre_image=pre_image,
-                image=torch_image,
+                batch_size=1
             )
-            for tokens, logit, mems in filling_stream:
+            for tokens in filling_stream:
                 pass # you can do something or nothing at all
-            output = strategy.finalize(tokens, mems)[0]
+            output = strategy.finalize(tokens, None)[0]
     '''
     assert len(seq.shape) == 1
     if hasattr(strategy, 'num_beams') and batch_size < strategy.num_beams:
@@ -177,6 +173,7 @@ def stream_filling_sequence(
     # initialize generation
     counter = context_length - 1 # Last fixed index is ``counter'' 
     index = 0 if mems is None else mems.shape[2] # Next forward starting index, also the length of cache.
+    mems_cross = None
     # step-by-step generation
     while counter < len(seq) - 1:
         # Now, we want to generate seq[counter + 1],
@@ -199,30 +196,27 @@ def stream_filling_sequence(
             log_attention_weights_part = None
 
         logits, *output_per_layers = model(
-            tokens[:, index:], 
+            input_ids=tokens[:, index:], 
             position_ids=position_ids[..., index: counter+1],
             attention_mask=attention_mask[..., index: counter+1, :counter+1], # TODO memlen
             mems=mems,
+            mems_cross=mems_cross,
             log_attention_weights=log_attention_weights_part,
             **kw_args
         )
+        if len(output_per_layers) > 0 and 'mem_cross' in output_per_layers[0]:
+            mems_cross = [mem['mem_cross'] for mem in output_per_layers]
         mem_kv = [o['mem_kv'] for o in output_per_layers]
         mems = update_mems(mem_kv, mems, max_memory_length=max_memory_length)
-        
+        counter += 1
+        index = counter
         # sampling
         logits = logits[:, -1].expand(batch_size, -1) # [batch size, vocab size]
         tokens = tokens.expand(batch_size, -1)
         tokens, mems = strategy.forward(logits, tokens, mems)
-        
-        yield tokens, logits, mems # tokens: after concating in strategy; logits: the last token; 
-        
-        counter += 1
-        index = counter
-        
+        yield tokens, mems
         if strategy.is_done:
             break
-    # return strategy.finalize(tokens, mems)
-    return
 
 
 

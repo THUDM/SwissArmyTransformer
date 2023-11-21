@@ -78,6 +78,7 @@ def extract_model_specific_args_to_dump(args, model):
         ('use_final_layernorm', True),
         ('layernorm_epsilon', 1e-5),
         ('num_multi_query_heads', 0),
+        ('cross_num_multi_query_heads', 0),
         ('row_parallel_linear_final_bias', True)
     ]
     if hasattr(module, 'transformer'):

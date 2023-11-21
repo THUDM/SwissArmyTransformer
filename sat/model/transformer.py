@@ -121,7 +121,7 @@ class CrossAttention(torch.nn.Module):
     """Parallel cross-attention layer for Transformer"""
 
     def __init__(self, hidden_size, num_attention_heads, attention_dropout_prob, output_dropout_prob, init_method,
-                 layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, row_parallel_linear_final_bias=True, hooks={},
+                 layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, cross_num_multi_query_heads=0, row_parallel_linear_final_bias=True, hooks={},
                  cross_attn_hidden_size=None, transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
         super().__init__()
         # Set output layer initialization if not provided.
@@ -140,13 +140,19 @@ class CrossAttention(torch.nn.Module):
         self.num_attention_heads_per_partition = divide(num_attention_heads, world_size)
         self.inner_hidden_size = num_attention_heads * self.hidden_size_per_attention_head
         self.hidden_size_per_partition = self.hidden_size_per_attention_head * self.num_attention_heads_per_partition
+        self.cross_num_multi_query_heads = cross_num_multi_query_heads
         # Strided linear layer.
+        if cross_num_multi_query_heads == 0:
+            kv_size = 2 * self.inner_hidden_size
+        else: # multi-query 
+            kv_size = self.hidden_size_per_attention_head * self.cross_num_multi_query_heads * 2
+        
         self.query = ColumnParallelLinear(hidden_size, self.inner_hidden_size,
                                           gather_output=False,
                                           init_method=init_method, bias=bias, params_dtype=params_dtype, module=self, name="query", skip_init=skip_init, device=device)
         if cross_attn_hidden_size is None:
             cross_attn_hidden_size = hidden_size
-        self.key_value = ColumnParallelLinear(cross_attn_hidden_size, 2 * self.inner_hidden_size,
+        self.key_value = ColumnParallelLinear(cross_attn_hidden_size, kv_size,
                                               stride=2,
                                               gather_output=False,
                                               init_method=init_method, bias=bias, params_dtype=params_dtype, module=self, name="key_value",
@@ -173,7 +179,7 @@ class CrossAttention(torch.nn.Module):
         size [b, np, s, hn].
         """
         new_tensor_shape = tensor.size()[:-1] + \
-                           (self.num_attention_heads_per_partition,
+                           (-1, # flexible for multi-query
                             self.hidden_size_per_attention_head)
         tensor = tensor.view(*new_tensor_shape)
         return tensor.permute(0, 2, 1, 3)
@@ -269,6 +275,7 @@ class BaseTransformerLayer(torch.nn.Module):
             use_bias=True,
             use_qkv_bias=False,
             num_multi_query_heads=0,
+            cross_num_multi_query_heads=0,
             row_parallel_linear_final_bias=True,
             drop_path=0,
             activation_func=gelu,
@@ -333,6 +340,7 @@ class BaseTransformerLayer(torch.nn.Module):
                 output_layer_init_method=output_layer_init_method,
                 cross_attn_hidden_size=cross_attn_hidden_size,
                 bias=use_bias,
+                cross_num_multi_query_heads=cross_num_multi_query_heads,
                 row_parallel_linear_final_bias=row_parallel_linear_final_bias,
                 hooks=hooks,
                 transformer_pointer=transformer_pointer,
@@ -388,6 +396,7 @@ class BaseTransformer(torch.nn.Module):
                  use_bias=True,
                  use_qkv_bias=False,
                  num_multi_query_heads=0,
+                 cross_num_multi_query_heads=0,
                  row_parallel_linear_final_bias=True,
                  activation_func=gelu,
                  layernorm=LayerNorm,
@@ -407,6 +416,7 @@ class BaseTransformer(torch.nn.Module):
         self.cross_hidden_size_per_attention_head = cross_hidden_size_per_attention_head
         self.is_decoder = is_decoder
         self.cross_attn_hidden_size = cross_attn_hidden_size
+        self.cross_num_multi_query_heads = cross_num_multi_query_heads
         if not is_decoder and cross_attn_hidden_size is not None:
             print('warning: cross_attn_hidden_size is set but is_decoder is False')
         self.use_bias = use_bias
@@ -466,6 +476,7 @@ class BaseTransformer(torch.nn.Module):
                 use_bias=use_bias,
                 use_qkv_bias=use_qkv_bias,
                 num_multi_query_heads=num_multi_query_heads,
+                cross_num_multi_query_heads=cross_num_multi_query_heads,
                 row_parallel_linear_final_bias=row_parallel_linear_final_bias,
                 drop_path=drop_path,
                 activation_func=activation_func,
