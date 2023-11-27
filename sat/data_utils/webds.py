@@ -16,6 +16,8 @@ from webdataset.utils import pytorch_worker_seed
 from webdataset.filters import pipelinefilter
 from webdataset.tariterators import url_opener, group_by_keys
 from webdataset.handlers import reraise_exception
+from webdataset.gopen import gopen_schemes, gopen
+
 
 def worker_seed_sat(group=None, seed=0):
     return pytorch_worker_seed(group=group) + seed * 23
@@ -46,7 +48,7 @@ class SimpleDistributedWebDataset(DataPipeline):
             process_fn
         )
 
-def tar_file_iterator_with_meta(fileobj, meta_names, skip_meta=r"__[^/]*__($|/)", suffix=None,handler=reraise_exception):
+def tar_file_iterator_with_meta(fileobj, meta_names, skip_meta=r"__[^/]*__($|/)", suffix=None,handler=reraise_exception, meta_stream=None):
     """Iterate over tar file, yielding filename, content pairs for the given tar stream.
 
     :param fileobj: byte stream suitable for tarfile
@@ -54,28 +56,33 @@ def tar_file_iterator_with_meta(fileobj, meta_names, skip_meta=r"__[^/]*__($|/)"
     :param skip_meta: regexp for keys that are skipped entirely (Default value = r"__[^/]*__($|/)")
 
     """
-    stream = tarfile.open(fileobj=fileobj, mode="r|*")
+    stream = tarfile.open(fileobj=fileobj, mode="r|*", bufsize=1024*1024*32)
     data_dir, filename = fileobj.name.rsplit('/', 1)
-    
     meta_data = {} # {id: {meta_name: meta_value, meta_name2: meta_value2, ...}}
-    for meta_name in meta_names:
+    if meta_stream is None:
         meta_file_name = filename.split('.')[0] + '.meta.jsonl'
         meta_path = os.path.join(data_dir, meta_file_name)
         if os.path.exists(meta_path):
-            with open(meta_path, 'r') as meta_file:
-                meta_list = []
-                for lineno, line in enumerate(meta_file):
-                    try:
-                        meta_list.append(json.loads(line))
-                    except Exception as exn:
-                        from sat.helpers import print_rank0
-                        print_rank0(f'Error in loading jsonl {meta_file_name}, lineno {lineno}: {line}', level='DEBUG')
-                        continue
-                for item in meta_list:
-                    if not item['key'] in meta_data:
-                        meta_data[item['key']] = {}
+            meta_stream = open(meta_path, 'r')
+    else:
+        meta_file_name = meta_stream.name
+    
+    if meta_stream is not None:
+        for lineno, line in enumerate(meta_stream):
+            meta_list = []
+            try:
+                meta_list.append(json.loads(line))
+            except Exception as exn:
+                from sat.helpers import print_rank0
+                print_rank0(f'Error in loading jsonl {meta_file_name}, lineno {lineno}: {line}', level='DEBUG')
+                continue
+            for item in meta_list:
+                if not item['key'] in meta_data:
+                    meta_data[item['key']] = {}
+                for meta_name in meta_names:
                     if meta_name in item:
                         meta_data[item['key']][meta_name] = item[meta_name]
+        meta_stream.close()
     
     for tarinfo in stream:
         fname = tarinfo.name
@@ -127,7 +134,7 @@ def tar_file_expander_with_meta(data, meta_names, handler=reraise_exception):
         try:
             assert isinstance(source, dict)
             assert "stream" in source
-            for sample in tar_file_iterator_with_meta(source["stream"], meta_names):
+            for sample in tar_file_iterator_with_meta(source["stream"], meta_names, meta_stream=source['meta_stream']):
                 assert (
                     isinstance(sample, dict) and "data" in sample and "fname" in sample
                 )
@@ -135,6 +142,41 @@ def tar_file_expander_with_meta(data, meta_names, handler=reraise_exception):
                 yield sample
         except Exception as exn:
             exn.args = exn.args + (source.get("stream"), source.get("url"))
+            if handler(exn):
+                continue
+            else:
+                break
+
+def url_opener(
+    data,
+    handler,
+    **kw,
+):
+    """Open URLs and yield a stream of url+stream pairs.
+
+    Args:
+        data: iterator over dict(url=...)
+        handler: exception handler.
+        kw: keyword arguments for gopen.gopen.
+
+    Yields:
+        a stream of url+stream pairs.
+    """
+    for sample in data:
+        assert isinstance(sample, dict), sample
+        assert "url" in sample
+        url = sample["url"]
+        try:
+            stream = gopen(url, **kw)
+            if hasattr(stream, 'meta_stream'):
+                meta_stream = stream.meta_stream
+                del stream.meta_stream
+            else:
+                meta_stream = None
+            sample.update(stream=stream, meta_stream=meta_stream)
+            yield sample
+        except Exception as exn:
+            exn.args = exn.args + (url,)
             if handler(exn):
                 continue
             else:
@@ -196,7 +238,7 @@ class MetaDistributedWebDataset(DataPipeline):
 
 # rclone support
 from webdataset.gopen import Pipe
-def gopen_rclone(url, mode="rb", bufsize=8192*2):
+def gopen_rclone(url, mode="rb", bufsize=1024*1024*32):
     """Open a URL with `curl`.
 
     :param url: rclone url, e.g. data:bucket1/foo.tar. data should be configured.
@@ -234,7 +276,12 @@ def gopen_boto3(url, mode="rb", bufsize=8192*2):
     """
     import boto3
     # boto3.set_stream_logger('botocore', level='DEBUG')
-    url = url.replace("boto3://", "")
+    if url.startswith("boto3://"):
+        url = url.replace("boto3://", "")
+        need_meta = False
+    else:
+        url = url.replace("metaboto3://", "")
+        need_meta = True
     endpoint_url = os.environ.get("S3_ENDPOINT_URL", None)
     access_key = os.environ.get("S3_ACCESS_KEY_ID", None)
     secret_key = os.environ.get("S3_SECRET_ACCESS_KEY", None)
@@ -246,15 +293,27 @@ def gopen_boto3(url, mode="rb", bufsize=8192*2):
             aws_secret_access_key=secret_key
             )
         bucket, key = url.split('/', 1)
+
+        if need_meta:
+            # download a meta json
+            meta_file_key = key.split('.')[0] + '.meta.jsonl'
+            meta_stream = io.BytesIO()
+            s3_client.download_fileobj(bucket, meta_file_key, meta_stream)
+            meta_stream.seek(0)
+            meta_stream.name = meta_file_key
+        else:
+            meta_stream = None
+
+        # data tar stream
         response = s3_client.get_object(Bucket=bucket, Key=key) # Range optional
+        response['Body'].name = key # actually not used
+        response['Body'].meta_stream = meta_stream
         return response['Body']
-    # elif mode[0] == "w":
-    #     pass
     else:
         raise ValueError(f"{mode}: unknown mode")
 
-from webdataset.gopen import gopen_schemes
 gopen_schemes['rclone'] = gopen_rclone
 gopen_schemes['boto3'] = gopen_boto3
+gopen_schemes['metaboto3'] = gopen_boto3
 
 

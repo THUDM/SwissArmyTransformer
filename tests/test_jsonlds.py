@@ -8,7 +8,7 @@ import torch
 
 args = get_args(['--batch-size', '2', 
 '--train-data', 
-'/mnt/shared/img_datasets/text_dm/code/python.jsonl', 
+'/mnt/shared/img_datasets/text_dm/code/python.jsonl,/mnt/shared/txt_datasets/book', 
 '/mnt/shared/img_datasets/text_dm/wudao/0.jsonl', '--train-data-weights', '2', '1', 
 '--iterable-dataset', '--split','1', '--num-workers', '0'])
 
