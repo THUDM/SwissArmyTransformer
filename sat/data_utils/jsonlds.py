@@ -34,7 +34,6 @@ class JsonlIterableDataset(DataPipeline):
                             file_path = os.path.join(root, file)
                             expanded_path.append(file_path)
         path = expanded_path
-        print(path)
 
         try:
             from sat.mpu import get_model_parallel_world_size

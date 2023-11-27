@@ -44,7 +44,7 @@ def add_model_config_args(parser):
     group.add_argument('--max-sequence-length', type=int, default=512,
                        help='maximum number of position embeddings to use')
     
-    # ---------------  Optional hyper-parameters --------------- 
+    # --------------- Optional hyper-parameters --------------- 
     # for developers:
     #   if you want to add more optional arch hyper-parameters, please also add them in model_io.py, base_model.py, and of course, transformer.py and anywhere in use.
 
@@ -221,6 +221,8 @@ def add_data_args(parser):
                         help='scaling factors for different train-data, must the same number of'
                         '--train-data or None(==1).')
     group.add_argument('--iterable-dataset', action='store_true', help='iterable')
+    group.add_argument('--batch-from-same-dataset', action='store_true',
+                       help='batch from the same dataset, not random. ONLY affect len(train-data-weights) > 1 and iterable dataset')
 
     # Validation and Test dataset.
     group.add_argument('--valid-data', nargs='*', default=None,
@@ -371,7 +373,7 @@ def get_args(args_list=None, parser=None):
         _adjust_vocab_size(args)
     
     if args.train_data_weights is not None:
-        assert len(args.train_data_weights) == len(args.train_data)
+        assert len(args.train_data_weights) == len(args.train_data), f'{args.train_data_weights} vs {args.train_data}'
     
     if args.mode != 'inference': # training with deepspeed
         args.deepspeed = True

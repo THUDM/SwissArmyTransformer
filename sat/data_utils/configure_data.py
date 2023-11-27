@@ -95,7 +95,7 @@ def make_data_loader(dataset, batch_size, args, split, collate_fn=None):
 
 
 def make_dataset_full(path, split, args, create_dataset_function, 
-        dataset_weights=None, random_mapping=True, is_train_data=False, **kwargs):
+        dataset_weights=None, random_mapping=True, is_train_data=False, batch_from_same_dataset=False, **kwargs):
     """function to create datasets+tokenizers for common options"""
     print_all('make dataset ' + str(path), level='DEBUG')
     assert isinstance(path, list)
@@ -113,7 +113,9 @@ def make_dataset_full(path, split, args, create_dataset_function,
             assert isinstance(d, valid_types)
             ds.append(d)
         # ds = ChainDataset(ds) # please merge them in a url if chain
-        ds = AlterDataset(ds, weights=dataset_weights, seed=args.seed)
+        if batch_from_same_dataset:
+            assert args.num_workers <= 1, 'We cannot control the actual speed of different workers, may mix different iterable parts.'
+        ds = AlterDataset(ds, weights=dataset_weights, seed=args.seed, batch_from_same_dataset=batch_from_same_dataset, batch_size=args.batch_size)
         return ds
 
     if split is None:
@@ -170,7 +172,7 @@ def make_loaders(args, create_dataset_function, collate_fn=None):
         args.dataset_type: use to create the right datasets. 
     """
     make_dataset = partial(make_dataset_full, 
-                        create_dataset_function=create_dataset_function)
+                        create_dataset_function=create_dataset_function, batch_from_same_dataset=args.batch_from_same_dataset)
 
     world_size = torch.distributed.get_world_size(
         group=mpu.get_data_parallel_group())
@@ -396,10 +398,12 @@ class BlockedRandomSplitDataset(data.Dataset):
         return self.wrapped_data[(index // len(self.indices)) * self.block_size + self.indices[index % len(self.indices)]]
 
 class AlterDataset(IterableDataset):
-    def __init__(self, datasets, weights=None, seed=0):
+    def __init__(self, datasets, weights=None, seed=0, batch_from_same_dataset=False, batch_size=1):
         super().__init__()
         self.seed = seed
         self.datasets = datasets
+        self.batch_from_same_dataset = batch_from_same_dataset
+        self.batch_size = batch_size # only used when batch_from_same_dataset is True
         if weights is None:
             self.weights = [1. /  len(self.datasets)] * len(self.datasets)
         else:
@@ -414,13 +418,21 @@ class AlterDataset(IterableDataset):
             dp_rank = get_data_parallel_rank()
         except Exception:
             dp_rank = 0
-        rng = np.random.default_rng(seed=[dp_rank, self.seed])
+        if self.batch_from_same_dataset:
+            rng = np.random.default_rng(seed=[self.seed])
+        else:
+            rng = np.random.default_rng(seed=[dp_rank, self.seed])
 
         # sampling according to weights from streaming data
         while True:
             index = rng.choice(len(iterators), p=self.weights)
             # if stop iteration, remove the iterator
             try:
+                if self.batch_from_same_dataset:
+                    # we need to make sure the consecutive batch_size samples are from the same iterable dataset.
+                    # but accumulate grad does not work.
+                    for i in range(self.batch_size - 1):
+                        yield next(iterators[index])
                 yield next(iterators[index])
             except StopIteration:
                 del iterators[index]
