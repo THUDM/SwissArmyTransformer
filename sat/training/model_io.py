@@ -204,7 +204,7 @@ def get_checkpoint_iteration(load_path):
     return iteration, release, True
 
 
-def load_checkpoint(model, args, load_path=None, prefix=''):
+def load_checkpoint(model, args, load_path=None, prefix='', low_cpu_memory=False):
     """Load a model checkpoint."""
     if load_path is None:
         load_path = args.load
@@ -232,6 +232,18 @@ def load_checkpoint(model, args, load_path=None, prefix=''):
         if k.startswith(prefix):
             new_sd['module'][k[len(prefix):]] = sd['module'][k]
     sd = new_sd
+    del new_sd
+    if low_cpu_memory:
+        new_sd = {'module':{}}
+        for k in list(sd['module'].keys()):
+            if hasattr(args, 'fp16') and args.fp16:
+                new_sd['module'][k] = sd['module'][k].half()
+                del sd['module'][k]
+            elif hasattr(args, 'bf16') and args.bf16:
+                new_sd['module'][k] = sd['module'][k].bfloat16()
+                del sd['module'][k]
+        sd = new_sd
+        del new_sd
     
     if hasattr(model, 'module'):
         module = model.module
@@ -239,7 +251,7 @@ def load_checkpoint(model, args, load_path=None, prefix=''):
         module = model
 
     # only load module, other hyperparameters are just for recording.
-    missing_keys, unexpected_keys = module.load_state_dict(sd['module'], strict=False)
+    missing_keys, unexpected_keys = module.load_state_dict(sd['module'], strict=False, assign=low_cpu_memory)
     if len(unexpected_keys) > 0:
         print_rank0(
             f'Will continue but found unexpected_keys! Check whether you are loading correct checkpoints: {unexpected_keys}.')

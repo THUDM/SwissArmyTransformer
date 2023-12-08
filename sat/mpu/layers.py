@@ -261,8 +261,9 @@ class ColumnParallelLinear(torch.nn.Module):
             self.bias = Parameter(torch.empty(self.output_size_per_partition,dtype=params_dtype, device=device))
             self.bias.model_parallel = True
             # Always initialize bias to zero.
-            with torch.no_grad():
-                self.bias.zero_()
+            if not skip_init:
+                with torch.no_grad():
+                    self.bias.zero_()
         else:
             self.register_parameter('bias', None)
 
@@ -448,8 +449,9 @@ class RowParallelLinear(torch.nn.Module):
         if bias:
             self.bias = Parameter(torch.empty(self.output_size, dtype=params_dtype, device=device))
             # Always initialize bias to zero.
-            with torch.no_grad():
-                self.bias.zero_()
+            if not skip_init:
+                with torch.no_grad():
+                    self.bias.zero_()
         else:
             self.register_parameter('bias', None)
 

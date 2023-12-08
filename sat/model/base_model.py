@@ -100,7 +100,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
                 hooks=self.hooks,
                 params_dtype=params_dtype,
                 skip_init=args.skip_init,
-                device=torch.cuda.current_device() if hasattr(args, 'use_gpu_initialization') and args.use_gpu_initialization else torch.device('cpu'),
+                device=torch.cuda.current_device() if hasattr(args, 'use_gpu_initialization') and args.use_gpu_initialization else torch.device(args.device),
                 **kwargs
             )
 
@@ -204,9 +204,10 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
             args = cls.get_args()
         args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
         args = overwrite_args_by_dict(args, overwrite_args=overwrite_args)
-        model = get_model(args, cls, **kwargs)
+        with torch.device(args.device):
+            model = get_model(args, cls, **kwargs)
         if not build_only:
-            load_checkpoint(model, args, load_path=model_path, prefix=prefix)
+            load_checkpoint(model, args, load_path=model_path, prefix=prefix, low_cpu_memory=(args.device=="meta" or args.device==torch.device("meta")))
         return model, args
     
     @classmethod
@@ -326,9 +327,10 @@ class AutoModel():
             for k, v in model_default_args.__dict__.items():
                 if not hasattr(args, k):
                     setattr(args, k, v)
-        model = get_model(args, model_cls, **kwargs)
+        with torch.device(args.device):
+            model = get_model(args, model_cls, **kwargs)
         if not build_only:
-            load_checkpoint(model, args, load_path=model_path, prefix=prefix)
+            load_checkpoint(model, args, load_path=model_path, prefix=prefix, low_cpu_memory=(args.device=="meta" or args.device==torch.device("meta")))
         return model, args
     
     @classmethod
@@ -417,7 +419,7 @@ def get_model(args, model_cls, **kwargs):
 
     try:
         if not hasattr(args, 'device'):
-            args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            args.device = 'cuda' if torch.cuda.is_available() else args.device
         model = model.to(args.device)
     except Exception as e:
         print_all(e)

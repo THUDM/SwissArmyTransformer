@@ -38,9 +38,9 @@ class ViTProperty:
 
 
 class ImagePatchEmbeddingMixin(BaseMixin):
-    def __init__(self, in_channels, hidden_size, property):
+    def __init__(self, in_channels, hidden_size, property, device):
         super(ImagePatchEmbeddingMixin, self).__init__()
-        self.proj = nn.Conv2d(in_channels, hidden_size, kernel_size=property.patch_size, stride=property.patch_size)
+        self.proj = nn.Conv2d(in_channels, hidden_size, kernel_size=property.patch_size, stride=property.patch_size, device=device)
 
     def word_embedding_forward(self, input_ids, **kwargs):
         """
@@ -110,7 +110,7 @@ class ViTModel(BaseModel):
             kwargs['activation_func'] = gelu
         super().__init__(args, transformer=transformer, parallel_output=parallel_output, **kwargs)
         self.transformer.property = property
-        self.add_mixin("patch_embedding", ImagePatchEmbeddingMixin(args.in_channels, args.hidden_size, property))
+        self.add_mixin("patch_embedding", ImagePatchEmbeddingMixin(args.in_channels, args.hidden_size, property, device=args.device))
         self.add_mixin("pos_embedding", InterpolatedPositionEmbeddingMixin())
         self.add_mixin("cls", ClsMixin(args.hidden_size, args.num_classes))
 

@@ -53,7 +53,7 @@ class RotaryMixin(BaseMixin):
         return output
 
 class LLaMAMlpMixin(BaseMixin):
-    def __init__(self, num_layers, in_features, hidden_features):
+    def __init__(self, num_layers, in_features, hidden_features, params_dtype, skip_init, device):
         super().__init__()
         hidden_features = 4 * in_features if hidden_features is None else hidden_features
         self.gate_proj = nn.ModuleList([ColumnParallelLinear(
@@ -62,11 +62,11 @@ class LLaMAMlpMixin(BaseMixin):
             gather_output=False,
             # init_method=init_method,
             bias=False,
-            # params_dtype=params_dtype,
+            params_dtype=params_dtype,
             module=self,
             name="dense_h_to_4h_gate",
-            # skip_init=skip_init,
-            # device=device
+            skip_init=skip_init,
+            device=device
         ) for i in range(num_layers)])
 
     def mlp_forward(self, hidden_states, **kw_args):
@@ -76,7 +76,7 @@ class LLaMAMlpMixin(BaseMixin):
         return hidden_states
 
 class LMMixin(BaseMixin):
-    def __init__(self, vocab_size, hidden_size):
+    def __init__(self, vocab_size, hidden_size, params_dtype, skip_init, device):
         super().__init__()
         self.lm_head = ColumnParallelLinear(
             hidden_size,
@@ -84,11 +84,11 @@ class LMMixin(BaseMixin):
             gather_output=True,
             # init_method=init_method,
             bias=False,
-            # params_dtype=params_dtype,
+            params_dtype=params_dtype,
             module=self,
             name="lm_head",
-            # skip_init=skip_init,
-            # device=device
+            skip_init=skip_init,
+            device=device
         )
 
     def final_forward(self, logits, **kwargs):
@@ -103,8 +103,8 @@ class LLaMAModel(BaseModel):
         if 'inner_hidden_size' not in args:
             args.inner_hidden_size = None
         self.add_mixin("rotary", RotaryMixin(args.hidden_size, args.num_attention_heads))
-        self.add_mixin("lm", LMMixin(args.vocab_size, args.hidden_size))
-        self.add_mixin("mlp", LLaMAMlpMixin(args.num_layers, args.hidden_size, args.inner_hidden_size))
+        self.add_mixin("lm", LMMixin(args.vocab_size, args.hidden_size, kwargs.get("params_dtype"), args.skip_init, args.device))
+        self.add_mixin("mlp", LLaMAMlpMixin(args.num_layers, args.hidden_size, args.inner_hidden_size, kwargs.get("params_dtype"), args.skip_init, args.device))
     
     def position_embedding_forward(self, *args, **kwargs):
         return None

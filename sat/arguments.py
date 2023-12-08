@@ -495,7 +495,7 @@ def initialize_distributed(args):
             mpu.initialize_model_parallel(args.model_parallel_size)
         return True
     # the automatic assignment of devices has been moved to arguments.py
-    if args.device == 'cpu':
+    if args.device == 'cpu' or args.device == 'meta':
         pass
     else:
         torch.cuda.set_device(args.device)
