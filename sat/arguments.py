@@ -72,6 +72,8 @@ def add_model_config_args(parser):
 
     group.add_argument('--num-multi-query-heads', type=int, default=0, 
                        help='use multi-query attention, num of kv groups. 0 means multi-head attention.')
+    group.add_argument('--is-gated-mlp', action='store_true',
+                       help='use gated MLP (GLU), common in LLAMA etc.')
     
     # ---------------  Inessential hyper-parameters --------------- 
 

@@ -138,6 +138,14 @@ def mlp_forward_default(self, hidden_states, **kw_args):
     output = self.dense_4h_to_h(intermediate_parallel)
     return output
 
+def gated_mlp_forward_default(self, hidden_states, **kw_args):
+    self = self.transformer.layers[kw_args['layer_id']].mlp
+    intermediate_parallel = self.dense_h_to_4h(hidden_states)
+    gated_intermediate_parallel = self.dense_h_to_4h_gate(hidden_states)
+    intermediate_parallel = self.activation_func(gated_intermediate_parallel) * intermediate_parallel
+    output = self.dense_4h_to_h(intermediate_parallel)
+    return output
+
 def word_embedding_forward_default(self, input_ids, output_cross_layer, **kw_args):
     return self.transformer.word_embeddings(input_ids)
 
@@ -233,6 +241,7 @@ HOOKS_DEFAULT = {
     'attention_forward': attention_forward_default,
     'cross_attention_forward': cross_attention_forward_default,
     'mlp_forward': mlp_forward_default,
+    'gated_mlp_forward': gated_mlp_forward_default,
     'word_embedding_forward': word_embedding_forward_default,
     'position_embedding_forward': position_embedding_forward_default,
     'final_forward': final_forward_default,
@@ -259,4 +268,5 @@ ARGS_DEFAULT = {
     'cross_num_multi_query_heads': ('cross_num_multi_query_heads', 0),
     'drop_path': ('drop_path', 0.),
     'row_parallel_linear_final_bias': ('row_parallel_linear_final_bias', True),
+    'is_gated_mlp': ('is_gated_mlp', False)
 }

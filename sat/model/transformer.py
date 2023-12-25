@@ -199,7 +199,8 @@ class CrossAttention(torch.nn.Module):
 
 class MLP(torch.nn.Module):
     def __init__(self, hidden_size, output_dropout_prob, init_method, inner_hidden_size=None,
-                 output_layer_init_method=None, layer_id=None, row_parallel_linear_final_bias=True, hooks={}, bias=True, activation_func=gelu, transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
+                 output_layer_init_method=None, layer_id=None, row_parallel_linear_final_bias=True, hooks={}, bias=True, activation_func=gelu, transformer_pointer=None, is_gated_mlp=False,
+                 params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
         super(MLP, self).__init__()
         self.layer_id = layer_id
         self.activation_func = activation_func
@@ -238,6 +239,20 @@ class MLP(torch.nn.Module):
             device=device,
             final_bias=row_parallel_linear_final_bias
         )
+        self.is_gated_mlp = is_gated_mlp
+        if is_gated_mlp:
+            self.dense_h_to_4h_gate = ColumnParallelLinear(
+            self.hidden_size,
+            self.inner_hidden_size,
+            gather_output=False,
+            init_method=init_method,
+            bias=False,
+            params_dtype=params_dtype,
+            module=self,
+            name="dense_h_to_4h_gate",
+            skip_init=skip_init,
+            device=device
+        )
         self.dropout = torch.nn.Dropout(output_dropout_prob)
         object.__setattr__(self, 'transformer', transformer_pointer)
         assert transformer_pointer is not None
@@ -246,6 +261,8 @@ class MLP(torch.nn.Module):
     def forward(self, hidden_states, **kw_args):
         if 'mlp_forward' in self.hooks:
             output = self.hooks['mlp_forward'](hidden_states, **kw_args)
+        elif self.is_gated_mlp:
+            output = HOOKS_DEFAULT['gated_mlp_forward'](self, hidden_states, **kw_args)
         else:
             output = HOOKS_DEFAULT['mlp_forward'](self, hidden_states, **kw_args)
 
@@ -279,6 +296,7 @@ class BaseTransformerLayer(torch.nn.Module):
             row_parallel_linear_final_bias=True,
             drop_path=0,
             activation_func=gelu,
+            is_gated_mlp=False,
             hooks={},
             transformer_pointer=None,
             params_dtype=torch.float,
@@ -361,6 +379,7 @@ class BaseTransformerLayer(torch.nn.Module):
             row_parallel_linear_final_bias=row_parallel_linear_final_bias,
             hooks=hooks,
             transformer_pointer=transformer_pointer,
+            is_gated_mlp=is_gated_mlp,
             params_dtype=params_dtype,
             skip_init=skip_init,
             device=device
@@ -399,6 +418,7 @@ class BaseTransformer(torch.nn.Module):
                  cross_num_multi_query_heads=0,
                  row_parallel_linear_final_bias=True,
                  activation_func=gelu,
+                 is_gated_mlp=False,
                  layernorm=LayerNorm,
                  init_method=None,
                  use_final_layernorm=True,
@@ -480,6 +500,7 @@ class BaseTransformer(torch.nn.Module):
                 row_parallel_linear_final_bias=row_parallel_linear_final_bias,
                 drop_path=drop_path,
                 activation_func=activation_func,
+                is_gated_mlp=is_gated_mlp,
                 hooks=self.hooks,
                 transformer_pointer=self,
                 params_dtype=params_dtype,
