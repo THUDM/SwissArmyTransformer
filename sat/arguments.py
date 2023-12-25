@@ -141,6 +141,8 @@ def add_training_args(parser):
     group.add_argument('--gradient-accumulation-steps', type=int, default=1, 
                        help='run optimizer after every gradient-accumulation-steps backwards.')
 
+    group.add_argument('--profiling', type=int, default=-1,
+                       help='profiling, -1 means no profiling, otherwise means warmup args.profiling iters then profiling.')
     group.add_argument('--epochs', type=int, default=None,
                        help='number of train epochs')
     group.add_argument('--log-interval', type=int, default=50,

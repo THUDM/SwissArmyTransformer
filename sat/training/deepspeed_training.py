@@ -295,10 +295,10 @@ def train(model, optimizer, lr_scheduler,
     timers('interval time').start()
     report_memory_flag = True
     while args.iteration < args.train_iters:
-        if args.iteration == args.warmup_iters and args.profiling :
+        if args.profiling != -1 and args.iteration == args.profiling:
             torch.cuda.cudart().cudaProfilerStart()
         
-        if args.iteration >= args.warmup_iters and args.profiling:
+        if args.profiling != -1 and args.iteration >= args.profiling:
             torch.cuda.nvtx.range_push("iteration{}".format(args.iteration))
         lm_loss, skipped_iter, metrics = train_step(train_data_iterator,
                                                     model,
@@ -307,7 +307,7 @@ def train(model, optimizer, lr_scheduler,
                                                     args, timers, hooks=hooks)
         skipped_iters += skipped_iter
         args.iteration += 1
-        if args.iteration >= args.warmup_iters and args.profiling:
+        if args.profiling != -1 and args.iteration >= args.profiling:
             torch.cuda.nvtx.range_pop()
         # Update losses.
         total_lm_loss += lm_loss.data.detach().float()
@@ -360,7 +360,7 @@ def train(model, optimizer, lr_scheduler,
             print_all('rank: {} | time: {} | exiting the program at iteration {}'.
                   format(rank, time_str, args.iteration), flush=True)
             exit()
-    if args.profiling:
+    if args.profiling != -1:
         torch.cuda.cudart().cudaProfilerStop()
 
     return args.iteration, skipped_iters
@@ -375,8 +375,9 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
     forward_step = hooks['forward_step']
 
     while True:
+        profiling_flag = (args.profiling != -1 and args.iteration >= args.profiling)
         # Forward model for one step.
-        if args.iteration >= args.warmup_iters and args.profiling:
+        if profiling_flag:
             torch.cuda.nvtx.range_push("forward")
         timers('forward').start()
         forward_ret = forward_step(data_iterator, model, args, timers, **kwargs)
@@ -385,12 +386,12 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
         else:
             lm_loss, metrics = forward_ret, {}
         timers('forward').stop()
-        if args.iteration >= args.warmup_iters and args.profiling:
+        if profiling_flag:
             torch.cuda.nvtx.range_pop()
 
         # Check nan or inf in forward, preventing it from interfering loss scaler,
         # and all reduce metrics by the way
-        if args.iteration >= args.warmup_iters and args.profiling:
+        if profiling_flag:
             torch.cuda.nvtx.range_push("loss_and_metrics")
         lm_loss_reduced = lm_loss.detach().clone()
         torch.distributed.all_reduce(lm_loss_reduced.data)
@@ -414,20 +415,20 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
                 metrics_total[name] = 0.0
             metrics_total[name] += metrics[name]
         count += 1
-        if args.iteration >= args.warmup_iters and args.profiling:
+        if profiling_flag:
             torch.cuda.nvtx.range_pop()
             
-        if args.iteration >= args.warmup_iters and args.profiling:
+        if profiling_flag:
             torch.cuda.nvtx.range_push("backward")
         # Calculate gradients, reduce across processes, and clip.
         timers('backward').start()
         backward_step(optimizer, model, lm_loss, args, timers)
         timers('backward').stop()
-        if args.iteration >= args.warmup_iters and args.profiling:
+        if profiling_flag:
             torch.cuda.nvtx.range_pop()
         # Update parameters.
         skipped_iter, complete = 0, False
-        if args.iteration >= args.warmup_iters and args.profiling:
+        if profiling_flag:
             torch.cuda.nvtx.range_push("optimizer")
         timers('optimizer').start()
         if args.deepspeed:
@@ -443,7 +444,7 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
         else:
             raise ValueError('Currently, we only support training with deepspeed.')
         timers('optimizer').stop()
-        if args.iteration >= args.warmup_iters and args.profiling:
+        if profiling_flag:
             torch.cuda.nvtx.range_pop()
         if complete or single_step:
             break
