@@ -92,7 +92,8 @@ class ChatGLM2Model(BaseModel):
         del self.transformer.position_embeddings
         self.add_mixin("chatglm-final", ChatGLMFinalMixin(args.vocab_size, args.hidden_size))
         self.add_mixin("attn", ChatGLM2AttnMixin(args.hidden_size, args.num_attention_heads, args.max_sequence_length))
-        self.add_mixin("mlp", SwiGLUMixin(args.num_layers, args.hidden_size, args.inner_hidden_size, bias=args.use_bias))
+        if not (hasattr(args, 'is_gated_mlp') and args.is_gated_mlp):
+            self.add_mixin("mlp", SwiGLUMixin(args.num_layers, args.hidden_size, args.inner_hidden_size, bias=args.use_bias))
 
     def position_embedding_forward(self, position_ids, output_cross_layer, **kw_args):
         return None
