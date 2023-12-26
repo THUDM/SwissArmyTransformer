@@ -131,19 +131,60 @@ def cross_attention_forward_default(self, hidden_states, cross_attention_mask, e
         output = self.output_dropout(output)
     return output
 
-def mlp_forward_default(self, hidden_states, **kw_args):
+def expert_gate_forward_default(self, hidden_states, **kw_args):
+    return 0
+
+def single_expert_forward_default(self, hidden_states, expert_id=0, **kw_args):
     self = self.transformer.layers[kw_args['layer_id']].mlp
-    intermediate_parallel = self.dense_h_to_4h(hidden_states)
-    intermediate_parallel = self.activation_func(intermediate_parallel)
-    output = self.dense_4h_to_h(intermediate_parallel)
+    suffix = f"_{expert_id}" if expert_id > 0 else ""
+    if self.is_gated_mlp:
+        intermediate_parallel = getattr(self, "dense_h_to_4h"+suffix)(hidden_states)
+        gated_intermediate_parallel = getattr(self, "dense_h_to_4h_gate"+suffix)(hidden_states)
+        intermediate_parallel = self.activation_func(gated_intermediate_parallel) * intermediate_parallel
+        output = getattr(self, "dense_4h_to_h"+suffix)(intermediate_parallel)
+    else:
+        intermediate_parallel = getattr(self, "dense_h_to_4h"+suffix)(hidden_states)
+        intermediate_parallel = self.activation_func(intermediate_parallel)
+        output = getattr(self, "dense_4h_to_h"+suffix)(intermediate_parallel)
     return output
 
-def gated_mlp_forward_default(self, hidden_states, **kw_args):
+from functools import partial
+
+def mlp_forward_default(self, hidden_states, fwd_pack=0, **kw_args):
+    single_expert_forward = self.hooks.get('single_expert_forward', partial(single_expert_forward_default, self))
     self = self.transformer.layers[kw_args['layer_id']].mlp
-    intermediate_parallel = self.dense_h_to_4h(hidden_states)
-    gated_intermediate_parallel = self.dense_h_to_4h_gate(hidden_states)
-    intermediate_parallel = self.activation_func(gated_intermediate_parallel) * intermediate_parallel
-    output = self.dense_4h_to_h(intermediate_parallel)
+    if type(fwd_pack) is int:
+        return single_expert_forward(hidden_states, expert_id=fwd_pack, **kw_args)
+    else:
+        assert isinstance(fwd_pack, tuple) and len(fwd_pack) == 2, "fwd_pack should be a tuple whose length is 2! We will use fwd_weight, fwd_idx to unpack it."
+        fwd_weight, fwd_idx = fwd_pack
+
+        # Adapted from mixtral-8x7b https://github.com/huggingface/transformers/blob/main/src/transformers/models/mixtral/modeling_mixtral.py
+        batch_size, sequence_length, hidden_dim = hidden_states.shape
+        hidden_states = hidden_states.view(-1, hidden_dim)
+        final_hidden_states = torch.zeros(
+            (batch_size * sequence_length, hidden_dim), dtype=hidden_states.dtype, device=hidden_states.device
+        )
+        # One hot encode the selected experts to create an expert mask
+        # this will be used to easily index which expert is going to be sollicitated
+        expert_mask = torch.nn.functional.one_hot(fwd_idx, num_classes=self.num_experts).permute(2, 1, 0)
+        # Loop over all available experts in the model and perform the computation on each expert
+        for expert_idx in range(self.num_experts):
+            idx, top_x = torch.where(expert_mask[expert_idx])
+            if top_x.shape[0] == 0:
+                continue
+            # in torch it is faster to index using lists than torch tensors
+            top_x_list = top_x.tolist()
+            idx_list = idx.tolist()
+            # Index the correct hidden states and compute the expert hidden state for
+            # the current expert. We need to make sure to multiply the output hidden
+            # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
+            current_state = hidden_states[top_x_list] # I don't know why using hidden_states[None, top_x_list].reshape(-1, hidden_dim)
+            current_hidden_states = single_expert_forward(current_state, expert_id=expert_idx, **kw_args) * fwd_weight[top_x_list, idx_list, None]
+            # However `index_add_` only support torch tensors for indexing so we'll use
+            # the `top_x` tensor here.
+            final_hidden_states.index_add_(0, top_x, current_hidden_states.to(hidden_states.dtype))
+        output = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
     return output
 
 def word_embedding_forward_default(self, input_ids, output_cross_layer, **kw_args):
@@ -240,8 +281,9 @@ HOOKS_DEFAULT = {
     'attention_fn': attention_fn_default,
     'attention_forward': attention_forward_default,
     'cross_attention_forward': cross_attention_forward_default,
+    'expert_gate_forward': expert_gate_forward_default,
     'mlp_forward': mlp_forward_default,
-    'gated_mlp_forward': gated_mlp_forward_default,
+    'single_expert_forward': single_expert_forward_default,
     'word_embedding_forward': word_embedding_forward_default,
     'position_embedding_forward': position_embedding_forward_default,
     'final_forward': final_forward_default,
@@ -268,5 +310,6 @@ ARGS_DEFAULT = {
     'cross_num_multi_query_heads': ('cross_num_multi_query_heads', 0),
     'drop_path': ('drop_path', 0.),
     'row_parallel_linear_final_bias': ('row_parallel_linear_final_bias', True),
-    'is_gated_mlp': ('is_gated_mlp', False)
+    'is_gated_mlp': ('is_gated_mlp', False),
+    'num_experts': ('num_experts', 1),
 }
