@@ -306,9 +306,9 @@ def train(model, optimizer, lr_scheduler,
                                                     lr_scheduler,
                                                     args, timers, hooks=hooks)
         skipped_iters += skipped_iter
-        args.iteration += 1
         if args.profiling != -1 and args.iteration >= args.profiling:
             torch.cuda.nvtx.range_pop()
+        args.iteration += 1
         # Update losses.
         total_lm_loss += lm_loss.data.detach().float()
         for name in metrics:
