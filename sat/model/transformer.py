@@ -200,7 +200,7 @@ class CrossAttention(torch.nn.Module):
 
 class MLP(torch.nn.Module):
     def __init__(self, hidden_size, output_dropout_prob, init_method, inner_hidden_size=None,
-                 output_layer_init_method=None, layer_id=None, row_parallel_linear_final_bias=True, hooks={}, bias=True, activation_func=gelu, transformer_pointer=None, is_gated_mlp=False,
+                 output_layer_init_method=None, layer_id=None, row_parallel_linear_final_bias=True, hooks={}, bias=True, activation_func=gelu, transformer_pointer=None, is_gated_mlp=False, num_experts=1,
                  params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
         super(MLP, self).__init__()
         self.layer_id = layer_id
@@ -254,18 +254,61 @@ class MLP(torch.nn.Module):
             skip_init=skip_init,
             device=device
         )
+        self.num_experts = num_experts
+        for i in range(1, num_experts):
+            self.register_module(f"dense_h_to_4h_{i}", ColumnParallelLinear(
+                self.hidden_size,
+                self.inner_hidden_size,
+                gather_output=False,
+                init_method=init_method,
+                bias=bias,
+                params_dtype=params_dtype,
+                module=self,
+                name=f"dense_h_to_4h_{i}",
+                skip_init=skip_init,
+                device=device
+            ))
+            # Project back to h.
+            self.register_module(f"dense_4h_to_h_{i}", RowParallelLinear(
+                self.inner_hidden_size,
+                self.hidden_size,
+                input_is_parallel=True,
+                init_method=output_layer_init_method,
+                bias=bias,
+                params_dtype=params_dtype,
+                module=self,
+                name=f"dense_4h_to_h_{i}",
+                skip_init=skip_init,
+                device=device,
+                final_bias=row_parallel_linear_final_bias
+            ))
+            if is_gated_mlp:
+                self.register_module(f"dense_h_to_4h_gate_{i}", ColumnParallelLinear(
+                self.hidden_size,
+                self.inner_hidden_size,
+                gather_output=False,
+                init_method=init_method,
+                bias=False,
+                params_dtype=params_dtype,
+                module=self,
+                name=f"dense_h_to_4h_gate_{i}",
+                skip_init=skip_init,
+                device=device
+            ))
         self.dropout = torch.nn.Dropout(output_dropout_prob)
         object.__setattr__(self, 'transformer', transformer_pointer)
         assert transformer_pointer is not None
         
 
     def forward(self, hidden_states, **kw_args):
-        if 'mlp_forward' in self.hooks:
-            output = self.hooks['mlp_forward'](hidden_states, **kw_args)
-        elif self.is_gated_mlp:
-            output = HOOKS_DEFAULT['gated_mlp_forward'](self, hidden_states, **kw_args)
+        if 'expert_gate_forward' in self.hooks:
+            fwd_pack = self.hooks['expert_gate_forward'](hidden_states, **kw_args)
         else:
-            output = HOOKS_DEFAULT['mlp_forward'](self, hidden_states, **kw_args)
+            fwd_pack = HOOKS_DEFAULT['expert_gate_forward'](self, hidden_states, **kw_args)
+        if 'mlp_forward' in self.hooks:
+            output = self.hooks['mlp_forward'](hidden_states, fwd_pack=fwd_pack, **kw_args)
+        else:
+            output = HOOKS_DEFAULT['mlp_forward'](self, hidden_states, fwd_pack=fwd_pack, **kw_args)
 
         if self.training:
             output = self.dropout(output)
@@ -298,6 +341,7 @@ class BaseTransformerLayer(torch.nn.Module):
             drop_path=0,
             activation_func=gelu,
             is_gated_mlp=False,
+            num_experts=1,
             hooks={},
             transformer_pointer=None,
             params_dtype=torch.float,
@@ -381,6 +425,7 @@ class BaseTransformerLayer(torch.nn.Module):
             hooks=hooks,
             transformer_pointer=transformer_pointer,
             is_gated_mlp=is_gated_mlp,
+            num_experts=num_experts,
             params_dtype=params_dtype,
             skip_init=skip_init,
             device=device
@@ -421,6 +466,7 @@ class BaseTransformer(torch.nn.Module):
                  activation_func=gelu,
                  is_gated_mlp=False,
                  is_rotary_emb=False,
+                 num_experts=1,
                  layernorm=LayerNorm,
                  init_method=None,
                  use_final_layernorm=True,
@@ -446,6 +492,7 @@ class BaseTransformer(torch.nn.Module):
         self.num_multi_query_heads = num_multi_query_heads
         self.is_gated_mlp = is_gated_mlp
         self.is_rotary_emb = is_rotary_emb
+        self.num_experts = num_experts
         self.use_final_layernorm = use_final_layernorm
         self.layernorm_epsilon = layernorm_epsilon
         self.parallel_output = parallel_output
@@ -510,6 +557,7 @@ class BaseTransformer(torch.nn.Module):
                 drop_path=drop_path,
                 activation_func=activation_func,
                 is_gated_mlp=is_gated_mlp,
+                num_experts=num_experts,
                 hooks=self.hooks,
                 transformer_pointer=self,
                 params_dtype=params_dtype,

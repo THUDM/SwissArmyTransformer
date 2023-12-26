@@ -359,6 +359,7 @@ class AutoModel():
                     del model_full
                 else:
                     mp_split_model_receive(model)
+                torch.distributed.barrier() # Since rank 0 uses local transfer without dist communication, it's faster. Using barrier here to avoid rank 0 errorly running eager code.
             else:
                 overwrite_args.pop('model_parallel_size')
                 model, model_args = cls.from_pretrained_base(name, args=args, home_path=home_path, url=url, prefix=prefix, build_only=False, overwrite_args=overwrite_args, **kwargs)

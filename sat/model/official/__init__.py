@@ -18,3 +18,4 @@ from .eva2_model import EVA2Model
 from .llama_model import LLaMAModel
 from .chatglm2_model import ChatGLM2Model
 from .chatglm3_model import ChatGLM3Model
+from .mixtral_model import MixtralModel
