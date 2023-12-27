@@ -105,10 +105,11 @@ def update_ema_parameters_to_model(optimizer):
             partition_id = dist.get_rank(group=optimizer.real_dp_process_group[i])
             bit16_partitions[partition_id].data.copy_(state['shadow'].data)
     
-    all_gather_dp_groups(partitioned_param_groups=optimizer.parallel_partitioned_bit16_groups,
-                             dp_process_group=optimizer.real_dp_process_group,
-                             start_alignment_factor=optimizer.nccl_start_alignment_factor,
-                             allgather_bucket_size=optimizer.allgather_bucket_size)
+    all_gather_dp_groups(groups_flat=optimizer.bit16_groups_flat,
+                         partitioned_param_groups=optimizer.parallel_partitioned_bit16_groups,
+                         dp_process_group=optimizer.real_dp_process_group,
+                         start_alignment_factor=optimizer.nccl_start_alignment_factor,
+                         allgather_bucket_size=optimizer.allgather_bucket_size)
 
 def save_checkpoint(iteration, model, optimizer,
                     lr_scheduler, args):
