@@ -23,7 +23,7 @@ except ModuleNotFoundError:
             else:
                 return super().forward(x)    
 
-
+import torch.nn as nn
 class RMSNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-6):
         """
