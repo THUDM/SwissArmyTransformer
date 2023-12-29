@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from sat.model.base_model import BaseMixin, BaseModel
 from sat.mpu.utils import split_tensor_along_last_dim
 
-from sat.model.normalization import RMSNorm
+from sat.ops.layernorm import RMSNorm
 from sat.transformer_defaults import attention_fn_default
 from sat.model.position_embedding.rotary_embeddings_original import RotaryEmbedding, apply_rotary_pos_emb
 from sat.mpu.layers import ColumnParallelLinear
