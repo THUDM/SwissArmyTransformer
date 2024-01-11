@@ -160,8 +160,8 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
 
     # sync initialized parameters
     # zero3 don't need to sync
-    from sat.helpers import is_zero3
-    if is_zero3(args):
+    from sat.helpers import check_if_zero3
+    if not check_if_zero3(args):
         print_rank0('Syncing initialized parameters...')
         for param_group in param_groups:
             for param in param_group['params']:
