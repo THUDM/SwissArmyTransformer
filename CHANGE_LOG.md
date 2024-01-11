@@ -140,3 +140,11 @@ v. 0.4.6
 2. support multiple webdataset weighting
 3. fix lora merging
 4. add different lr in different parts, add a 'lr' attr for parameters in the `disable_untrainable_params`.
+
+# 2024.1.11
+v. 0.4.10
+1. fix model parallel init possible bug by additional broadcast
+2. add nsys profiling
+3. add gated mlp option
+4. support batch_from_same_dataset for multi-webds
+5. fix cmp kernel quant no bias bug
