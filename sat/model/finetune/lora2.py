@@ -10,6 +10,7 @@ import math
 from sat.helpers import print_all, print_rank0
 from sat.model.transformer import RowParallelLinear, ColumnParallelLinear
 from sat.mpu.layers import copy_to_model_parallel_region
+from sat import mpu
 
 class HackLinear(nn.Linear):
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
@@ -122,9 +123,12 @@ class LoraLinear(nn.Module):
             
     def forward(self, x):
         mixed_raw_layer = self.original(x)
+        if mpu.get_cuda_rng_tracker is not None:
+            with mpu.get_cuda_rng_tracker().fork():
+                x = self.lora_dropout(x)
         lora_outputs = []
         for mA, mB in zip(self.matrix_A, self.matrix_B):
-            lora_outputs.append((copy_to_model_parallel_region(self.lora_dropout(x) @ mA.T) @ mB.T) * self.scaling)
+            lora_outputs.append((copy_to_model_parallel_region(x @ mA.T) @ mB.T) * self.scaling)
         mixed_raw_layer = mixed_raw_layer + torch.cat(lora_outputs, -1)
 
         return mixed_raw_layer
@@ -158,12 +162,12 @@ def merge_linear_lora(lin):
         new_lin.bias.data = lin.original.bias.data
     new_qkv = []
     for mA, mB in zip(lin.matrix_A, lin.matrix_B):
-        new_qkv.append(mA.data.T.float() @ mB.data.T.float() * lin.scaling)
+        new_qkv.append(mB.data.float() @ mA.data.float() * lin.scaling)
     new_qkv = torch.cat(new_qkv, -1)
     guess_type = lin.original.bias.data.dtype if lin.original.bias is not None else lin.original.weight.data.dtype
     if guess_type is torch.uint8:
         guess_type = torch.float32
-    new_lin.weight.data = (weight + new_qkv.T).to(guess_type)
+    new_lin.weight.data = (weight + new_qkv).to(guess_type)
     return new_lin.cuda() if torch.cuda.is_available() else new_lin
 
 class LoraMixin(BaseMixin):
