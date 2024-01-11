@@ -404,7 +404,8 @@ def get_model(args, model_cls, **kwargs):
         # pop params_dtype from kwargs
         params_dtype = kwargs.pop('params_dtype')
 
-    if args.deepspeed_config.get('zero_optimization',{}).get('stage', 0) == 3:
+    from sat.helpers import check_if_zero3
+    if check_if_zero3(args):
         import deepspeed
         with deepspeed.zero.Init():
             model = model_cls(args, params_dtype=params_dtype, **kwargs)

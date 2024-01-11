@@ -153,3 +153,6 @@ def get_free_port():
         port = s.getsockname()[1]
     # At this point, the socket is closed, and the port is released
     return port
+
+def check_if_zero3(args):
+    return hasattr(args, 'deepspeed_config') and (args.deepspeed_config.get('zero_optimization',{}).get('stage', 0) >= 3)

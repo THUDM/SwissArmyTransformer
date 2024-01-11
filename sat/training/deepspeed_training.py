@@ -160,7 +160,8 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
 
     # sync initialized parameters
     # zero3 don't need to sync
-    if args.deepspeed_config.get('zero_optimization', {}).get('stage', 0) != 3:
+    from sat.helpers import check_if_zero3
+    if not check_if_zero3(args):
         print_rank0('Syncing initialized parameters...')
         for param_group in param_groups:
             for param in param_group['params']:
