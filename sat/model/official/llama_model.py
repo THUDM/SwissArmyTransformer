@@ -94,7 +94,7 @@ class LMMixin(BaseMixin):
     def final_forward(self, logits, **kwargs):
         return self.lm_head(logits)
 
-from sat.model.normalization import RMSNorm
+from sat.ops.layernorm import RMSNorm
 
 class LLaMAModel(BaseModel):
     def __init__(self, args, transformer=None, parallel_output=True, layernorm=RMSNorm, activation_func=nn.functional.silu, **kwargs):

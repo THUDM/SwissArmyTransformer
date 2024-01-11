@@ -442,6 +442,7 @@ class BaseTransformer(torch.nn.Module):
         self.use_bias = use_bias
         self.use_qkv_bias = use_qkv_bias
         self.num_multi_query_heads = num_multi_query_heads
+        self.is_gated_mlp = is_gated_mlp
         self.use_final_layernorm = use_final_layernorm
         self.layernorm_epsilon = layernorm_epsilon
         self.parallel_output = parallel_output

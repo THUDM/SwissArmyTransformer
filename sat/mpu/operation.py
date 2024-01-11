@@ -95,15 +95,18 @@ def mp_merge_model_rank0(model, model_full):
         for (new_name, sub_new_model), (name, sub_module) in zip(new_model.named_children(), module.named_children()):
             if isinstance(sub_module, (ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding)):
                 new_weights, new_biases = sub_module.partition()
-                new_weights = [x.cuda() for x in new_weights]
+                new_weights = [x.to(sub_new_model.weight.device) for x in new_weights]
                 torch.distributed.gather(sub_new_model.weight.data, gather_list=new_weights, dst=0)
                 if new_biases:
-                    new_biases = [x.cuda() for x in new_biases]
+                    new_biases = [x.to(sub_new_model.weight.device) for x in new_biases]
                     torch.distributed.gather(sub_new_model.bias.data, gather_list=new_biases, dst=0)
-                sub_module.merge([x.cpu() for x in new_weights], [x.cpu() for x in new_biases])
+                sub_module.merge([torch.clone(x.cpu()).detach() for x in new_weights], [torch.clone(x.cpu()).detach() for x in new_biases])
+                del new_weights
+                if new_biases:
+                    del new_biases
             else:
                 for (nn, np), (n, p) in zip(sub_new_model.named_parameters(recurse=False), sub_module.named_parameters(recurse=False)):
-                    p.data.copy_(torch.clone(np.data).detach())
+                    p.data.copy_(torch.clone(np.data.cpu()).detach())
             iter_merge(sub_new_model, sub_module)
     iter_merge(model, model_full)
 

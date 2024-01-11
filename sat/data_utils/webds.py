@@ -84,44 +84,47 @@ def tar_file_iterator_with_meta(fileobj, meta_names, skip_meta=r"__[^/]*__($|/)"
                         meta_data[item['key']][meta_name] = item[meta_name]
         meta_stream.close()
     
-    for tarinfo in stream:
-        fname = tarinfo.name
-        try:
-            if not tarinfo.isreg():
-                continue
-            if fname is None:
-                continue
-            if (
-                "/" not in fname
-                and fname.startswith("__")
-                and fname.endswith("__")
-            ):
-                # skipping metadata for now
-                continue
-            if skip_meta is not None and re.match(skip_meta, fname):
-                continue
-            if fname.endswith('.txt') and suffix is not None:
-                data = (stream.extractfile(tarinfo).read().decode() + suffix).encode()
-            else:
-                data = stream.extractfile(tarinfo).read()
-            result = dict(fname=fname, data=data)
-            yield result
-            
-            if fname.endswith('.id'):
-                fid = fname.split('.')[0]
-                meta_data_fid = meta_data.get(fid, {})
-                for meta_name in meta_names:
-                    meta_fname = fid + '.' + meta_name
-                    meta = meta_data_fid.get(meta_name, None)
-                    yield dict(fname=meta_fname, data=meta)
-            stream.members = []
-        except Exception as exn:
-            if hasattr(exn, "args") and len(exn.args) > 0:
-                exn.args = (exn.args[0] + " @ " + str(fileobj),) + exn.args[1:]
-            if handler(exn):
-                continue
-            else:
-                break
+    try:
+        for tarinfo in stream:
+            fname = tarinfo.name
+            try:
+                if not tarinfo.isreg():
+                    continue
+                if fname is None:
+                    continue
+                if (
+                    "/" not in fname
+                    and fname.startswith("__")
+                    and fname.endswith("__")
+                ):
+                    # skipping metadata for now
+                    continue
+                if skip_meta is not None and re.match(skip_meta, fname):
+                    continue
+                if fname.endswith('.txt') and suffix is not None:
+                    data = (stream.extractfile(tarinfo).read().decode() + suffix).encode()
+                else:
+                    data = stream.extractfile(tarinfo).read()
+                result = dict(fname=fname, data=data)
+                yield result
+                
+                if fname.endswith('.id'):
+                    fid = fname.split('.')[0]
+                    meta_data_fid = meta_data.get(fid, {})
+                    for meta_name in meta_names:
+                        meta_fname = fid + '.' + meta_name
+                        meta = meta_data_fid.get(meta_name, None)
+                        yield dict(fname=meta_fname, data=meta)
+                stream.members = []
+            except Exception as exn:
+                if hasattr(exn, "args") and len(exn.args) > 0:
+                    exn.args = (exn.args[0] + " @ " + str(fileobj),) + exn.args[1:]
+                if handler(exn):
+                    continue
+                else:
+                    break
+    except Exception as exn:
+        print(exn)
     del stream
     
 def tar_file_expander_with_meta(data, meta_names, handler=reraise_exception):

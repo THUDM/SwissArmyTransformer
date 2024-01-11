@@ -10,3 +10,4 @@ except ModuleNotFoundError as e:
         print_rank0('DeepSpeed Not Installed, you cannot import training_main from sat now.', level="WARNING")
     else:
         raise e
+__version__ = '0.4.9'    

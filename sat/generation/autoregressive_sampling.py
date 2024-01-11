@@ -105,13 +105,15 @@ def filling_sequence(
             log_attention_weights_part = log_attention_weights[..., index: counter+1, :counter+1] # TODO memlen
         else:
             log_attention_weights_part = None
+        
+        if mems_cross is not None or 'encoder_outputs' not in kw_args:
+            kw_args['encoder_outputs'] = mems_cross
 
         logits, *output_per_layers = model(
             input_ids=tokens[:, index:], 
             position_ids=position_ids[..., index: counter+1],
             attention_mask=attention_mask[..., index: counter+1, :counter+1], # TODO memlen
             mems=mems,
-            mems_cross=mems_cross,
             log_attention_weights=log_attention_weights_part,
             **kw_args
         )
@@ -195,12 +197,14 @@ def stream_filling_sequence(
         else:
             log_attention_weights_part = None
 
+        if mems_cross is not None or 'encoder_outputs' not in kw_args:
+            kw_args['encoder_outputs'] = mems_cross
+
         logits, *output_per_layers = model(
             input_ids=tokens[:, index:], 
             position_ids=position_ids[..., index: counter+1],
             attention_mask=attention_mask[..., index: counter+1, :counter+1], # TODO memlen
             mems=mems,
-            mems_cross=mems_cross,
             log_attention_weights=log_attention_weights_part,
             **kw_args
         )

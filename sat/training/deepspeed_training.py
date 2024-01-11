@@ -36,7 +36,7 @@ from .utils import get_sample_writer
 
 from sat import mpu
 from sat.data_utils import make_loaders
-from sat.ops.layernorm import LayerNorm
+from sat.ops.layernorm import LayerNorm, RMSNorm
 from sat.helpers import print_rank0, print_all
 from sat.model.base_model import get_model
 
@@ -227,7 +227,7 @@ def get_params_for_weight_decay_optimization(module):
     weight_decay_params = {None: {'params': [], 'lr': 1.}}
     no_weight_decay_params = {None: {'params': [], 'weight_decay': 0.0, 'lr': 1.}}
     for module_ in module.modules():
-        if isinstance(module_, (LayerNorm, torch.nn.LayerNorm)):
+        if isinstance(module_, (LayerNorm, torch.nn.LayerNorm, RMSNorm)):
             for p in module_._parameters.values():
                 if p is not None and p.requires_grad:
                     add_param_by_lr(no_weight_decay_params, p, no_weight_decay=True)
@@ -318,15 +318,20 @@ def train(model, optimizer, lr_scheduler,
     timers('interval time').start()
     report_memory_flag = True
     while args.iteration < args.train_iters:
-
+        if args.profiling != -1 and args.iteration == args.profiling:
+            torch.cuda.cudart().cudaProfilerStart()
+        
+        if args.profiling != -1 and args.iteration >= args.profiling:
+            torch.cuda.nvtx.range_push("iteration{}".format(args.iteration))
         lm_loss, skipped_iter, metrics = train_step(train_data_iterator,
                                                     model,
                                                     optimizer,
                                                     lr_scheduler,
                                                     args, timers, hooks=hooks)
         skipped_iters += skipped_iter
+        if args.profiling != -1 and args.iteration >= args.profiling:
+            torch.cuda.nvtx.range_pop()
         args.iteration += 1
-
         # Update losses.
         total_lm_loss += lm_loss.data.detach().float()
         for name in metrics:
@@ -378,6 +383,8 @@ def train(model, optimizer, lr_scheduler,
             print_all('rank: {} | time: {} | exiting the program at iteration {}'.
                   format(rank, time_str, args.iteration), flush=True)
             exit()
+    if args.profiling != -1:
+        torch.cuda.cudart().cudaProfilerStop()
 
     return args.iteration, skipped_iters
 
@@ -391,7 +398,10 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
     forward_step = hooks['forward_step']
 
     while True:
+        profiling_flag = (args.profiling != -1 and args.iteration >= args.profiling)
         # Forward model for one step.
+        if profiling_flag:
+            torch.cuda.nvtx.range_push("forward")
         timers('forward').start()
         forward_ret = forward_step(data_iterator, model, args, timers, **kwargs)
         if isinstance(forward_ret, tuple):
@@ -399,9 +409,13 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
         else:
             lm_loss, metrics = forward_ret, {}
         timers('forward').stop()
+        if profiling_flag:
+            torch.cuda.nvtx.range_pop()
 
         # Check nan or inf in forward, preventing it from interfering loss scaler,
         # and all reduce metrics by the way
+        if profiling_flag:
+            torch.cuda.nvtx.range_push("loss_and_metrics")
         lm_loss_reduced = lm_loss.detach().clone()
         torch.distributed.all_reduce(lm_loss_reduced.data)
         lm_loss_reduced.data = lm_loss_reduced.data / args.world_size
@@ -424,12 +438,21 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
                 metrics_total[name] = 0.0
             metrics_total[name] += metrics[name]
         count += 1
+        if profiling_flag:
+            torch.cuda.nvtx.range_pop()
+            
+        if profiling_flag:
+            torch.cuda.nvtx.range_push("backward")
         # Calculate gradients, reduce across processes, and clip.
         timers('backward').start()
         backward_step(optimizer, model, lm_loss, args, timers)
         timers('backward').stop()
+        if profiling_flag:
+            torch.cuda.nvtx.range_pop()
         # Update parameters.
         skipped_iter, complete = 0, False
+        if profiling_flag:
+            torch.cuda.nvtx.range_push("optimizer")
         timers('optimizer').start()
         if args.deepspeed:
             if model.is_gradient_accumulation_boundary():
@@ -444,6 +467,8 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
         else:
             raise ValueError('Currently, we only support training with deepspeed.')
         timers('optimizer').stop()
+        if profiling_flag:
+            torch.cuda.nvtx.range_pop()
         if complete or single_step:
             break
     lm_loss_total /= count
