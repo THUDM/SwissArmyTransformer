@@ -119,7 +119,7 @@ def add_training_args(parser):
                                 ],
                        help='what type of task to use, will influence auto-warmup, exp name, iteration')
     group.add_argument('--seed', type=int, default=1234, help='random seed')
-    group.add_argument('--zero-stage', type=int, default=0, choices=[0, 1, 2], 
+    group.add_argument('--zero-stage', type=int, default=0, choices=[0, 1, 2, 3], 
                         help='deepspeed ZeRO stage. 0 means no ZeRO.')
 
     # ---------------  Optional hyper-parameters --------------- 

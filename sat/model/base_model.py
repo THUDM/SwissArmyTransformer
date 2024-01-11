@@ -403,8 +403,13 @@ def get_model(args, model_cls, **kwargs):
     else:
         # pop params_dtype from kwargs
         params_dtype = kwargs.pop('params_dtype')
-        
-    model = model_cls(args, params_dtype=params_dtype, **kwargs)
+
+    if args.deepspeed_config.get('zero_optimization',{}).get('stage', 0) == 3:
+        import deepspeed
+        with deepspeed.zero.Init():
+            model = model_cls(args, params_dtype=params_dtype, **kwargs)
+    else:
+        model = model_cls(args, params_dtype=params_dtype, **kwargs)
 
     if mpu.get_data_parallel_rank() == 0:
         print_all(' > number of parameters on model parallel rank {}: {}'.format(

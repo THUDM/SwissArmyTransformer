@@ -102,6 +102,8 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
 
         # initialize lr scheduler
         lr_scheduler = get_learning_rate_scheduler(optimizer, args.iteration, args)
+        assert isinstance(lr_scheduler, AnnealingLR), \
+            'must be sat AnnealingLR, or the lr in param_groups will be wrong.'
 
         summary_writer = None
         if torch.distributed.get_rank() == 0:
@@ -155,6 +157,27 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
         model.disable_untrainable_params() # mark trainable params
 
     param_groups = get_optimizer_param_groups(model)
+
+    # sync initialized parameters
+    # zero3 don't need to sync
+    if args.deepspeed_config.get('zero_optimization', {}).get('stage', 0) != 3:
+        print_rank0('Syncing initialized parameters...')
+        for param_group in param_groups:
+            for param in param_group['params']:
+                if not param.model_parallel:
+                    # We already keep the same random seed for different ranks
+                    # However, it is not reliable. Non-model-parallel parameters could be different when initialization.
+                    dist.broadcast(
+                        param.data,
+                        src=0, # group is default group
+                    )
+                else:
+                    dist.broadcast(
+                        param.data,
+                        src=mpu.get_model_parallel_rank(), # 0 -- mp_size-1
+                        group=mpu.get_data_parallel_group() # 1, mp_size + 1, ...
+                    )
+        print_rank0('Finished syncing initialized parameters.')
 
     if args.train_data is not None:
         if args.deepspeed:
