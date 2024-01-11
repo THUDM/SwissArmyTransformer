@@ -9,6 +9,7 @@ from sat.model.base_model import BaseMixin
 import math
 from sat.helpers import print_all, print_rank0
 from sat.model.transformer import RowParallelLinear, ColumnParallelLinear
+from sat.mpu.layers import copy_to_model_parallel_region
 
 class HackLinear(nn.Linear):
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
@@ -123,7 +124,7 @@ class LoraLinear(nn.Module):
         mixed_raw_layer = self.original(x)
         lora_outputs = []
         for mA, mB in zip(self.matrix_A, self.matrix_B):
-            lora_outputs.append((self.lora_dropout(x) @ mA.T @ mB.T) * self.scaling)
+            lora_outputs.append((copy_to_model_parallel_region(self.lora_dropout(x) @ mA.T) @ mB.T) * self.scaling)
         mixed_raw_layer = mixed_raw_layer + torch.cat(lora_outputs, -1)
 
         return mixed_raw_layer
