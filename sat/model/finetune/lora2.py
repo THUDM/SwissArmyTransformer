@@ -123,11 +123,7 @@ class LoraLinear(nn.Module):
             
     def forward(self, x):
         mixed_raw_layer = self.original(x)
-        if mpu.get_cuda_rng_tracker is not None:
-            with mpu.get_cuda_rng_tracker().fork():
-                x = self.lora_dropout(x)
-        else:
-            x = self.lora_dropout(x)
+        x = self.lora_dropout(x)
         lora_outputs = []
         for mA, mB in zip(self.matrix_A, self.matrix_B):
             lora_outputs.append((copy_to_model_parallel_region(x @ mA.T) @ mB.T) * self.scaling)
