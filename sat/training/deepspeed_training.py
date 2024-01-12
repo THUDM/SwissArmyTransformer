@@ -129,6 +129,15 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
             with ExitStack() as stack:
                 def save_on_exit(args_, model_, optimizer_, lr_scheduler_):
                     save_checkpoint(args_.iteration, model_, optimizer_, lr_scheduler_, args_)
+
+                # re-sync random seed, or tensor parallel might be broken (dropout, droppath)
+                # TODO add rng states for data parallel and wrap drops in main path.
+                random.seed(args.seed)
+                np.random.seed(args.seed)
+                torch.manual_seed(args.seed)
+                torch.cuda.manual_seed(args.seed)
+                # ---------
+
                 iteration, skipped = train(model, optimizer,
                     lr_scheduler,
                     train_data,
