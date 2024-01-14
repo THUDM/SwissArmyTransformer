@@ -263,3 +263,7 @@ ARGS_DEFAULT = {
     'row_parallel_linear_final_bias': ('row_parallel_linear_final_bias', True),
     'is_gated_mlp': ('is_gated_mlp', False)
 }
+
+from sat.ops.layernorm import LayerNorm, RMSNorm
+
+NO_WD_MODULES = [LayerNorm, torch.nn.LayerNorm, RMSNorm]

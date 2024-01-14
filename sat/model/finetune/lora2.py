@@ -89,7 +89,7 @@ class LoraLinear(nn.Module):
                 raise Exception('Build 4bit layer failed. You need to install the latest bitsandbytes. Try `pip install bitsandbytes`. If you still meet error after installation, try running `from bitsandbytes.nn import LinearNF4` with python and fix the error.')
         else:
             base_cls, kwargs = map_cls[original_cls]
-            if type(partition) is not int and original_cls is ColumnParallelLinear:
+            if original_cls is ColumnParallelLinear:
                 kwargs['stride'] = partition
             self.original = base_cls(in_dim, out_dim, **kwargs, bias=bias)
         self.original.weight.data.copy_(original_obj.weight.data.detach().clone())
@@ -161,7 +161,7 @@ def merge_linear_lora(lin):
     new_qkv = []
     for mA, mB in zip(lin.matrix_A, lin.matrix_B):
         new_qkv.append(mB.data.float() @ mA.data.float() * lin.scaling)
-    new_qkv = torch.cat(new_qkv, -1)
+    new_qkv = torch.cat(new_qkv, -2)
     guess_type = lin.original.bias.data.dtype if lin.original.bias is not None else lin.original.weight.data.dtype
     if guess_type is torch.uint8:
         guess_type = torch.float32

@@ -237,7 +237,6 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
                     del model_full
                 else:
                     mp_split_model_receive(model)
-                set_random_seed(args.seed)
             else:
                 overwrite_args.pop('model_parallel_size')
                 model, model_args = cls.from_pretrained_base(name, args=args, home_path=home_path, url=url, prefix=prefix, build_only=False, overwrite_args=overwrite_args, **kwargs)

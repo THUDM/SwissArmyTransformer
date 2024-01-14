@@ -36,7 +36,7 @@ from .utils import get_sample_writer
 
 from sat import mpu
 from sat.data_utils import make_loaders
-from sat.ops.layernorm import LayerNorm, RMSNorm
+from sat.transformer_defaults import NO_WD_MODULES
 from sat.helpers import print_rank0, print_all
 from sat.model.base_model import get_model
 
@@ -237,7 +237,7 @@ def get_params_for_weight_decay_optimization(module):
     weight_decay_params = {None: {'params': [], 'lr': 1.}}
     no_weight_decay_params = {None: {'params': [], 'weight_decay': 0.0, 'lr': 1.}}
     for module_ in module.modules():
-        if isinstance(module_, (LayerNorm, torch.nn.LayerNorm, RMSNorm)):
+        if isinstance(module_, tuple(NO_WD_MODULES)):
             for p in module_._parameters.values():
                 if p is not None and p.requires_grad:
                     add_param_by_lr(no_weight_decay_params, p, no_weight_decay=True)
