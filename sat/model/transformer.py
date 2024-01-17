@@ -152,6 +152,7 @@ class CrossAttention(torch.nn.Module):
                                           init_method=init_method, bias=bias, params_dtype=params_dtype, module=self, name="query", skip_init=skip_init, device=device)
         if cross_attn_hidden_size is None:
             cross_attn_hidden_size = hidden_size
+        self.cross_attn_hidden_size = cross_attn_hidden_size
         self.key_value = ColumnParallelLinear(cross_attn_hidden_size, kv_size,
                                               stride=2,
                                               gather_output=False,
