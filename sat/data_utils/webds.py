@@ -56,7 +56,7 @@ def tar_file_iterator_with_meta(fileobj, meta_names, skip_meta=r"__[^/]*__($|/)"
     :param skip_meta: regexp for keys that are skipped entirely (Default value = r"__[^/]*__($|/)")
 
     """
-    stream = tarfile.open(fileobj=fileobj, mode="r|*", bufsize=1024*1024*32)
+    stream = tarfile.open(fileobj=fileobj, mode="r|*")
     data_dir, filename = fileobj.name.rsplit('/', 1)
     meta_data = {} # {id: {meta_name: meta_value, meta_name2: meta_value2, ...}}
     if meta_stream is None:
