@@ -73,7 +73,9 @@ class FusedEmaAdam(torch.optim.Optimizer):
                  amsgrad=False,
                  set_grad_none=True,
                  ema_decay=0.9999,
-                 use_num_upates=True):
+                 use_num_upates=True,
+                 accumulate=False
+                 ):
 
         if amsgrad:
             raise RuntimeError('FusedAdam does not support the AMSGrad variant.')
@@ -91,6 +93,8 @@ class FusedEmaAdam(torch.optim.Optimizer):
             self.num_updates = 0
         else:
             self.num_updates = -1
+        
+        self.accumulate = accumulate
         self.collected_params = []
 
     def zero_grad(self):
