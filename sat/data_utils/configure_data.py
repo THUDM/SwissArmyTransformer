@@ -40,9 +40,10 @@ def make_data_loader(dataset, batch_size, args, split, collate_fn=None):
         args.val_drop_number = 0
         args.test_last_shape = [1] * world_size
         args.test_drop_number = 0
+        per_rank_batch_size = None if args.iterable_dataset == 'custom' else batch_size//world_size
         return torch.utils.data.DataLoader(
             dataset,
-            batch_size=batch_size//world_size,
+            batch_size=per_rank_batch_size,
             num_workers=args.num_workers,
             pin_memory=True,
             collate_fn=collate_fn,
@@ -443,7 +444,3 @@ class AlterDataset(IterableDataset):
                 self.weights = [w / s for w in self.weights]
                 from sat.helpers import print_rank0
                 print_rank0(f'AlterDataset: remove a dataset, {len(iterators)} left.')
-        
-        
-
-        

@@ -224,7 +224,9 @@ def add_data_args(parser):
     group.add_argument('--train-data-weights', nargs='+', default=None, type=int,
                         help='scaling factors for different train-data, must the same number of'
                         '--train-data or None(==1).')
-    group.add_argument('--iterable-dataset', action='store_true', help='iterable')
+    parser.add_argument('--iterable-dataset', 
+                        action='store', default=False, const=True, nargs='?', choices=[True, False, 'custom'], help='custom means Dataloader batch_size=None, and you need to generate batches by yourself. This is useful for dynamic batchsize.')
+
     group.add_argument('--batch-from-same-dataset', action='store_true',
                        help='batch from the same dataset, not random. ONLY affect len(train-data-weights) > 1 and iterable dataset')
 
