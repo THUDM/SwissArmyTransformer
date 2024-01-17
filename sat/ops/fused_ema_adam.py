@@ -73,7 +73,8 @@ class FusedEmaAdam(torch.optim.Optimizer):
                  amsgrad=False,
                  set_grad_none=True,
                  ema_decay=0.9999,
-                 use_num_upates=True):
+                 use_num_upates=True
+                 ):
 
         if amsgrad:
             raise RuntimeError('FusedAdam does not support the AMSGrad variant.')
