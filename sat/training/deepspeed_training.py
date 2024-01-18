@@ -244,7 +244,7 @@ def get_params_for_weight_decay_optimization(module):
         else:
             for n, p in module_._parameters.items():
                 if p is not None and n != 'bias' and p.requires_grad:
-                    add_param_by_lr(weight_decay_params, p, no_weight_decay=False)
+                    add_param_by_lr(weight_decay_params, p, no_weight_decay=False if not hasattr(p, 'no_weight_decay') or not p.no_weight_decay else True)
             for n, p in module_._parameters.items():
                 if p is not None and n == 'bias' and p.requires_grad:
                     add_param_by_lr(no_weight_decay_params, p, no_weight_decay=True)
