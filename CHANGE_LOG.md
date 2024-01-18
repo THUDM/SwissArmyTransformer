@@ -148,3 +148,8 @@ v. 0.4.10
 3. add gated mlp option
 4. support batch_from_same_dataset for multi-webds
 5. fix cmp kernel quant no bias bug
+
+# 2024.1.18
+v. 0.4.11
+1. fix the tarfile buffer_size bug in 0.4.9 and 0.4.10.
+2. fix potential problem to pass a mixed-device model to training_main

@@ -5,12 +5,6 @@
 
 `sat` is powered by `deepspeed-ZeRO` and model parallelism, aiming to provide the best practice for pretraining and finetuning large models (100M\~20B parameters). 
 
-# Migrate from SwissArmyTransformer 0.2.x to 0.3.x
-0. change the package name from `SwissArmyTransformer` to `sat` when importing, e.g. `from sat import get_args`.
-1. delete all `--sandwich-ln` in you script, use `layernorm-order='sandwich'`.
-2. change order `from_pretrained(args, name) => from_pretrained(name, args)`.
-4. We can directly use `from sat.model import AutoModel;model, args = AutoModel.from_pretrained('roberta-base')` to load model in `model-only` mode, instead of initializing the sat first. 
-
 ## Install
 ```
     pip install SwissArmyTransformer
