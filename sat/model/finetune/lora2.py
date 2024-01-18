@@ -145,8 +145,9 @@ def replace_linear_with_lora(lin, partition, r, *args, **kw_args):
         out_dim, in_dim = lin.weight.shape
     original_cls = type(lin)
     new_layer = LoraLinear(original_cls, partition, in_dim, out_dim, r, *args, **kw_args, original_obj=lin)
+    device = lin.weight.device
     del lin
-    return new_layer
+    return new_layer.to(device)
 
 def merge_linear_lora(lin):
     if lin.original.weight.data.dtype is not torch.uint8:
