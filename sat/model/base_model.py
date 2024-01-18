@@ -421,9 +421,9 @@ def get_model(args, model_cls, **kwargs):
     elif hasattr(args, 'bf16') and args.bf16:
         model.bfloat16()
 
-    try:
+    try: # TODO: is this useful?
         if not hasattr(args, 'device'):
-            args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            args.device = torch.cuda.current_device() if torch.cuda.is_available() else 'cpu'
         model = model.to(args.device)
     except Exception as e:
         print_all(e)

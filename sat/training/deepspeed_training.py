@@ -78,7 +78,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
     else:
         model = model_cls
         # for given model, make sure all the params are in the correct device, or the sync param will raise error
-        correct_device = args.device
+        correct_device = torch.device(args.device)
         for param in model.parameters():
             if param.device != correct_device:
                 param.data = param.data.to(correct_device)
