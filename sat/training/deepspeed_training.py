@@ -77,6 +77,15 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
         model = get_model(args, model_cls)
     else:
         model = model_cls
+        # for given model, make sure all the params are in the correct device, or the sync param will raise error
+        correct_device = args.device
+        for param in model.parameters():
+            if param.device != correct_device:
+                param.data = param.data.to(correct_device)
+        # register buffer
+        for name, buffer in model.named_buffers():
+            if buffer.device != correct_device:
+                buffer.data = buffer.data.to(correct_device)
 
     # Config model IO
     if args.load is not None:
@@ -170,7 +179,7 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
     # sync initialized parameters
     # zero3 don't need to sync
     from sat.helpers import check_if_zero3
-    if not check_if_zero3(args):
+    if not check_if_zero3(args) and args.model_parallel_size > 1:
         print_rank0('Syncing initialized parameters...')
         for param_group in param_groups:
             for param in param_group['params']:
