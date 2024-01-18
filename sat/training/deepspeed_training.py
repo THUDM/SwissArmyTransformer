@@ -245,6 +245,7 @@ def add_param_by_lr(dic, p, no_weight_decay=False):
 def get_params_for_weight_decay_optimization(module):
     weight_decay_params = {None: {'params': [], 'lr': 1.}}
     no_weight_decay_params = {None: {'params': [], 'weight_decay': 0.0, 'lr': 1.}}
+    print_rank0(f"{NO_WD_MODULES} is set to no_weight_decay")
     for module_ in module.modules():
         if isinstance(module_, tuple(NO_WD_MODULES)):
             for p in module_._parameters.values():
@@ -253,7 +254,10 @@ def get_params_for_weight_decay_optimization(module):
         else:
             for n, p in module_._parameters.items():
                 if p is not None and n != 'bias' and p.requires_grad:
-                    add_param_by_lr(weight_decay_params, p, no_weight_decay=False if not hasattr(p, 'no_weight_decay') or not p.no_weight_decay else True)
+                    flag = False if not hasattr(p, 'no_weight_decay') or not p.no_weight_decay else True
+                    if flag:
+                        print_rank0(f"{n} is set to no_weight_decay")
+                    add_param_by_lr(weight_decay_params, p, no_weight_decay=flag)
             for n, p in module_._parameters.items():
                 if p is not None and n == 'bias' and p.requires_grad:
                     add_param_by_lr(no_weight_decay_params, p, no_weight_decay=True)
