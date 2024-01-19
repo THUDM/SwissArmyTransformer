@@ -131,11 +131,27 @@ def update_ema_parameters_to_model(optimizer):
                              dp_process_group=optimizer.real_dp_process_group,
                              start_alignment_factor=optimizer.nccl_start_alignment_factor,
                              allgather_bucket_size=optimizer.allgather_bucket_size)   
-    
+
+def restore_ema_parameters_back(optimizer):
+    import deepspeed
+    from deepspeed import comm as dist
+    from deepspeed.runtime.utils import all_gather_dp_groups
+    from packaging import version
     for i, (bit16_partitions, fp32_partition) in enumerate(
             zip(optimizer.parallel_partitioned_bit16_groups, optimizer.single_partition_of_fp32_groups)):
         partition_id = dist.get_rank(group=optimizer.real_dp_process_group[i])
         bit16_partitions[partition_id].data.copy_(fp32_partition.data)
+    if version.parse(deepspeed.version) >= version.parse("0.12.4"):
+        all_gather_dp_groups(groups_flat=optimizer.bit16_groups_flat,
+                             partitioned_param_groups=optimizer.parallel_partitioned_bit16_groups,
+                             dp_process_group=optimizer.real_dp_process_group,
+                             start_alignment_factor=optimizer.nccl_start_alignment_factor,
+                             allgather_bucket_size=optimizer.allgather_bucket_size)
+    else:
+        all_gather_dp_groups(partitioned_param_groups=optimizer.parallel_partitioned_bit16_groups,
+                             dp_process_group=optimizer.real_dp_process_group,
+                             start_alignment_factor=optimizer.nccl_start_alignment_factor,
+                             allgather_bucket_size=optimizer.allgather_bucket_size) 
 
 def save_checkpoint(iteration, model, optimizer,
                     lr_scheduler, args):
@@ -149,6 +165,8 @@ def save_checkpoint(iteration, model, optimizer,
             if mpu.get_data_parallel_rank() == 0:
                 print_rank0('Saving Ema Model...')
                 save_ds_checkpoint(iteration, model, lr_scheduler, args, True)
+            restore_ema_parameters_back(optimizer)
+            
     elif args.mode == 'inference':
         os.makedirs(os.path.join(args.save, str(iteration)), exist_ok=True)
         if torch.distributed.get_rank() < args.model_parallel_size:
