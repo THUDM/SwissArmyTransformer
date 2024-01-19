@@ -120,6 +120,7 @@ def test_metads_batch(path):
     print("metaDS: Time to read 2048 images: ", time.time() - t)
 
 from webdataset import WebDataset
+# test_raw_reading(WebDataset("/mnt/shared/img_datasets/clay1b_dataset/coyo_700m_merged_cleaned_wds/part-00000/000000.tar"))
 # test_jpg_reading(WebDataset("/mnt/shared/img_datasets/clay1b_dataset/coyo_700m_merged_cleaned_wds/part-00000/000000.tar"))
 # test_raw_reading(WebDataset("/mnt/shared/img_datasets/clay1b_dataset/coyo_700m_merged_cleaned_wds/part-00000/000000.tar"))
 # test_simpleds_reading("/mnt/shared/img_datasets/clay1b_dataset/coyo_700m_merged_cleaned_wds/part-00000/000000.tar")
@@ -127,4 +128,5 @@ from webdataset import WebDataset
 # test_metads_dataloader("/mnt/shared/img_datasets/clay1b_dataset/coyo_700m_merged_cleaned_wds/part-00000/000000.tar")
 # test_metads_resize("/mnt/shared/img_datasets/clay1b_dataset/coyo_700m_merged_cleaned_wds/part-00000/000000.tar")
 test_metads_batch("/mnt/shared/img_datasets/clay1b_dataset/coyo_700m_merged_cleaned_wds/part-00000/000000.tar")
+# test_metads_batch("/mnt/shared/img_datasets/laion_high_resolution_imgs/part-00000/000000.tar")
 # 2048 images
