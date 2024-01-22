@@ -145,6 +145,15 @@ def print_all(msg, level=logging.INFO, flush=True):
     if flush:
         logger.handlers[0].flush()
 
+def debug_param(name, param):
+    print_all(f"param: {name}, min: {param.min()}, max: {param.max()}, mean: {param.mean()}, std: {param.std()}, scale: {param.abs().mean()}, first5: {param.flatten()[:5]}, last5: {param.flatten()[-5:]}")
+    from deepspeed.utils import safe_get_full_grad, safe_get_full_optimizer_state
+    g =  safe_get_full_grad(param)
+    if g is not None:
+        print_all(f"grad: {name}, min: {g.min()}, max: {g.max()}, mean: {g.mean()}, std: {g.std()}, scale: {g.abs().mean()}, first5: {g.flatten()[:5]}, last5: {param.flatten()[-5:]}")
+    s = safe_get_full_optimizer_state(param, 'exp_avg')
+    if s is not None:
+        print_all(f"state: {name}, min: {s.min()}, max: {s.max()}, mean: {s.mean()}, std: {s.std()}, scale: {s.abs().mean()}, first5: {s.flatten()[:5]}")
 
 def get_free_port():
     import socket

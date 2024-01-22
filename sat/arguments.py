@@ -88,9 +88,7 @@ def add_model_config_args(parser):
     group.add_argument('--make-vocab-size-divisible-by', type=int, default=128,
                        help='Pad the vocab size to be divisible by this value.'
                             'This is added for computational efficieny reasons.')
-    # Deprecated. Please use `--layernorm-order sandwich`.
-    # group.add_argument('--sandwich-ln', action='store_true',
-    #                     help='add sandwich ln in cogview.')
+    group.add_argument('--parallel-output', action='store_true', help='whether to gather model parallel outputs at final output. Need to be True if using mpu.vocab_parallel_cross_entropy.')
     
     return parser
 
