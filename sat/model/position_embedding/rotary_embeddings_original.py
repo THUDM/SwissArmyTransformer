@@ -71,7 +71,7 @@ def apply_rotary_pos_emb_bhs(x: torch.Tensor, rope_cache: torch.Tensor) -> torch
     rot_dim = rope_cache.shape[-2] * 2
     x, x_pass = x[..., :rot_dim], x[..., rot_dim:]
     # truncate to support variable sizes
-    rope_cache = rope_cache[:sq]
+    rope_cache = rope_cache[:,:sq]
     xshaped = x.reshape(-1, np, sq, rot_dim // 2, 2)
     rope_cache = rope_cache.view(-1, 1, sq, xshaped.size(3), 2)
     x_out2 = torch.stack(
