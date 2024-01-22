@@ -230,8 +230,7 @@ class ColumnParallelLinear(torch.nn.Module):
                        which is Y_i = XA_i
         init_method: method to initialize weights. Note that bias is always set
                      to zero.
-        stride: For the strided linear layers. Seems like only used in initialization, 
-                     but it is homogenerous, so always 1 is okay.
+        stride: For the strided linear layers. only used in initialization.
         keep_master_weight_for_test: This was added for testing and should be
                                      set to False. It returns the master weights
                                      used for initialization.
@@ -271,7 +270,7 @@ class ColumnParallelLinear(torch.nn.Module):
             self.master_weight = _initialize_affine_weight(
                 self.weight, self.output_size, self.input_size,
                 self.output_size_per_partition, 0, init_method,
-                stride=1, return_master_weight=keep_master_weight_for_test, module=module, name=name)
+                stride=self.stride, return_master_weight=keep_master_weight_for_test, module=module, name=name)
 
     def forward(self, input_):
         # Set up backprop all-reduce, and don't change the input.

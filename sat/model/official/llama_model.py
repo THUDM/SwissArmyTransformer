@@ -4,16 +4,8 @@ import torch.nn as nn
 
 from sat.transformer_defaults import attention_fn_default
 from sat.mpu.utils import split_tensor_along_last_dim
-from sat.model.position_embedding.rotary_embeddings import RotaryEmbedding, rotate_half
 import torch.nn.functional as F
 from sat.mpu import ColumnParallelLinear
-
-def apply_rotary_pos_emb_index_bhs(q, k, cos, sin, position_id):
-    # batch_size, num_head, seq_len, hidden_size
-    cos, sin = F.embedding(position_id, cos.squeeze(1)).unsqueeze(1), \
-               F.embedding(position_id, sin.squeeze(1)).unsqueeze(1)
-    q, k = (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
-    return q, k
 
 from sat.model.position_embedding.triton_rotary_embeddings import FastRotaryEmbedding
 

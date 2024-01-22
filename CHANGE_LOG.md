@@ -153,3 +153,4 @@ v. 0.4.10
 v. 0.4.11
 1. fix the tarfile buffer_size bug in 0.4.9 and 0.4.10.
 2. fix potential problem to pass a mixed-device model to training_main
+3. fix emaadam no use error introduced in 0.4.9 and 0.4.10.

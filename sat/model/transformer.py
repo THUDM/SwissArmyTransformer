@@ -462,6 +462,7 @@ class BaseTransformer(torch.nn.Module):
 
         if vocab_size < 1000:
             self.word_embeddings = torch.nn.Embedding(vocab_size, hidden_size, dtype=params_dtype, device=device)
+            torch.nn.init.normal_(self.word_embeddings.weight, mean=0.0, std=init_method_std)
         else:
             self.word_embeddings = VocabParallelEmbedding(
                 num_embeddings=vocab_size, embedding_dim=hidden_size, 

@@ -261,7 +261,8 @@ ARGS_DEFAULT = {
     'cross_num_multi_query_heads': ('cross_num_multi_query_heads', 0),
     'drop_path': ('drop_path', 0.),
     'row_parallel_linear_final_bias': ('row_parallel_linear_final_bias', True),
-    'is_gated_mlp': ('is_gated_mlp', False)
+    'is_gated_mlp': ('is_gated_mlp', False),
+    'parallel_output': ('parallel_output', False)
 }
 
 from sat.ops.layernorm import LayerNorm, RMSNorm
