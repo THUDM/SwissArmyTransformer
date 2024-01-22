@@ -6,7 +6,7 @@ from sat.mpu.utils import split_tensor_along_last_dim
 
 from sat.ops.layernorm import RMSNorm
 from sat.transformer_defaults import attention_fn_default
-from sat.model.position_embedding.rotary_embeddings_original import RotaryEmbedding, apply_rotary_pos_emb
+from sat.model.position_embedding.rotary_embeddings_original import RotaryEmbedding, apply_rotary_pos_emb_bhs
 from sat.mpu.layers import ColumnParallelLinear
 
 class ChatGLM2AttnMixin(BaseMixin):
@@ -20,7 +20,6 @@ class ChatGLM2AttnMixin(BaseMixin):
         max_seq_len = kw_args['position_ids'].max() + 1
         rotary_pos_emb = self.rotary_pos_emb(max_seq_len)
         rotary_pos_emb = rotary_pos_emb[kw_args['position_ids']]
-        rotary_pos_emb = rotary_pos_emb.transpose(0, 1).contiguous()
         self = self.transformer.layers[kw_args['layer_id']].attention
         attention_fn = attention_fn_default
         if 'attention_fn' in self.hooks:
@@ -37,8 +36,8 @@ class ChatGLM2AttnMixin(BaseMixin):
         key_layer = self._transpose_for_scores(mixed_key_layer)
         value_layer = self._transpose_for_scores(mixed_value_layer)
 
-        query_layer = apply_rotary_pos_emb(query_layer.permute(2, 0, 1, 3), rotary_pos_emb).permute(1, 2, 0, 3)
-        key_layer = apply_rotary_pos_emb(key_layer.permute(2, 0, 1, 3), rotary_pos_emb).permute(1, 2, 0, 3)
+        query_layer = apply_rotary_pos_emb_bhs(query_layer, rotary_pos_emb)
+        key_layer = apply_rotary_pos_emb_bhs(key_layer, rotary_pos_emb)
 
         if kw_args.get('past_key_values', None) is not None:
             pack = kw_args['past_key_values'][kw_args['layer_id']]
