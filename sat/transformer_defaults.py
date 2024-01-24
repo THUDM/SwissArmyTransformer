@@ -88,6 +88,13 @@ def attention_forward_default(self, hidden_states, mask, **kw_args):
     key_layer = self._transpose_for_scores(mixed_key_layer)
     value_layer = self._transpose_for_scores(mixed_value_layer)
 
+    # rotary position embedding 
+    if self.transformer.is_rotary_emb:
+        query_layer, key_layer = self.transformer.position_embeddings(
+            query_layer, key_layer, kw_args['position_ids'],max_seqlen=kw_args['position_ids'].max()+1,
+            layer_id=kw_args['layer_id']
+        )
+
     context_layer = attention_fn(query_layer, key_layer, value_layer, mask, dropout_fn, **kw_args)
 
     context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
@@ -150,8 +157,10 @@ def word_embedding_forward_default(self, input_ids, output_cross_layer, **kw_arg
     return self.transformer.word_embeddings(input_ids)
 
 def position_embedding_forward_default(self, position_ids, output_cross_layer, **kw_args):
-    return self.transformer.position_embeddings(position_ids)
-
+    if not self.transformer.is_rotary_emb:
+        return self.transformer.position_embeddings(position_ids)
+    return None
+        
 from sat.mpu import gather_from_model_parallel_region
 def final_forward_default(self, logits, **kw_args):
     logits_parallel = F.linear(logits, self.transformer.word_embeddings.weight)
@@ -262,6 +271,7 @@ ARGS_DEFAULT = {
     'drop_path': ('drop_path', 0.),
     'row_parallel_linear_final_bias': ('row_parallel_linear_final_bias', True),
     'is_gated_mlp': ('is_gated_mlp', False),
+    'is_rotary_emb': ('is_rotary_emb', False),
     'parallel_output': ('parallel_output', False)
 }
 

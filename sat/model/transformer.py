@@ -420,6 +420,7 @@ class BaseTransformer(torch.nn.Module):
                  row_parallel_linear_final_bias=True,
                  activation_func=gelu,
                  is_gated_mlp=False,
+                 is_rotary_emb=False,
                  layernorm=LayerNorm,
                  init_method=None,
                  use_final_layernorm=True,
@@ -444,6 +445,7 @@ class BaseTransformer(torch.nn.Module):
         self.use_qkv_bias = use_qkv_bias
         self.num_multi_query_heads = num_multi_query_heads
         self.is_gated_mlp = is_gated_mlp
+        self.is_rotary_emb = is_rotary_emb
         self.use_final_layernorm = use_final_layernorm
         self.layernorm_epsilon = layernorm_epsilon
         self.parallel_output = parallel_output
@@ -468,8 +470,12 @@ class BaseTransformer(torch.nn.Module):
                 num_embeddings=vocab_size, embedding_dim=hidden_size, 
                 params_dtype=params_dtype, skip_init=skip_init, device=device)
 
-        self.position_embeddings = torch.nn.Embedding(max_sequence_length, hidden_size)
-        torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)
+        if self.is_rotary_emb:
+            from sat.model.position_embedding.triton_rotary_embeddings import FastRotaryEmbedding
+            self.position_embeddings = FastRotaryEmbedding(hidden_size // num_attention_heads)
+        else:
+            self.position_embeddings = torch.nn.Embedding(max_sequence_length, hidden_size)
+            torch.nn.init.normal_(self.position_embeddings.weight, mean=0.0, std=init_method_std)
 
         # create all layers
         if init_method is None:
@@ -547,6 +553,7 @@ class BaseTransformer(torch.nn.Module):
         else:  # default
             hidden_states = HOOKS_DEFAULT['word_embedding_forward'](self, input_ids, output_cross_layer=output_cross_layer,**kw_args)
 
+        # handle position embedding
         if 'position_embedding_forward' in self.hooks:
             position_embeddings = self.hooks['position_embedding_forward'](position_ids, output_cross_layer=output_cross_layer, **kw_args)
         else:
