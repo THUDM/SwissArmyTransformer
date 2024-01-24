@@ -26,8 +26,8 @@ from sat.model.transformer import standard_attention
 from sat.model.mixins import MLPHeadMixin, PrefixTuningMixin
 
 class ClassificationModel(GLMModel):
-    def __init__(self, args, transformer=None, parallel_output=True):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output)
+    def __init__(self, args, transformer=None):
+        super().__init__(args, transformer=transformer)
         self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
         self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))
     def disable_untrainable_params(self):

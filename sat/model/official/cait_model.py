@@ -147,8 +147,8 @@ class DecForward(BaseMixin):
         return output
 
 class CaiTEncoder(ViTModel):
-    def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-6, use_final_layernorm=False):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon, use_final_layernorm=use_final_layernorm)
+    def __init__(self, args, transformer=None, layernorm_epsilon=1e-6, use_final_layernorm=False):
+        super().__init__(args, transformer=transformer, layernorm_epsilon=layernorm_epsilon, use_final_layernorm=use_final_layernorm)
         self.del_mixin('cls')
         self.add_mixin('attn', AttnMixin(args.num_attention_heads, args.num_layers))
         self.add_mixin('enc_forward', EncForward(args.hidden_size, args.num_layers, init_values=args.init_scale))
@@ -160,8 +160,8 @@ class CaiTEncoder(ViTModel):
         return super().add_model_specific_args(parser)
 
 class CaiTDecoder(BaseModel):
-    def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-6):
-        super().__init__(args, is_decoder=True, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon)
+    def __init__(self, args, transformer=None, layernorm_epsilon=1e-6):
+        super().__init__(args, is_decoder=True, transformer=transformer, layernorm_epsilon=layernorm_epsilon)
         self.add_mixin('cls', ClsMixin(args.hidden_size, args.num_classes))
         self.add_mixin('dec_forward', DecForward(args.hidden_size, args.num_layers, init_values=args.init_scale))
     @classmethod
@@ -172,8 +172,8 @@ from sat.model import EncoderDecoderModel
 import argparse
 
 class CaiT(EncoderDecoderModel):
-    def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-6):
-        encoder = CaiTEncoder(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon)
+    def __init__(self, args, transformer=None, layernorm_epsilon=1e-6):
+        encoder = CaiTEncoder(args, transformer=transformer, layernorm_epsilon=layernorm_epsilon)
         dec_args = argparse.Namespace(**vars(args))
         # dec_args.enc_hidden_size = dec_args.hidden_size  # used for cross attn
         override_attrs = ['num_layers', 'hidden_size', 'num_attention_heads', 'layernorm_order',
@@ -182,7 +182,7 @@ class CaiT(EncoderDecoderModel):
             dec_attr = getattr(dec_args, 'dec_' + name, None)
             if dec_attr is not None:  # else use encoder-config
                 setattr(dec_args, name, dec_attr)
-        decoder = CaiTDecoder(dec_args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon)
+        decoder = CaiTDecoder(dec_args, transformer=transformer, layernorm_epsilon=layernorm_epsilon)
         super().__init__(args, encoder=encoder, decoder=decoder)
         
     def forward(self, input_ids, enc_position_ids, dec_position_ids, *, enc_attention_mask=None, dec_attention_mask=None, cross_attention_mask=None, **kw_args):

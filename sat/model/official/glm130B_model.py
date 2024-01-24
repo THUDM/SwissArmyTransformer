@@ -323,7 +323,7 @@ class WordEmbedding(BaseMixin):
 
 
 class GLM130B(BaseModel):
-    def __init__(self, args, transformer=None, parallel_output=False):
+    def __init__(self, args, transformer=None):
         # flags required to enable jit fusion kernels
         torch._C._jit_set_profiling_mode(False)
         torch._C._jit_set_profiling_executor(False)
@@ -333,7 +333,6 @@ class GLM130B(BaseModel):
             args,
             params_dtype=torch.half if args.fp16 else torch.float,
             transformer=transformer,
-            parallel_output=parallel_output,
         )
         self.add_mixin("glu-deepnorm", DeepNormWithGLUMixin(args.num_layers, args.hidden_size, args.inner_hidden_size))
         self.add_mixin(

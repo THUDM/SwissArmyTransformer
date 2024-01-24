@@ -4,8 +4,8 @@ from sat.model.official.vit_model import ViTModel, ClsMixin
 from sat.model.mixins import PrefixTuningMixin
 
 class ViTFinetuneModel(ViTModel):
-    def __init__(self, args, transformer=None, parallel_output=True, **kw_args):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output, **kw_args)
+    def __init__(self, args, transformer=None, **kw_args):
+        super().__init__(args, transformer=transformer, **kw_args)
         self.del_mixin('cls')
         self.add_mixin('finetune_head', ClsMixin(args.hidden_size, args.num_finetune_classes))
         # self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))

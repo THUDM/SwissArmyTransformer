@@ -47,8 +47,8 @@ class DetHeadMixin(BaseMixin):
         return out
 
 class YOLOS(ViTModel):
-    def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-6, **kwargs):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon, **kwargs)
+    def __init__(self, args, transformer=None, layernorm_epsilon=1e-6, **kwargs):
+        super().__init__(args, transformer=transformer, layernorm_epsilon=layernorm_epsilon, **kwargs)
         self.del_mixin('patch_embedding')
         self.add_mixin('patch_embedding', NewTokenMixin(args.vocab_size+args.num_det_tokens, args.in_channels, args.hidden_size, self.property))
         self.del_mixin('cls')

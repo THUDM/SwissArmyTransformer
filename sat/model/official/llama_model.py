@@ -89,8 +89,8 @@ class LMMixin(BaseMixin):
 from sat.ops.layernorm import RMSNorm
 
 class LLaMAModel(BaseModel):
-    def __init__(self, args, transformer=None, parallel_output=True, layernorm=RMSNorm, activation_func=nn.functional.silu, **kwargs):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm=layernorm, activation_func=activation_func, init_method_std=0.01, **kwargs)
+    def __init__(self, args, transformer=None, layernorm=RMSNorm, activation_func=nn.functional.silu, **kwargs):
+        super().__init__(args, transformer=transformer, layernorm=layernorm, activation_func=activation_func, init_method_std=0.01, **kwargs)
         del self.transformer.position_embeddings
         if 'inner_hidden_size' not in args:
             args.inner_hidden_size = None

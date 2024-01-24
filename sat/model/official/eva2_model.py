@@ -123,10 +123,10 @@ class EVA2AttnMixin(BaseMixin):
 
 
 class EVA2Model(BaseModel):
-    def __init__(self, args, transformer=None, parallel_output=True, **kwargs):
+    def __init__(self, args, transformer=None, **kwargs):
         self.property = ViTProperty(args.image_size, args.patch_size, args.pre_len, args.post_len)
         args.max_sequence_length = self.property.seq_len
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output, **kwargs)
+        super().__init__(args, transformer=transformer, **kwargs)
         self.add_mixin("patch_embedding", MaskedPatchEmbedMixin(args.in_channels, args.hidden_size, self.property))
         # The old_property of ViTModel is not elegent. However, I don't have time to fix them (including vit, cait, deit, yolos). I can only discard it since eva model for now.
         # self.add_mixin("pos_embedding", InterpolatedPositionEmbeddingMixin(args.hidden_size, self.old_property, self.property))

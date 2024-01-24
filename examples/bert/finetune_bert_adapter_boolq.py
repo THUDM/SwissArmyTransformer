@@ -13,8 +13,8 @@ import torch.nn as nn
         
 
 class AdapterModel(BertModel):
-    def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-12, **kwargs):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon, **kwargs)
+    def __init__(self, args, transformer=None, layernorm_epsilon=1e-12, **kwargs):
+        super().__init__(args, transformer=transformer, layernorm_epsilon=layernorm_epsilon, **kwargs)
         self.del_mixin('bert-final')
         self.add_mixin('classification_head', MLPHeadMixin(args.hidden_size, 2048, 1))
         self.add_mixin('adapter', AdapterMixin(args.num_layers, args.hidden_size, args.adapter_hidden))

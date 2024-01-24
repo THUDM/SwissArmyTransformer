@@ -83,8 +83,8 @@ class PosMixin(InterpolatedPositionEmbeddingMixin):
     
 
 class MAEEncoder(ViTModel):
-    def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-6):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon)
+    def __init__(self, args, transformer=None, layernorm_epsilon=1e-6):
+        super().__init__(args, transformer=transformer, layernorm_epsilon=layernorm_epsilon)
         self.del_mixin('cls')
         self.del_mixin('pos_embedding')
         self.add_mixin('pos_embedding', PosMixin(args.hidden_size, self.old_property, self.property))
@@ -122,8 +122,8 @@ class MaskMixin(BaseMixin):
         return logits[:, 1:]
 
 class MAEDecoder(BaseModel):
-    def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-6):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon)
+    def __init__(self, args, transformer=None, layernorm_epsilon=1e-6):
+        super().__init__(args, transformer=transformer, layernorm_epsilon=layernorm_epsilon)
         self.add_mixin('mask_forward', MaskMixin(args))
     @classmethod
     def add_model_specific_args(cls, parser):
@@ -133,8 +133,8 @@ from sat.model import EncoderDecoderModel
 import argparse
 
 class MAE(EncoderDecoderModel):
-    def __init__(self, args, transformer=None, parallel_output=True, layernorm_epsilon=1e-6):
-        encoder = MAEEncoder(args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon)
+    def __init__(self, args, transformer=None, layernorm_epsilon=1e-6):
+        encoder = MAEEncoder(args, transformer=transformer, layernorm_epsilon=layernorm_epsilon)
         dec_args = argparse.Namespace(**vars(args))
         # dec_args.enc_hidden_size = dec_args.hidden_size  # used for cross attn
         override_attrs = ['num_layers', 'hidden_size', 'num_attention_heads',
@@ -144,7 +144,7 @@ class MAE(EncoderDecoderModel):
             if dec_attr is not None:  # else use encoder-config
                 setattr(dec_args, name, dec_attr)
         setattr(dec_args, 'enc_hidden_size', args.hidden_size)
-        decoder = MAEDecoder(dec_args, transformer=transformer, parallel_output=parallel_output, layernorm_epsilon=layernorm_epsilon)
+        decoder = MAEDecoder(dec_args, transformer=transformer, layernorm_epsilon=layernorm_epsilon)
         super().__init__(args, encoder=encoder, decoder=decoder, tie_word_embeddings=False)
     
     def encode(self, input_ids, position_ids, attention_mask=None, **kw_args):

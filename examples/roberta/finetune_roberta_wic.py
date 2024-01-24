@@ -11,7 +11,7 @@ import numpy as np
 
 from sat import mpu, get_args
 from sat.training.deepspeed_training import training_main
-from roberta_model import RobertaModel
+from sat.model.official.roberta_model import RobertaModel
 from sat.model.mixins import PrefixTuningMixin, MLPHeadMixin, BaseMixin
 
 class WIC_MLPHeadMixin(BaseMixin):
@@ -39,8 +39,8 @@ class WIC_MLPHeadMixin(BaseMixin):
         return logits
 
 class ClassificationModel(RobertaModel):
-    def __init__(self, args, transformer=None, parallel_output=True):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output)
+    def __init__(self, args, transformer=None):
+        super().__init__(args, transformer=transformer)
         self.del_mixin('roberta-final')
         self.add_mixin('classification_head', WIC_MLPHeadMixin(args.hidden_size * 3, 2048, 1))
         self.add_mixin('prefix-tuning', PrefixTuningMixin(args.num_layers, args.hidden_size // args.num_attention_heads, args.num_attention_heads, args.prefix_len))

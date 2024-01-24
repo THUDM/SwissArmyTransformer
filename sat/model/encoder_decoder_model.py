@@ -25,7 +25,7 @@ class EncoderFinalMixin(BaseMixin):
 
 
 class EncoderDecoderModel(torch.nn.Module):
-    def __init__(self, args, encoder=None, decoder=None, tie_word_embeddings=True, parallel_output=False, **kwargs):
+    def __init__(self, args, encoder=None, decoder=None, tie_word_embeddings=True, **kwargs):
         super(EncoderDecoderModel, self).__init__()
         if encoder is not None:
             assert isinstance(encoder, BaseModel)
@@ -46,7 +46,7 @@ class EncoderDecoderModel(torch.nn.Module):
                 dec_attr = getattr(dec_args, 'dec_' + name, None)
                 if dec_attr is not None:  # else use encoder-config
                     setattr(dec_args, name, dec_attr)
-            self.decoder = BaseModel(args, is_decoder=True, parallel_output=parallel_output, **kwargs)
+            self.decoder = BaseModel(args, is_decoder=True, **kwargs)
 
         self.tie_word_embeddings = tie_word_embeddings
         if tie_word_embeddings:
