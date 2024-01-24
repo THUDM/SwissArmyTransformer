@@ -95,7 +95,9 @@ def extract_model_specific_args_to_dump(args, model):
         ('num_multi_query_heads', 0),
         ('cross_num_multi_query_heads', 0),
         ('row_parallel_linear_final_bias', True),
-        ('is_gated_mlp', False)
+        ('is_gated_mlp', False),
+        ('is_rotary_emb', False),
+        ('parallel_output', False)
     ]
     if hasattr(module, 'transformer'):
         for name, default in optional_arch_args_list:

@@ -24,6 +24,8 @@ args = argparse.Namespace(
     eos_token_id=config.eos_token_id,
     pad_token_id=config.pad_token_id,
     layernorm_epsilon=config.rms_norm_eps,
+    is_rotary_emb=True,
+    is_gated_mlp=True,
     use_bias=False,
     hidden_dropout=0.,
     attention_dropout=0.,
@@ -44,7 +46,10 @@ args = argparse.Namespace(
 model = LLaMAModel(args=args)
 model.eval()
 if '70b' not in model_type:
-    model.get_mixin("rotary").cuda()
+    if args.is_rotary_emb:
+        model.transformer.position_embeddings.cuda()
+    else:
+        model.get_mixin("rotary").cuda()
 
 def copy_layer_param(src, dst):
     """
@@ -61,13 +66,13 @@ def copy_layer_param(src, dst):
         dst_dic[k].data = src_dic[k].data
         assert (dst_dic[k].data == src_dic[k].data).all()
 
-def copy_transformer_layer(src, dst, gate):
+def copy_transformer_layer(src, dst):
     new_weight = torch.cat([src.self_attn.q_proj.weight.data, src.self_attn.k_proj.weight.data, src.self_attn.v_proj.weight.data], 0)
     assert dst.attention.query_key_value.weight.data.shape == new_weight.shape
     dst.attention.query_key_value.weight.data = new_weight
     copy_layer_param(src.self_attn.o_proj, dst.attention.dense)
     copy_layer_param(src.mlp.up_proj, dst.mlp.dense_h_to_4h)
-    copy_layer_param(src.mlp.gate_proj, gate)
+    copy_layer_param(src.mlp.gate_proj, dst.mlp.dense_h_to_4h_gate)
     copy_layer_param(src.mlp.down_proj, dst.mlp.dense_4h_to_h)
     copy_layer_param(src.input_layernorm, dst.input_layernorm)
     copy_layer_param(src.post_attention_layernorm, dst.post_attention_layernorm)
@@ -75,8 +80,8 @@ def copy_transformer_layer(src, dst, gate):
 def transform_weight(hugging_model, swiss_model):
     copy_layer_param(hugging_model.model.embed_tokens, swiss_model.transformer.word_embeddings)
     copy_layer_param(hugging_model.lm_head, swiss_model.get_mixin("lm").lm_head)
-    for src_l, dst_l, gate in zip(hugging_model.model.layers, swiss_model.transformer.layers, swiss_model.get_mixin("mlp").gate_proj):
-        copy_transformer_layer(src_l, dst_l, gate)
+    for src_l, dst_l in zip(hugging_model.model.layers, swiss_model.transformer.layers):
+        copy_transformer_layer(src_l, dst_l)
     copy_layer_param(hugging_model.model.norm, swiss_model.transformer.final_layernorm)
 
 from sat.training.model_io import save_checkpoint

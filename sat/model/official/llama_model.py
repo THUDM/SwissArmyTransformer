@@ -91,12 +91,14 @@ from sat.ops.layernorm import RMSNorm
 class LLaMAModel(BaseModel):
     def __init__(self, args, transformer=None, layernorm=RMSNorm, activation_func=nn.functional.silu, **kwargs):
         super().__init__(args, transformer=transformer, layernorm=layernorm, activation_func=activation_func, init_method_std=0.01, **kwargs)
-        del self.transformer.position_embeddings
         if 'inner_hidden_size' not in args:
             args.inner_hidden_size = None
-        self.add_mixin("rotary", RotaryMixin(args.hidden_size, args.num_attention_heads))
+        if not (hasattr(args, 'is_rotary_emb') and args.is_rotary_emb):
+            del self.transformer.position_embeddings
+            self.add_mixin("rotary", RotaryMixin(args.hidden_size, args.num_attention_heads))
         self.add_mixin("lm", LMMixin(args.vocab_size, args.hidden_size))
-        self.add_mixin("mlp", LLaMAMlpMixin(args.num_layers, args.hidden_size, args.inner_hidden_size))
+        if not (hasattr(args, 'is_gated_mlp') and args.is_gated_mlp):
+            self.add_mixin("mlp", LLaMAMlpMixin(args.num_layers, args.hidden_size, args.inner_hidden_size))
     
     def position_embedding_forward(self, *args, **kwargs):
         return None
