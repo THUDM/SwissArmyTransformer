@@ -16,6 +16,7 @@ class ApplyRotaryEmb(torch.autograd.Function):
         x,
         cos,
         sin,
+        position_id,
         interleaved=False,
         inplace=False,
         seqlen_offsets: Union[int, torch.Tensor] = 0,
@@ -26,6 +27,7 @@ class ApplyRotaryEmb(torch.autograd.Function):
             x,
             cos,
             sin,
+            position_id,
             seqlen_offsets=seqlen_offsets,
             cu_seqlens=cu_seqlens,
             max_seqlen=max_seqlen,
@@ -33,10 +35,10 @@ class ApplyRotaryEmb(torch.autograd.Function):
             inplace=inplace,
         )
         if isinstance(seqlen_offsets, int):
-            ctx.save_for_backward(cos, sin, cu_seqlens)  # Can't save int with save_for_backward
+            ctx.save_for_backward(cos, sin, position_id, cu_seqlens)  # Can't save int with save_for_backward
             ctx.seqlen_offsets = seqlen_offsets
         else:
-            ctx.save_for_backward(cos, sin, cu_seqlens, seqlen_offsets)
+            ctx.save_for_backward(cos, sin, position_id, cu_seqlens, seqlen_offsets)
             ctx.seqlen_offsets = None
         ctx.interleaved = interleaved
         ctx.inplace = inplace
@@ -47,9 +49,9 @@ class ApplyRotaryEmb(torch.autograd.Function):
     def backward(ctx, do):
         seqlen_offsets = ctx.seqlen_offsets
         if seqlen_offsets is None:
-            cos, sin, cu_seqlens, seqlen_offsets = ctx.saved_tensors
+            cos, sin, position_id, cu_seqlens, seqlen_offsets = ctx.saved_tensors
         else:
-            cos, sin, cu_seqlens = ctx.saved_tensors
+            cos, sin, position_id, cu_seqlens = ctx.saved_tensors
         # TD [2023-09-02]: For some reason Triton (2.0.0.post1) errors with
         # "[CUDA]: invalid device context", and cloning makes it work. Idk why. Triton 2.1.0 works.
         if not ctx.interleaved and not ctx.inplace:
@@ -58,6 +60,7 @@ class ApplyRotaryEmb(torch.autograd.Function):
             do,
             cos,
             sin,
+            position_id,
             seqlen_offsets=seqlen_offsets,
             cu_seqlens=cu_seqlens,
             max_seqlen=ctx.max_seqlen,
@@ -65,13 +68,14 @@ class ApplyRotaryEmb(torch.autograd.Function):
             inplace=ctx.inplace,
             conjugate=True,
         )
-        return dx, None, None, None, None, None, None, None
+        return dx, None, None, None, None, None, None, None, None
 
 
 def apply_rotary_emb(
     x,
     cos,
     sin,
+    position_id,
     interleaved=False,
     inplace=False,
     seqlen_offsets: Union[int, torch.Tensor] = 0,
@@ -97,7 +101,7 @@ def apply_rotary_emb(
     Apply rotary embedding to the first rotary_dim of x.
     """
     return ApplyRotaryEmb.apply(
-        x, cos, sin, interleaved, inplace, seqlen_offsets, cu_seqlens, max_seqlen
+        x, cos, sin, position_id, interleaved, inplace, seqlen_offsets, cu_seqlens, max_seqlen
     )
 
 
@@ -170,8 +174,7 @@ class FastRotaryEmbedding(torch.nn.Module):
         self._sin_cached = None
         self._cos_k_cached = None
         self._sin_k_cached = None
-        self.cos = None
-        self.sin = None
+        
 
     def _compute_inv_freq(self, device=None):
         return 1.0 / (
@@ -238,21 +241,22 @@ class FastRotaryEmbedding(torch.nn.Module):
         if position_id.shape[0] != q.shape[0]:
             position_id = position_id.expand(q.shape[0], -1)
 
-        if (layer_id == 0):
-            self._update_cos_sin_cache(max_seqlen, position_id, device=q.device, dtype=q.dtype)
-            self.cos, self.sin = F.embedding(position_id, self._cos_cached), F.embedding(position_id, self._sin_cached)
+        
+        self._update_cos_sin_cache(max_seqlen, position_id, device=q.device, dtype=q.dtype)
         
         q = apply_rotary_emb_func(
                 q,
-                self.cos,
-                self.sin,
+                self._cos_cached,
+                self._sin_cached,
+                position_id,
                 interleaved=self.interleaved,
                 inplace=True
             )
         k = apply_rotary_emb_func(
                 k,
-                self.cos,
-                self.sin,
+                self._cos_cached,
+                self._sin_cached,
+                position_id,
                 interleaved=self.interleaved,
                 inplace=True
             )

@@ -22,6 +22,7 @@ def rotary_kernel(
     X,
     COS,
     SIN,
+    POSITIONS,
     CU_SEQLENS,
     SEQLEN_OFFSETS,  # this could be int or a pointer
     # Matrix dimensions
@@ -39,6 +40,7 @@ def rotary_kernel(
     stride_x_nheads,
     stride_x_seqlen,
     stride_x_headdim,
+    stride_p_batch,
     # Meta-parameters
     BLOCK_K: tl.constexpr,
     IS_SEQLEN_OFFSETS_TENSOR: tl.constexpr,
@@ -52,24 +54,22 @@ def rotary_kernel(
     pid_head = tl.program_id(axis=2)
     rotary_dim_half = rotary_dim // 2
 
-    if not IS_VARLEN:
-        X = X + pid_batch * stride_x_batch + pid_head * stride_x_nheads
-        OUT = OUT + pid_batch * stride_out_batch + pid_head * stride_out_nheads
-        COS = COS + pid_batch * seqlen_ro * rotary_dim_half
-        SIN = SIN + pid_batch * seqlen_ro * rotary_dim_half
-    else:
-        start_idx = tl.load(CU_SEQLENS + pid_batch)
-        seqlen = tl.load(CU_SEQLENS + pid_batch + 1) - start_idx
-        X = X + start_idx * stride_x_seqlen + pid_head * stride_x_nheads
-        OUT = OUT + start_idx * stride_out_seqlen + pid_head * stride_out_nheads
-
+    
+    X = X + pid_batch * stride_x_batch + pid_head * stride_x_nheads
+    OUT = OUT + pid_batch * stride_out_batch + pid_head * stride_out_nheads
+    POS = POSITIONS + pid_batch * stride_p_batch
+    
     if pid_m * BLOCK_M >= seqlen:
         return
     rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    rm_cs = tl.load(POS + rm, mask=rm < seqlen, other=0)
+    
+    #tl.device_print("rm rm_cs, ", rm, rm_cs)
+    
     if not IS_SEQLEN_OFFSETS_TENSOR:
-        rm_cs = rm + SEQLEN_OFFSETS
+        rm_cs = rm_cs + SEQLEN_OFFSETS
     else:
-        rm_cs = rm + tl.load(SEQLEN_OFFSETS + pid_batch)
+        rm_cs = rm_cs + tl.load(SEQLEN_OFFSETS + pid_batch)
     rk = tl.arange(0, BLOCK_K)
     rk_half = tl.arange(0, BLOCK_K // 2)
 
@@ -121,18 +121,14 @@ def rotary_kernel(
             COS,
             mask=(rm_cs[:, None] < seqlen_ro) & (rk_repeat[None, :] < rotary_dim_half),
             other=1.0,
-        ).to(tl.float32)
+        )
         sin = tl.load(
             SIN,
             mask=(rm_cs[:, None] < seqlen_ro) & (rk_repeat[None, :] < rotary_dim_half),
             other=0.0,
-        ).to(tl.float32)
-        x0 = tl.load(X0, mask=(rm[:, None] < seqlen) & (rk[None, :] < rotary_dim), other=0.0).to(
-            tl.float32
         )
-        x1 = tl.load(
-            X1, mask=(rm[:, None] < seqlen) & (rk_swap[None, :] < rotary_dim), other=0.0
-        ).to(tl.float32)
+        x0 = tl.load(X0, mask=(rm[:, None] < seqlen) & (rk[None, :] < rotary_dim), other=0.0)
+        x1 = tl.load(X1, mask=(rm[:, None] < seqlen) & (rk_swap[None, :] < rotary_dim), other=0.0)
         if CONJUGATE:
             sin = -sin
         x0_cos = x0 * cos
@@ -146,6 +142,7 @@ def apply_rotary(
     x: torch.Tensor,
     cos: torch.Tensor,
     sin: torch.Tensor,
+    position_ids: torch.Tensor,
     seqlen_offsets: Union[int, torch.Tensor] = 0,
     cu_seqlens: Optional[torch.Tensor] = None,
     max_seqlen: Optional[int] = None,
@@ -155,7 +152,7 @@ def apply_rotary(
 ) -> torch.Tensor:
     """
     Arguments:
-        x: (batch, seqlen, nheads, headdim) if cu_seqlens is None
+        x: (batch, nheads, seqlen, headdim) if cu_seqlens is None
             else (total_seqlen, nheads, headdim).
         cos: (seqlen_ro, rotary_dim / 2)
         sin: (seqlen_ro, rotary_dim / 2)
@@ -163,15 +160,17 @@ def apply_rotary(
         cu_seqlens: (batch + 1,) or None
         max_seqlen: int
     Returns:
-        y: (batch, seqlen, nheads, headdim)
+        y: (batch, nheads, seqlen, headdim)
     """
     
     
     batch, nheads, seqlen, headdim = x.shape
     
-    batch_ro ,seqlen_ro, rotary_dim = cos.shape
+    seqlen_ro, rotary_dim = cos.shape
 
-    assert batch == batch_ro
+    batch_p, seqlen_p = position_ids.shape
+    
+    assert batch_p == batch and seqlen_p == seqlen
     assert sin.shape == cos.shape
     rotary_dim *= 2
     assert rotary_dim <= headdim, "rotary_dim must be <= headdim"
@@ -187,6 +186,7 @@ def apply_rotary(
     ), f"Input and cos/sin must have the same dtype, got {x.dtype} and {cos.dtype}"
 
     cos, sin = cos.contiguous(), sin.contiguous()
+    
     if isinstance(seqlen_offsets, torch.Tensor):
         assert seqlen_offsets.shape == (batch,)
         assert seqlen_offsets.dtype in [torch.int32, torch.int64]
@@ -214,6 +214,7 @@ def apply_rotary(
             x,
             cos,
             sin,
+            position_ids,
             cu_seqlens,
             seqlen_offsets,
             seqlen,  # shapes
@@ -229,6 +230,7 @@ def apply_rotary(
             x.stride(-3),  # nheads stride
             x.stride(-2),  # seqlen stride
             x.stride(-1),  # headdim stride
+            position_ids.stride(0), # batch_strides
             BLOCK_K,
             isinstance(seqlen_offsets, torch.Tensor),
             False,

@@ -3,11 +3,18 @@ import os
 import torch
 import torch.nn.functional as F
 from einops import rearrange
+import random
+
 from sat.model.position_embedding.triton_rotary_embeddings import FastRotaryEmbedding
+from sat.model.position_embedding.rotary_embeddings_original import RotaryEmbedding, apply_rotary_pos_emb_bhs
+
+
 import time
-from transformers.models.gpt_neox.modeling_gpt_neox import RotaryEmbedding as RotaryEmbeddingNeoX
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+
 torch.random.manual_seed(0)
+
 def apply_rotary_pos_emb_index_bhs(q, k, cos, sin, position_id):
     # batch_size, num_head, seq_len, hidden_size
     cos, sin = F.embedding(position_id, cos.squeeze(1)).unsqueeze(1), \
@@ -67,56 +74,158 @@ class SatRotaryEmbedding(torch.nn.Module):
 
 if __name__ == "__main__":
     headdim = 128
-    batch_size = 12
-    seqlen = 384
-    nheads = 32
+    batch_size = 10
+    seqlen = 1000
+    nheads = 64
+    rotary_dim = headdim
     device = torch.device('cuda')
     dtype = torch.bfloat16
+    max_seqlen = 32 * 1024
     position_ids = torch.arange(seqlen, device=device)
-    position_ids = position_ids.repeat(batch_size,1)
+    position_ids = position_ids.repeat(batch_size, 1)
+    
     for i in range(batch_size):
-        position_ids[i, i+1] = 100
-    print(position_ids.size())
-    query = torch.randn(batch_size, nheads, seqlen, headdim, device=device, dtype=dtype)
-    key = torch.randn(batch_size, nheads, seqlen, headdim, device=device, dtype=dtype)
-    value = torch.randn(batch_size, nheads, seqlen, headdim, device=device, dtype=dtype)
-    query_neox = query.clone()
-    key_neox = key.clone()
-    value_neox = value.clone()
-
-    sat_rotary_emb = SatRotaryEmbedding(
-            128,
+        for j in range(seqlen):
+            position_ids[i, j] = random.randint(1, 1000)
+    
+    position_ids.to(device)
+    #print(position_ids)
+    
+    
+    
+    
+    # test llama 
+    query = torch.randn(batch_size, nheads, seqlen, headdim, device=device, dtype=dtype, requires_grad=True)
+    key = torch.randn(batch_size, nheads, seqlen, headdim, device=device, dtype=dtype, requires_grad=True)
+    
+    query_l = query.detach().clone().requires_grad_()
+    key_l = key.detach().clone().requires_grad_()
+    
+    
+    llama_rotary = SatRotaryEmbedding(
+            rotary_dim,
             base=10000,
             precision=torch.bfloat16,
             learnable=False,
             device=device
     )
-    for i in range(10):
-        cos, sin = sat_rotary_emb(value, seq_len=seqlen)
-        qu, ke = apply_rotary_pos_emb_index_bhs(query, key, cos, sin, position_ids)
+    
+    cos, sin = llama_rotary(query, seq_len=max_seqlen)
+    q, k = apply_rotary_pos_emb_index_bhs(query, key, cos, sin, position_ids)
+    
+    rotary_emb_llama = FastRotaryEmbedding(dim=rotary_dim, device=device)
+    q_l, k_l = rotary_emb_llama(query_l, key_l, position_ids, max_seqlen=max_seqlen)
+
+    g = torch.randn_like(q_l)
+    g_og = g.clone().detach()  # If inplace=True, we might modify the gradient inplace
+    
+
+    print("llama")
+    print("q max diff ", (q_l - q).abs().max().item())
+    print("q mean diff ", (q_l - q).abs().mean().item())
+    print("k max diff ", (k_l - k).abs().max().item())
+    print("k mean diff ", (k_l - k).abs().mean().item())
+    
+    
+    q_l.backward(g)
+    #k_l.backward(g)
+    q.backward(g_og)
+    #k.backward(g_og)
+    #print(query_l.grad)
+    #print(query.grad)
+    print("grad max diff ", (query_l.grad - query.grad).abs().max().item())
+    print("grad mean diff ", (query_l.grad - query.grad).abs().mean().item())
+    #print("grad max ", (key_l.grad - key.grad).abs().max().item())
+    #print("grad mean ", (key_l.grad - key.grad).abs().mean().item())
+    
+    print("-------------------------------------------------")
+    
+    # test chatglm 
+    query = torch.randn(batch_size, nheads, seqlen, headdim, device=device, dtype=dtype, requires_grad=True)
+    key = torch.randn(batch_size, nheads, seqlen, headdim, device=device, dtype=dtype, requires_grad=True)
+    
+    query_c = query.detach().clone().requires_grad_()
+    key_c = key.detach().clone().requires_grad_()
+    
+    
+    chatglm_rotary = RotaryEmbedding(headdim // 2, original_impl=True, device=device)
+    rotary_pos_emb = chatglm_rotary(max_seqlen)
+    rotary_pos_emb = rotary_pos_emb.to(torch.bfloat16)
+    
+    rotary_pos = rotary_pos_emb[position_ids]
+
+    q = apply_rotary_pos_emb_bhs(query, rotary_pos)
+    k = apply_rotary_pos_emb_bhs(key, rotary_pos)
+    
+    rotary_emb_chatglm = FastRotaryEmbedding(dim=headdim // 2, interleaved=True, device=device)
+    q_c, k_c = rotary_emb_chatglm(query_c, key_c, position_ids, max_seqlen=max_seqlen)
+    
+    print("chatglm")
+    print("q max diff ", (q_c - q).abs().max().item())
+    print("q mean diff ", (q_c - q).abs().mean().item())
+    print("k max diff ", (k_c - k).abs().max().item()) 
+    print("k mean diff ", (k_c - k).abs().mean().item())
+    
+    g = torch.randn_like(q_c)
+    g_og = g.clone().detach()  # If inplace=True, we might modify the gradient inplace
+    q_c.backward(g)
+    #k_c.backward(g)
+    q.backward(g_og[:, :, :, :rotary_dim])
+    #k.backward(g_og[:, :, :, :rotary_dim])
+    print("q grad max diff ", (query_c.grad - query.grad).abs().max().item())
+    print("q grad mean diff ", (query_c.grad - query.grad).abs().mean().item())
+    #print("grad max ", (key_c.grad - key.grad).abs().max().item())
+    #print("grad mean ", (key_c.grad - key.grad).abs().mean().item())
+    
+    
+    print("-----------------------------------------------")
+    print("性能测试")
+    
+    
     torch.cuda.synchronize()
     st = time.time()
     for i in range(1000):
-        cos, sin = sat_rotary_emb(value, seq_len=seqlen)
-        qu, ke = apply_rotary_pos_emb_index_bhs(query, key, cos, sin, position_ids)
-    torch.cuda.synchronize()
-    tt = time.time() - st
-    print("ref time is ", tt)
-    
-    
-    rotary_emb = FastRotaryEmbedding(dim=128, device=device)
-    for i in range(1000):
-        q_triton,k_triton = rotary_emb(query_neox,key_neox, position_ids, max_seqlen=seqlen)
-    torch.cuda.synchronize()
-    st = time.time()
-    for i in range(1000):
-        q_triton,k_triton = rotary_emb(query_neox,key_neox, position_ids, max_seqlen=seqlen)
+        q_triton,k_triton = rotary_emb_llama(query_l, key_l, position_ids, max_seqlen=seqlen)
     torch.cuda.synchronize()
     tt = time.time() - st
     print("now time is ", tt)
     
+    
+    torch.cuda.synchronize()
+    st = time.time()
+    for i in range(1000):
+        cos, sin = llama_rotary(query, seq_len=max_seqlen)
+        qu, ke = apply_rotary_pos_emb_index_bhs(query, key, cos, sin, position_ids)
+    torch.cuda.synchronize()
+    l_tt = time.time() - st
+    print("ref time is ", l_tt)
+    
+    print("llama speed up ", l_tt / tt)
+    
+    
+    
+    torch.cuda.synchronize()
+    st = time.time()
+    for i in range(1000):
+        q_triton,k_triton = rotary_emb_chatglm(query_l, key_l, position_ids, max_seqlen=seqlen)
+    torch.cuda.synchronize()
+    tt = time.time() - st
+    print("now time is ", tt)
+    has_nan_q = torch.isnan(q_triton).any()
+    has_nan_k = torch.isnan(k_triton).any()
+    if has_nan_q or has_nan_k:
+        print("nan because of inplace, set inplace false")
 
-    print("max ", (q_triton - qu).abs().max().item())
-    print("mean ", (q_triton - qu).abs().mean().item())
-    print("max ", (k_triton - ke).abs().max().item())
-    print("mean ", (k_triton - ke).abs().mean().item())
+    
+    torch.cuda.synchronize()
+    st = time.time()
+    for i in range(1000):
+        rotary_pos = rotary_pos_emb[position_ids]
+        q = apply_rotary_pos_emb_bhs(query, rotary_pos)
+        k = apply_rotary_pos_emb_bhs(key, rotary_pos)
+        
+    torch.cuda.synchronize()
+    c_tt = time.time() - st
+    print("ref time is ", c_tt)
+    
+    print("chatglm speed up ", c_tt / tt)
