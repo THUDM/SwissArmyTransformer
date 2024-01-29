@@ -176,7 +176,7 @@ def apply_rotary(
     assert rotary_dim <= headdim, "rotary_dim must be <= headdim"
     assert headdim <= 256, "Only support headdim <= 256"
 
-    assert seqlen_ro >= seqlen, "seqlen_ro must be >= seqlen"
+    assert seqlen_ro >= max_seqlen, "seqlen_ro must be >= max_seqlen"
 
     assert (
         cos.dtype == sin.dtype
@@ -192,7 +192,7 @@ def apply_rotary(
         assert seqlen_offsets.dtype in [torch.int32, torch.int64]
         seqlen_offsets = seqlen_offsets.contiguous()
     else:
-        assert seqlen_offsets + seqlen <= seqlen_ro
+        assert seqlen_offsets + max_seqlen <= seqlen_ro
 
     output = torch.empty_like(x) if not inplace else x
     if rotary_dim < headdim and not inplace:

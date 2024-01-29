@@ -80,13 +80,13 @@ if __name__ == "__main__":
     rotary_dim = headdim
     device = torch.device('cuda')
     dtype = torch.bfloat16
-    max_seqlen = 32 * 1024
+    max_seqlen = seqlen - 100
     position_ids = torch.arange(seqlen, device=device)
     position_ids = position_ids.repeat(batch_size, 1)
     
     for i in range(batch_size):
         for j in range(seqlen):
-            position_ids[i, j] = random.randint(1, 1000)
+            position_ids[i, j] = random.randint(1, 800)
     
     position_ids.to(device)
     #print(position_ids)
@@ -207,7 +207,7 @@ if __name__ == "__main__":
     torch.cuda.synchronize()
     st = time.time()
     for i in range(1000):
-        q_triton,k_triton = rotary_emb_chatglm(query_l, key_l, position_ids, max_seqlen=seqlen)
+        q_triton,k_triton = rotary_emb_chatglm(query_c, key_c, position_ids, max_seqlen=seqlen)
     torch.cuda.synchronize()
     tt = time.time() - st
     print("now time is ", tt)
