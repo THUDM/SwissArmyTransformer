@@ -9,6 +9,7 @@ class RotaryEmbedding(nn.Module):
         self.register_buffer("inv_freq", inv_freq)
         self.dim = dim
         self.original_impl = original_impl
+        self.cache = None
 
     def forward_impl(
             self, seq_len: int, n_elem: int, dtype: torch.dtype, device: torch.device, base: int = 10000
@@ -26,19 +27,22 @@ class RotaryEmbedding(nn.Module):
             theta = 1.0 / ((base*self.base_scale) ** (torch.arange(0, n_elem, 2, dtype=dtype, device=device) / n_elem))
 
         # Create position indexes `[0, 1, ..., seq_len - 1]`
-        seq_idx = torch.arange(seq_len, dtype=dtype, device=device)
+        seq_idx = torch.arange(seq_len, dtype=torch.float32, device=device)
 
         # Calculate the product of position index and $\theta_i$
-        idx_theta = torch.outer(seq_idx, theta).float()
+        idx_theta = torch.outer(seq_idx, theta)
 
         cache = torch.stack([torch.cos(idx_theta), torch.sin(idx_theta)], dim=-1)
 
         # this is to mimic the behaviour of complex32, else we will get different results
         if dtype in (torch.float16, torch.bfloat16, torch.int8):
             cache = cache.bfloat16() if dtype == torch.bfloat16 else cache.half()
+        self.cache = cache
         return cache
 
     def forward(self, max_seq_len, offset=0):
+        if self.cache is not None and max_seq_len <= self.cache.shape[0]:
+            return self.cache[:max_seq_len]
         return self.forward_impl(
             max_seq_len, self.dim, dtype=self.inv_freq.dtype, device=self.inv_freq.device
         )
