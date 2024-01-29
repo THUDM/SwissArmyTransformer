@@ -233,15 +233,14 @@ class FastRotaryEmbedding(torch.nn.Module):
         q: (batch, nheads, seqlen, headdim) 
         k: (batch, nheads, seqlen, headdim)
         position_id: (batch, seqlen)
-        max_seqlen: int
-        layer_id: int
-            only if layer_id == 0, then update cons and sin
+        max_seqlen: max number of position_ids
+        layer_id: deprecated
         Apply rotary embedding *inplace* to q k.
         """
         if position_id.shape[0] != q.shape[0]:
             position_id = position_id.expand(q.shape[0], -1)
 
-        
+        max_position_id = max_seqlen
         self._update_cos_sin_cache(max_seqlen, position_id, device=q.device, dtype=q.dtype)
         
         q = apply_rotary_emb_func(
@@ -250,7 +249,8 @@ class FastRotaryEmbedding(torch.nn.Module):
                 self._sin_cached,
                 position_id,
                 interleaved=self.interleaved,
-                inplace=True
+                inplace=True,
+                max_seqlen=max_position_id
             )
         k = apply_rotary_emb_func(
                 k,
@@ -258,7 +258,8 @@ class FastRotaryEmbedding(torch.nn.Module):
                 self._sin_cached,
                 position_id,
                 interleaved=self.interleaved,
-                inplace=True
+                inplace=True,
+                max_seqlen=max_position_id
             )
         
         return q, k
