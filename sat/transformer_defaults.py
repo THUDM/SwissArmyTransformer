@@ -138,33 +138,40 @@ def cross_attention_forward_default(self, hidden_states, cross_attention_mask, e
         output = self.output_dropout(output)
     return output
 
-def expert_gate_forward_default(self, hidden_states, **kw_args):
-    return 0
-
-def single_expert_forward_default(self, hidden_states, expert_id=0, **kw_args):
-    self = self.transformer.layers[kw_args['layer_id']].mlp
-    suffix = f"_{expert_id}" if expert_id > 0 else ""
-    if self.is_gated_mlp:
-        intermediate_parallel = getattr(self, "dense_h_to_4h"+suffix)(hidden_states)
-        gated_intermediate_parallel = getattr(self, "dense_h_to_4h_gate"+suffix)(hidden_states)
-        intermediate_parallel = self.activation_func(gated_intermediate_parallel) * intermediate_parallel
-        output = getattr(self, "dense_4h_to_h"+suffix)(intermediate_parallel)
-    else:
-        intermediate_parallel = getattr(self, "dense_h_to_4h"+suffix)(hidden_states)
-        intermediate_parallel = self.activation_func(intermediate_parallel)
-        output = getattr(self, "dense_4h_to_h"+suffix)(intermediate_parallel)
-    return output
+def routing_forward_default(self, hidden_states, **kw_args):
+    num_experts = self.transformer.num_experts
+    # This is just an example that select 2 experts randomly.
+    batch_size, sequence_length, hidden_dim = hidden_states.shape
+    # router_logits: (batch * sequence_length, n_experts)
+    router_logits = torch.randn((batch_size*sequence_length, num_experts), device=hidden_states.device, dtype=hidden_states.dtype)
+    routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
+    routing_weights, selected_experts = torch.topk(routing_weights, 2, dim=-1)
+    routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
+    # we cast back to the input dtype
+    routing_weights = routing_weights.to(hidden_states.dtype)
+    return routing_weights, selected_experts
 
 from functools import partial
 
-def mlp_forward_default(self, hidden_states, fwd_pack=0, **kw_args):
-    single_expert_forward = self.hooks.get('single_expert_forward', partial(single_expert_forward_default, self))
-    self = self.transformer.layers[kw_args['layer_id']].mlp
-    if type(fwd_pack) is int:
-        return single_expert_forward(hidden_states, expert_id=fwd_pack, **kw_args)
+def mlp_forward_default(self, hidden_states, expert_id=-1, **kw_args):
+    if self.transformer.num_experts == 1 or expert_id > -1:
+        self = self.transformer.layers[kw_args['layer_id']].mlp
+        suffix = f"_{expert_id}" if expert_id > 0 else ""
+        if self.is_gated_mlp:
+            intermediate_parallel = getattr(self, "dense_h_to_4h"+suffix)(hidden_states)
+            gated_intermediate_parallel = getattr(self, "dense_h_to_4h_gate"+suffix)(hidden_states)
+            intermediate_parallel = self.activation_func(gated_intermediate_parallel) * intermediate_parallel
+            output = getattr(self, "dense_4h_to_h"+suffix)(intermediate_parallel)
+        else:
+            intermediate_parallel = getattr(self, "dense_h_to_4h"+suffix)(hidden_states)
+            intermediate_parallel = self.activation_func(intermediate_parallel)
+            output = getattr(self, "dense_4h_to_h"+suffix)(intermediate_parallel)
+        return output
     else:
-        assert isinstance(fwd_pack, tuple) and len(fwd_pack) == 2, "fwd_pack should be a tuple whose length is 2! We will use fwd_weight, fwd_idx to unpack it."
-        fwd_weight, fwd_idx = fwd_pack
+        mlp_forward = self.hooks.get('mlp_forward', partial(mlp_forward_default, self))
+        routing_forward = self.hooks.get('routing_forward', partial(routing_forward_default, self))
+        self = self.transformer.layers[kw_args['layer_id']].mlp
+        fwd_weight, fwd_idx = routing_forward(hidden_states, **kw_args)
 
         # Adapted from mixtral-8x7b https://github.com/huggingface/transformers/blob/main/src/transformers/models/mixtral/modeling_mixtral.py
         batch_size, sequence_length, hidden_dim = hidden_states.shape
@@ -187,7 +194,7 @@ def mlp_forward_default(self, hidden_states, fwd_pack=0, **kw_args):
             # the current expert. We need to make sure to multiply the output hidden
             # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
             current_state = hidden_states[top_x_list] # I don't know why using hidden_states[None, top_x_list].reshape(-1, hidden_dim)
-            current_hidden_states = single_expert_forward(current_state, expert_id=expert_idx, **kw_args) * fwd_weight[top_x_list, idx_list, None]
+            current_hidden_states = mlp_forward(current_state, expert_id=expert_idx, **kw_args) * fwd_weight[top_x_list, idx_list, None]
             # However `index_add_` only support torch tensors for indexing so we'll use
             # the `top_x` tensor here.
             final_hidden_states.index_add_(0, top_x, current_hidden_states.to(hidden_states.dtype))
@@ -283,9 +290,8 @@ HOOKS_DEFAULT = {
     'attention_fn': attention_fn_default,
     'attention_forward': attention_forward_default,
     'cross_attention_forward': cross_attention_forward_default,
-    'expert_gate_forward': expert_gate_forward_default,
+    'routing_forward': routing_forward_default,
     'mlp_forward': mlp_forward_default,
-    'single_expert_forward': single_expert_forward_default,
     'word_embedding_forward': word_embedding_forward_default,
     'position_embedding_forward': position_embedding_forward_default,
     'final_forward': final_forward_default,

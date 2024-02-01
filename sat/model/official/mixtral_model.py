@@ -50,7 +50,7 @@ class MixtralMlpMixin(BaseMixin):
         self.top_k = num_experts_per_tok
         self.gates = nn.ModuleList([nn.Linear(in_features, num_experts, bias=False) for i in range(num_layers)])
 
-    def expert_gate_forward(self, hidden_states, **kw_args):
+    def routing_forward(self, hidden_states, **kw_args):
         # Adapted from mixtral-8x7b https://github.com/huggingface/transformers/blob/main/src/transformers/models/mixtral/modeling_mixtral.py
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
@@ -82,11 +82,11 @@ class LMMixin(BaseMixin):
     def final_forward(self, logits, **kwargs):
         return self.lm_head(logits)
 
-from sat.model.normalization import RMSNorm
+from sat.ops.layernorm import RMSNorm
 
 class MixtralModel(BaseModel):
-    def __init__(self, args, transformer=None, parallel_output=True, layernorm=RMSNorm, activation_func=nn.functional.silu, **kwargs):
-        super().__init__(args, transformer=transformer, parallel_output=parallel_output, layernorm=layernorm, activation_func=activation_func, init_method_std=0.01, **kwargs)
+    def __init__(self, args, transformer=None, layernorm=RMSNorm, activation_func=nn.functional.silu, **kwargs):
+        super().__init__(args, transformer=transformer, layernorm=layernorm, activation_func=activation_func, init_method_std=0.01, **kwargs)
         del self.transformer.position_embeddings
         if 'inner_hidden_size' not in args:
             args.inner_hidden_size = None

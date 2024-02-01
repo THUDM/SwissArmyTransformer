@@ -301,14 +301,10 @@ class MLP(torch.nn.Module):
         
 
     def forward(self, hidden_states, **kw_args):
-        if 'expert_gate_forward' in self.hooks:
-            fwd_pack = self.hooks['expert_gate_forward'](hidden_states, **kw_args)
-        else:
-            fwd_pack = HOOKS_DEFAULT['expert_gate_forward'](self, hidden_states, **kw_args)
         if 'mlp_forward' in self.hooks:
-            output = self.hooks['mlp_forward'](hidden_states, fwd_pack=fwd_pack, **kw_args)
+            output = self.hooks['mlp_forward'](hidden_states, **kw_args)
         else:
-            output = HOOKS_DEFAULT['mlp_forward'](self, hidden_states, fwd_pack=fwd_pack, **kw_args)
+            output = HOOKS_DEFAULT['mlp_forward'](self, hidden_states, **kw_args)
 
         if self.training:
             output = self.dropout(output)
