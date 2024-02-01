@@ -301,14 +301,10 @@ class MLP(torch.nn.Module):
         
 
     def forward(self, hidden_states, **kw_args):
-        if 'expert_gate_forward' in self.hooks:
-            fwd_pack = self.hooks['expert_gate_forward'](hidden_states, **kw_args)
-        else:
-            fwd_pack = HOOKS_DEFAULT['expert_gate_forward'](self, hidden_states, **kw_args)
         if 'mlp_forward' in self.hooks:
             output = self.hooks['mlp_forward'](hidden_states, **kw_args)
         else:
-            output = HOOKS_DEFAULT['mlp_forward'](self, hidden_states, fwd_pack=fwd_pack, **kw_args)
+            output = HOOKS_DEFAULT['mlp_forward'](self, hidden_states, **kw_args)
 
         if self.training:
             output = self.dropout(output)
@@ -425,7 +421,6 @@ class BaseTransformerLayer(torch.nn.Module):
             hooks=hooks,
             transformer_pointer=transformer_pointer,
             is_gated_mlp=is_gated_mlp,
-            num_experts=num_experts,
             num_experts=num_experts,
             params_dtype=params_dtype,
             skip_init=skip_init,
@@ -558,7 +553,6 @@ class BaseTransformer(torch.nn.Module):
                 drop_path=drop_path,
                 activation_func=activation_func,
                 is_gated_mlp=is_gated_mlp,
-                num_experts=num_experts,
                 num_experts=num_experts,
                 hooks=self.hooks,
                 transformer_pointer=self,
