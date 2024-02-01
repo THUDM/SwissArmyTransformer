@@ -98,6 +98,7 @@ def extract_model_specific_args_to_dump(args, model):
         ('is_gated_mlp', False),
         ('is_rotary_emb', False),
         ('parallel_output', False)
+        ('num_experts', 1),
     ]
     if hasattr(module, 'transformer'):
         for name, default in optional_arch_args_list:
