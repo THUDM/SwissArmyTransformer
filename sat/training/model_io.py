@@ -97,7 +97,7 @@ def extract_model_specific_args_to_dump(args, model):
         ('row_parallel_linear_final_bias', True),
         ('is_gated_mlp', False),
         ('is_rotary_emb', False),
-        ('parallel_output', False)
+        ('parallel_output', False),
         ('num_experts', 1),
     ]
     if hasattr(module, 'transformer'):
