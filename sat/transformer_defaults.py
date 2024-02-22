@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from sat import mpu
 
 from sat.mpu.utils import split_tensor_along_last_dim
+import contextlib
 
 def standard_attention(query_layer, key_layer, value_layer, attention_mask,
                        attention_dropout=None, log_attention_weights=None, scaling_attention_score=True, **kwargs):
@@ -58,12 +59,18 @@ def attention_fn_default(query_layer, key_layer, value_layer, attention_mask,
     if int(torch.__version__.split('.')[0]) >= 2 and scaling_attention_score and (is_full or is_low_triangle):
         # Pytorch 2.0 attention uses very much memory if attention_mask is float, and has NaN bug if attention_mask is None.
         dropout_p = 0. if attention_dropout is None or not attention_dropout.training else attention_dropout.p
-        return torch.nn.functional.scaled_dot_product_attention(
-            query_layer, key_layer, value_layer, 
-            attn_mask=None,
-            dropout_p=dropout_p,
-            is_causal=not is_full
-        )
+        if dropout_p > 0 and mpu.get_cuda_rng_tracker is not None:
+            context = mpu.get_cuda_rng_tracker().fork()
+        else:
+            context = contextlib.nullcontext()
+        with context:
+            attn_output = torch.nn.functional.scaled_dot_product_attention(
+                query_layer, key_layer, value_layer, 
+                attn_mask=None,
+                dropout_p=dropout_p,
+                is_causal=not is_full
+            )
+        return attn_output
     else:
         return standard_attention(
             query_layer, key_layer, value_layer, attention_mask,
