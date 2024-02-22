@@ -311,7 +311,7 @@ class ColumnParallelLinear(torch.nn.Module):
         ], dim=0).contiguous().view(self.output_size_per_partition, self.input_size)
         self.weight = torch.nn.Parameter(new_weight)
         del self.original_weight
-        if self.bias is not None:
+        if self.bias is not None and self.bias.numel() != 0:
             self.original_bias = self.bias
             # decompose bias according to strides
             strided_biases, _acm = [], 0
@@ -347,7 +347,7 @@ class ColumnParallelLinear(torch.nn.Module):
             strided_weights.append(self.weight[_acm:_acm+factor*strides[i], :].detach())
             _acm += factor*strides[i]
 
-        if self.bias is not None:
+        if self.bias is not None and self.bias.numel() != 0:
             # decompose bias according to strides
             strided_biases, _acm = [], 0
             for i in range(len(strides)):
@@ -364,7 +364,7 @@ class ColumnParallelLinear(torch.nn.Module):
                 for strided_weight in strided_weights
             ], dim=0).contiguous().view(output_size_per_partition, self.input_size)
             new_weights.append(torch.clone(new_weight).detach())
-            if self.bias is not None:
+            if self.bias is not None and self.bias.numel() != 0:
                 new_bias = torch.cat([
                     strided_bias[
                         (strided_bias.shape[0]//mp_size)*mp_rank:
@@ -386,7 +386,7 @@ class ColumnParallelLinear(torch.nn.Module):
                 all_weights.append(weight[_acm:_acm+factor*stride])
             _acm += factor*stride
         self.weight.data.copy_(torch.cat(all_weights))
-        if self.bias is not None:
+        if self.bias is not None and self.bias.numel() != 0:
             all_biases = []
             _acm = 0
             for stride in strides:
@@ -505,11 +505,11 @@ class RowParallelLinear(torch.nn.Module):
                                 :(mp_rank+1)*input_size_per_partition],
                 ).detach()
             new_weights.append(weight)
-            if self.bias is not None:
+            if self.bias is not None and self.bias.numel() != 0:
                 new_biases.append(torch.clone(self.bias.data).detach())
         return new_weights, new_biases
     
     def merge(self, new_weights, new_biases):
         self.weight.data.copy_(torch.cat(new_weights, 1))
-        if self.bias is not None:
+        if self.bias is not None and self.bias.numel() != 0:
             self.bias.data.copy_(new_biases[0])

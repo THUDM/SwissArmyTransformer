@@ -14,7 +14,7 @@ import random
 
 import numpy as np
 import torch
-from sat.mpu import destroy_model_parallel, initialize_model_parallel, get_model_parallel_rank, get_model_parallel_world_size
+from sat.mpu import destroy_model_parallel, initialize_model_parallel
 from sat.mpu import ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding
 
 def mp_split_checkpoint(path):
@@ -41,15 +41,16 @@ def mp_split_model(model, new_model_parallel_size):
     iter_repartition(model)
 
 from .initialize import get_node_group, get_node_src_rank, get_node_world_size
+from .initialize import get_model_parallel_group, get_model_parallel_src_rank, get_model_parallel_world_size
 
-def mp_split_model_rank0(model, model_full):
+def mp_split_model_rank0(model, model_full, use_node_group=True):
     """
     This function loads partitions from rank 0.
     It takes less memory when world size is large.
     """
-    group = get_node_group()
-    src = get_node_src_rank()
-    local_world_size = get_node_world_size()
+    group = get_node_group() if use_node_group else get_model_parallel_group()
+    src = get_node_src_rank() if use_node_group else get_model_parallel_src_rank()
+    local_world_size = get_node_world_size() if use_node_group else get_model_parallel_world_size()
     def iter_repartition(new_model, module):
         for (new_name, sub_new_model), (name, sub_module) in zip(new_model.named_children(), module.named_children()):
             if isinstance(sub_module, (ColumnParallelLinear, RowParallelLinear, VocabParallelEmbedding)):
@@ -72,16 +73,16 @@ def mp_split_model_rank0(model, model_full):
             iter_repartition(sub_new_model, sub_module)
     iter_repartition(model, model_full)
 
-def mp_split_model_receive(model):
-    group = get_node_group()
-    src = get_node_src_rank()
+def mp_split_model_receive(model, use_node_group=True):
+    group = get_node_group() if use_node_group else get_model_parallel_group()
+    src = get_node_src_rank() if use_node_group else get_model_parallel_src_rank()
     def iter_repartition(module):
         for name, sub_module in module.named_children():
             if isinstance(sub_module, VocabParallelEmbedding):
                 torch.distributed.recv(sub_module.weight.data, src)
             elif isinstance(sub_module, (ColumnParallelLinear, RowParallelLinear)):
                 torch.distributed.recv(sub_module.weight.data, src)
-                if sub_module.bias is not None:
+                if sub_module.bias is not None and sub_module.bias.numel() != 0:
                     torch.distributed.recv(sub_module.bias.data, src)
             else:
                 for n, p in sub_module.named_parameters(recurse=False):
@@ -118,7 +119,7 @@ def mp_merge_model_send(model):
                 torch.distributed.gather(sub_module.weight.data, dst=0)
             elif isinstance(sub_module, (ColumnParallelLinear, RowParallelLinear)):
                 torch.distributed.gather(sub_module.weight.data, dst=0)
-                if sub_module.bias is not None:
+                if sub_module.bias is not None and sub_module.bias.numel() != 0:
                     torch.distributed.gather(sub_module.bias.data, dst=0)
             iter_merge(sub_module)
     iter_merge(model)
