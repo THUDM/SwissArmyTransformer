@@ -27,6 +27,8 @@ from sat import mpu
 import logging
 from sat.helpers import print_all, print_rank0
 
+_GLOBAL_RANDOM_SEED = None
+
 def add_model_config_args(parser):
     """Model arguments"""
 
@@ -547,6 +549,7 @@ def initialize_distributed(args):
 def set_random_seed(seed):
     """Set random seed for reproducability."""
     if seed is not None:
+        _GLOBAL_RANDOM_SEED = seed
         assert seed > 0
         random.seed(seed)
         np.random.seed(seed)
@@ -563,3 +566,7 @@ def set_random_seed(seed):
                 mpu.model_parallel_cuda_manual_seed(seed)
         except ImportError:
             pass
+
+def reset_random_seed(scale=1):
+    assert _GLOBAL_RANDOM_SEED is not None, "You have not set random seed. No need to reset it."
+    set_random_seed(_GLOBAL_RANDOM_SEED*scale)

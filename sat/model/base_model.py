@@ -27,6 +27,7 @@ from sat.transformer_defaults import HOOKS_DEFAULT, ARGS_DEFAULT
 from sat.resources import auto_create
 from sat.mpu.initialize import get_node_rank, get_model_parallel_rank, destroy_model_parallel, initialize_model_parallel
 from sat.mpu.operation import mp_split_model_rank0, mp_split_model_receive, mp_merge_model_rank0, mp_merge_model_send
+from sat.arguments import reset_random_seed
 
 def non_conflict(func):
     '''mark a hook function as non-conflict,
@@ -238,6 +239,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
                     del model_full
                 else:
                     mp_split_model_receive(model, use_node_group=use_node_group)
+                reset_random_seed(6)
             else:
                 overwrite_args.pop('model_parallel_size')
                 model, model_args = cls.from_pretrained_base(name, args=args, home_path=home_path, url=url, prefix=prefix, build_only=False, overwrite_args=overwrite_args, **kwargs)
@@ -361,6 +363,7 @@ class AutoModel():
                     del model_full
                 else:
                     mp_split_model_receive(model, use_node_group=use_node_group)
+                reset_random_seed(6)
             else:
                 overwrite_args.pop('model_parallel_size')
                 model, model_args = cls.from_pretrained_base(name, args=args, home_path=home_path, url=url, prefix=prefix, build_only=False, overwrite_args=overwrite_args, **kwargs)
