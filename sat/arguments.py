@@ -549,6 +549,7 @@ def initialize_distributed(args):
 def set_random_seed(seed):
     """Set random seed for reproducability."""
     if seed is not None:
+        global _GLOBAL_RANDOM_SEED
         _GLOBAL_RANDOM_SEED = seed
         assert seed > 0
         random.seed(seed)
