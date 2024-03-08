@@ -24,11 +24,19 @@ def worker_seed_sat(group=None, seed=0):
 
 class ConfiguredResampledShards(ResampledShards):
     def __init__(self, urls, seed, nshards=sys.maxsize, deterministic=True):
-        from sat.mpu import get_data_parallel_group
+        from sat.helpers import print_rank0
         try:
+            from megatron.core.parallel_state import get_data_parallel_group
             group = get_data_parallel_group()
-        except AssertionError:
-            group = None
+            print_rank0("Using megatron data parallel group.")
+        except:
+            from sat.mpu import get_data_parallel_group
+            try:
+                group = get_data_parallel_group()
+                print_rank0("Using sat data parallel group.")
+            except AssertionError:
+                group = None
+                print_rank0("No data parallel group is specified!")
         worker_seed_sat_this = partial(worker_seed_sat, group=group, seed=seed)
         super().__init__(urls, nshards, worker_seed_sat_this, deterministic)
 
