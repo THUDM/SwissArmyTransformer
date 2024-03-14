@@ -12,12 +12,43 @@ from PIL import Image
 
 import webdataset as wds
 from webdataset import ResampledShards, DataPipeline, tarfile_to_samples
-from webdataset.utils import pytorch_worker_seed
 from webdataset.filters import pipelinefilter
 from webdataset.tariterators import url_opener, group_by_keys
 from webdataset.handlers import reraise_exception
 from webdataset.gopen import gopen_schemes, gopen
 
+def pytorch_worker_info(group=None):  # sourcery skip: use-contextlib-suppress
+    """Return node and worker info for PyTorch and some distributed environments."""
+    rank = 0
+    world_size = 1
+    worker = 0
+    num_workers = 1
+    try:
+        import torch.distributed
+
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            group = group or torch.distributed.group.WORLD
+            rank = torch.distributed.get_rank(group=group)
+            world_size = torch.distributed.get_world_size(group=group)
+    except ModuleNotFoundError:
+        pass
+    try:
+        import torch.utils.data
+
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is not None:
+            worker = worker_info.id
+            num_workers = worker_info.num_workers
+    except ModuleNotFoundError:
+        pass
+
+    return rank, world_size, worker, num_workers
+
+
+def pytorch_worker_seed(group=None):
+    """Compute a distinct, deterministic RNG seed for each worker and node."""
+    rank, world_size, worker, num_workers = pytorch_worker_info(group=group)
+    return rank * 1000 + worker
 
 def worker_seed_sat(group=None, seed=0):
     return pytorch_worker_seed(group=group) + seed * 23
