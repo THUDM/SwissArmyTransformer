@@ -25,6 +25,7 @@ from contextlib import ExitStack
 
 import torch.distributed as dist
 import deepspeed
+import wandb
 
 from .learning_rates import AnnealingLR
 from .model_io import load_checkpoint, save_checkpoint
@@ -33,12 +34,17 @@ from .utils import Timers
 from .utils import report_memory
 from .utils import print_args
 from .utils import get_sample_writer
+from .utils import init_wandb_writer
 
 from sat import mpu
 from sat.data_utils import make_loaders
 from sat.transformer_defaults import NO_WD_MODULES
 from sat.helpers import print_rank0, print_all
 from sat.model.base_model import get_model
+try:
+    import wandb
+except ImportError:
+    print("wandb not installed.")
 
 def training_main(args, model_cls, forward_step_function, create_dataset_function, handle_metrics_function=None, init_function=None, collate_fn=None, forward_step_eval=None):
     """Main training program."""
@@ -122,7 +128,8 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
                 print_rank0('Finetuning Model...')
             print_args(args)
             summary_writer = get_sample_writer(base=args.summary_dir, name=args.experiment_name, iteration=args.iteration)
-
+            if args.wandb:
+                init_wandb_writer(args)
         # Resume data loader if necessary.
         if args.resume_dataloader:
             if not args.iterable_dataset:
@@ -214,7 +221,7 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
                 del args.deepspeed_config['optimizer']
             else:
                 optimizer_callable = None
-                
+
             model, optimizer, _, _ = deepspeed.initialize(
                 model=model,
                 model_parameters=param_groups,
@@ -316,7 +323,7 @@ def get_learning_rate_scheduler(optimizer, iteration, args,
 
 
 def train(model, optimizer, lr_scheduler,
-        train_data, val_data, timers, args, 
+        train_data, val_data, timers, args,
         summary_writer=None, hooks={}):
     """Train the model."""
     if train_data is not None:
@@ -327,10 +334,10 @@ def train(model, optimizer, lr_scheduler,
         val_data_iterator = iter(val_data)
     else:
         val_data_iterator = None
-        
+
     # Turn on training mode which enables dropout.
     model.train()
-    
+
     # Tracking loss.
     total_lm_loss = 0.0
     total_metrics = defaultdict(float)
@@ -343,7 +350,7 @@ def train(model, optimizer, lr_scheduler,
     while args.iteration < args.train_iters:
         if args.profiling != -1 and args.iteration == args.profiling:
             torch.cuda.cudart().cudaProfilerStart()
-        
+
         if args.profiling != -1 and args.iteration >= args.profiling:
             torch.cuda.nvtx.range_push("iteration{}".format(args.iteration))
         lm_loss, skipped_iter, metrics = train_step(train_data_iterator,
@@ -463,7 +470,7 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
         count += 1
         if profiling_flag:
             torch.cuda.nvtx.range_pop()
-            
+
         if profiling_flag:
             torch.cuda.nvtx.range_push("backward")
         # Calculate gradients, reduce across processes, and clip.
@@ -597,7 +604,7 @@ def evaluate_and_print_results(prefix, data_iterator, model, eval_iters,
     lm_loss, metrics = evaluate(data_iterator, model, eval_iters, args, timers, split, verbose, has_last, hooks=hooks)
     lm_ppl = math.exp(min(20, lm_loss))
     if torch.distributed.get_rank(group=mpu.get_data_parallel_group())==0:
-        report_evaluate_metrics(summary_writer, prefix, lm_loss, lm_ppl, step, metrics)
+        report_evaluate_metrics(summary_writer, prefix, lm_loss, lm_ppl, step, args, metrics)
     return lm_loss
 
 
@@ -620,9 +627,18 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
         summary_writer.add_scalar(f'Train/elapsed_time', elapsed_time, step)
         for key in avg_metrics:
             summary_writer.add_scalar('Train/'+key, avg_metrics[key], step)
+    if args.wandb:
+        log_dict = {
+            "Train/lr": lr,
+            "Train/train_loss": loss,
+            "Train/elapsed_time": elapsed_time
+            }
+        for key in avg_metrics:
+            log_dict["Train/" + key] = avg_metrics[key]
+        wandb.log(log_dict, step=step)
 
 
-def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step, avg_metrics):
+def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step, args, avg_metrics):
     string = ' validation loss at {} | '.format(prefix)
     string += 'loss: {:.6E} | '.format(loss)
     string += 'PPL: {:.6E}'.format(ppl)
@@ -638,4 +654,11 @@ def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step, avg_metrics
         summary_writer.add_scalar(f'Train/valid_loss', loss, step)
         for key in avg_metrics:
             summary_writer.add_scalar('Train/valid_'+key, avg_metrics[key], step)
-        
+    if args.wandb:
+        log_dict = {
+            "Train/valid_ppl": ppl,
+            "Train/valid_loss": loss,
+            }
+        for key in avg_metrics:
+            log_dict["Train/valid_" + key] = avg_metrics[key]
+        wandb.log(log_dict, step=step, commit=True)
