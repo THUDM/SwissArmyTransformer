@@ -627,7 +627,7 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
         summary_writer.add_scalar(f'Train/elapsed_time', elapsed_time, step)
         for key in avg_metrics:
             summary_writer.add_scalar('Train/'+key, avg_metrics[key], step)
-    if args.wandb:
+    if args.wandb and torch.distributed.get_rank() == 0:
         log_dict = {
             "Train/lr": lr,
             "Train/train_loss": loss,
@@ -635,7 +635,7 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
             }
         for key in avg_metrics:
             log_dict["Train/" + key] = avg_metrics[key]
-        wandb.log(log_dict, step=step)
+        wandb.log(log_dict, step=step, commit=True)
 
 
 def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step, args, avg_metrics):
@@ -654,7 +654,7 @@ def report_evaluate_metrics(summary_writer, prefix, loss, ppl, step, args, avg_m
         summary_writer.add_scalar(f'Train/valid_loss', loss, step)
         for key in avg_metrics:
             summary_writer.add_scalar('Train/valid_'+key, avg_metrics[key], step)
-    if args.wandb:
+    if args.wandb and torch.distributed.get_rank() == 0:
         log_dict = {
             "Train/valid_ppl": ppl,
             "Train/valid_loss": loss,

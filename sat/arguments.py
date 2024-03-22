@@ -193,7 +193,7 @@ def add_training_args(parser):
     group.add_argument('--exit-interval', type=int, default=None,
                        help='Exit the program after this many new iterations.')
 
-    group.add_argument('--wandb-enable', action="store_true", help='whether to use wandb')
+    group.add_argument('--wandb', action="store_true", help='whether to use wandb')
     group.add_argument('--wandb-project-name', type=str, default="default_project",
                        help="The project name in wandb.")
     
