@@ -228,6 +228,8 @@ def add_data_args(parser):
                         '--train-data or None(==1).')
     parser.add_argument('--iterable-dataset', 
                         action='store', default=False, const=True, nargs='?', choices=[True, False, 'custom'], help='custom means Dataloader batch_size=None, and you need to generate batches by yourself. This is useful for dynamic batchsize.')
+    parser.add_argument('--iterable-dataset-eval', default='',
+                            type=str, chioces=['True', 'False', ''], help='Whether eval is iterable.')
 
     group.add_argument('--batch-from-same-dataset', action='store_true',
                        help='batch from the same dataset, not random. ONLY affect len(train-data-weights) > 1 and iterable dataset')
@@ -341,6 +343,10 @@ def get_args(args_list=None, parser=None):
     parser = deepspeed.add_config_arguments(parser)
 
     args = parser.parse_args(args_list)
+    if not args.iterable_dataset_eval:
+        args.iterable_dataset_eval = args.iterable_dataset
+    else:
+        args.iterable_dataset_eval = eval(args.iterable_dataset_eval)
 
     if not args.train_data:
         print_rank0('No training data specified', level='WARNING')

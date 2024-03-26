@@ -101,7 +101,7 @@ def make_dataset_full(path, split, args, create_dataset_function,
     print_all('make dataset ' + str(path), level='DEBUG')
     assert isinstance(path, list)
 
-    if args.iterable_dataset: # cannot indexed
+    if (is_train_data and args.iterable_dataset) or (not is_train_data and args.iterable_dataset_eval): # cannot indexed
         # the random mapping is flexible and efficient, but sometimes we have pratical issue
         # For instance, someone just gives you a iterable dataset, e.g. webdataset
         from .webds import ConfiguredResampledShards, DataPipeline

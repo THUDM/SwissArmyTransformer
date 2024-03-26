@@ -138,6 +138,7 @@ class FastRotaryEmbedding(torch.nn.Module):
         scale_base=None,
         pos_idx_in_fp32=True,
         device=None,
+        shift=0,
     ):
         """
         interleaved: if True, rotate pairs of even and odd dimensions (GPT-J style) instead
@@ -158,6 +159,7 @@ class FastRotaryEmbedding(torch.nn.Module):
         self.base = base
         self.pos_idx_in_fp32 = pos_idx_in_fp32
         # Generate and save the inverse frequency buffer (non trainable)
+        self.shift = shift
         inv_freq = self._compute_inv_freq(device)
         self.register_buffer("inv_freq", inv_freq)
         self.interleaved = interleaved
@@ -179,7 +181,7 @@ class FastRotaryEmbedding(torch.nn.Module):
     def _compute_inv_freq(self, device=None):
         return 1.0 / (
             self.base
-            ** (torch.arange(0, self.dim, 2, device=device).float() / self.dim)
+            ** (torch.arange(self.shift, self.shift+self.dim, 2, device=device).float() / self.dim)
         )
 
     def _update_cos_sin_cache(self, seqlen, position_id, device=None, dtype=None):
