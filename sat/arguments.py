@@ -233,7 +233,7 @@ def add_data_args(parser):
     parser.add_argument('--iterable-dataset', 
                         action='store', default=False, const=True, nargs='?', choices=[True, False, 'custom'], help='custom means Dataloader batch_size=None, and you need to generate batches by yourself. This is useful for dynamic batchsize.')
     parser.add_argument('--iterable-dataset-eval', default='',
-                            type=str, chioces=['True', 'False', ''], help='Whether eval is iterable.')
+                            type=str, choices=['True', 'False', ''], help='Whether eval is iterable.')
 
     group.add_argument('--batch-from-same-dataset', action='store_true',
                        help='batch from the same dataset, not random. ONLY affect len(train-data-weights) > 1 and iterable dataset')
