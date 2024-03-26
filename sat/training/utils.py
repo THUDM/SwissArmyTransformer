@@ -32,6 +32,14 @@ def get_sample_writer(name, base="..", iteration=0):
     return SummaryWriter(
         log_dir=os.path.join(base, SUMMARY_WRITER_DIR_NAME, name), purge_step=iteration)
 
+def init_wandb_writer(args):
+    """Initialize wandb writer."""
+    import wandb
+    wandb.init(
+        project=args.wandb_project_name,
+        name=args.experiment_name,
+        dir=args.summary_dir,
+    )
 
 # def print_rank0(message):
 #     if torch.distributed.is_initialized():
