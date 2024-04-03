@@ -460,13 +460,13 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
                 metrics[name] = metrics[name].detach().clone()
                 if metrics[name].data.item() == -100:
                     cnt = torch.zeros(1, dtype=torch.int64, device=metrics[name].data.device)
-                    metrics[name].data = 0
+                    metrics[name].data = torch.tensor(0., device=metrics[name].data.device)
                 else:
                     cnt = torch.ones(1, dtype=torch.int64, device=metrics[name].data.device)
                 torch.distributed.all_reduce(metrics[name].data)
                 torch.distributed.all_reduce(cnt)
                 if cnt.item() == 0:
-                    metrics[name].data = -100
+                    metrics[name].data = torch.tensor(-100, device=metrics[name].data.device)
                 else:
                     metrics[name].data /= cnt.cpu().item() # args.world_size
                 loss_checker = loss_checker + metrics[name]
