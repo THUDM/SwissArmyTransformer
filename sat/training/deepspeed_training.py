@@ -341,6 +341,7 @@ def train(model, optimizer, lr_scheduler,
     # Tracking loss.
     total_lm_loss = 0.0
     total_metrics = defaultdict(float)
+    total_metrics_cnt = defaultdict(int)
 
     # Iterations.
     skipped_iters = 0
@@ -367,7 +368,10 @@ def train(model, optimizer, lr_scheduler,
         for name in metrics:
             if not 'eval' in name:
                 assert len(metrics[name].shape)==0, 'metrics without eval must be scalar'
-                total_metrics[name] += metrics[name].data.detach().float().item()
+                value = metrics[name].data.detach().float().item()
+                if value != -100:
+                    total_metrics[name] += value
+                    total_metrics_cnt[name] += 1
 
         # Logging.
         if args.iteration % args.log_interval == 0:
@@ -376,7 +380,7 @@ def train(model, optimizer, lr_scheduler,
             # average img & txt loss
             avg_metrics = {}
             for key in total_metrics:
-                avg_metrics[key] = total_metrics[key] / args.log_interval
+                avg_metrics[key] = total_metrics[key] / total_metrics_cnt[key] # args.log_interval
 
             elapsed_time = timers('interval time').elapsed()
             report_iteration_metrics(summary_writer, optimizer, learning_rate, avg_lm_loss,
@@ -461,7 +465,10 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
                     cnt = torch.ones(1, dtype=torch.int64, device=metrics[name].data.device)
                 torch.distributed.all_reduce(metrics[name].data)
                 torch.distributed.all_reduce(cnt)
-                metrics[name].data /= cnt # args.world_size
+                if cnt.item() == 0:
+                    metrics[name].data = -100
+                else:
+                    metrics[name].data /= cnt # args.world_size
                 loss_checker = loss_checker + metrics[name]
         if loss_checker.isnan().any() or loss_checker.isinf().any():
             print_all('Skipping backward and optimizer step for nan or inf in forwarding metrics/loss!')
