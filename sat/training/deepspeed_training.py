@@ -454,8 +454,14 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
         for name in metrics:
             if not 'eval' in name:
                 metrics[name] = metrics[name].detach().clone()
+                if metrics[name].data.item() == -100:
+                    cnt = torch.zeros(1, dtype=torch.int64, device=metrics[name].data.device)
+                    metrics[name].data = 0
+                else:
+                    cnt = torch.ones(1, dtype=torch.int64, device=metrics[name].data.device)
                 torch.distributed.all_reduce(metrics[name].data)
-                metrics[name].data /= args.world_size
+                torch.distributed.all_reduce(cnt)
+                metrics[name].data /= cnt # args.world_size
                 loss_checker = loss_checker + metrics[name]
         if loss_checker.isnan().any() or loss_checker.isinf().any():
             print_all('Skipping backward and optimizer step for nan or inf in forwarding metrics/loss!')
