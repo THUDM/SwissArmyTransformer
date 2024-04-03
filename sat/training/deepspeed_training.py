@@ -468,7 +468,7 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
                 if cnt.item() == 0:
                     metrics[name].data = -100
                 else:
-                    metrics[name].data /= cnt # args.world_size
+                    metrics[name].data /= cnt.cpu().item() # args.world_size
                 loss_checker = loss_checker + metrics[name]
         if loss_checker.isnan().any() or loss_checker.isinf().any():
             print_all('Skipping backward and optimizer step for nan or inf in forwarding metrics/loss!')
