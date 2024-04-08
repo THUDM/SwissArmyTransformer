@@ -371,7 +371,7 @@ def train(model, optimizer, lr_scheduler,
             if not 'eval' in name:
                 assert len(metrics[name].shape)==0, 'metrics without eval must be scalar'
                 value = metrics[name].data.detach().float().item()
-                if value != -100:
+                if value > -99:
                     total_metrics[name] += value
                     total_metrics_cnt[name] += 1
 
@@ -390,6 +390,7 @@ def train(model, optimizer, lr_scheduler,
                                      avg_metrics)
             total_lm_loss = 0.0
             total_metrics = defaultdict(float)
+            total_metrics_cnt = defaultdict(int)
             if report_memory_flag:
                 report_memory('after {} iterations'.format(args.iteration))
                 report_memory_flag = False
@@ -430,7 +431,7 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
     """Single training step."""
     if hooks is None:
         hooks = {}
-    lm_loss_total, metrics_total, count = 0.0, {}, 0
+    lm_loss_total, metrics_total, count, metrics_count = 0.0, {}, 0, {}
     forward_step = hooks['forward_step']
 
     while True:
@@ -480,8 +481,12 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
         lm_loss_total += lm_loss_reduced
         for name in metrics:
             if name not in metrics_total:
-                metrics_total[name] = 0.0
-            metrics_total[name] += metrics[name]
+                metrics_total[name] = torch.tensor(0.0, device=metrics[name].data.device)
+            if name not in metrics_count:
+                metrics_count[name] = 0
+            if metrics[name].data.item() != -100:
+                metrics_total[name] += metrics[name]
+                metrics_count[name] += 1
         count += 1
         if profiling_flag:
             torch.cuda.nvtx.range_pop()
@@ -517,7 +522,7 @@ def train_step(data_iterator, model, optimizer, lr_scheduler,
         if complete or single_step:
             break
     lm_loss_total /= count
-    metrics_total = {key: value / count for key, value in metrics_total.items()}
+    metrics_total = {key: torch.tensor(-100, device=metrics_total[key].data.device) if metrics_count[key] == 0 else value / metrics_count[key] for key, value in metrics_total.items()}
     return lm_loss_total, skipped_iter, metrics_total
 
 
