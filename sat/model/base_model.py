@@ -86,7 +86,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
         else:
             # check if model-only mode
             from sat.arguments import _simple_init
-            success = _simple_init(model_parallel_size=args.model_parallel_size)
+            success = _simple_init(model_parallel_size=args.model_parallel_size, seed=args.seed if hasattr(args, 'seed') else 1234)
 
             args_dict = {k: (getattr(args, v[0]) if hasattr(args, v[0]) else v[1]) for k, v in ARGS_DEFAULT.items()}
 

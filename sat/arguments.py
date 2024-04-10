@@ -307,7 +307,7 @@ def _adjust_vocab_size(args):
                  'tokens (new size: {})'.format(
         before, after - before, after))
 
-def _simple_init(model_parallel_size=1):
+def _simple_init(model_parallel_size=1, seed=0):
     '''Necessary initialization for torch.distributed for model-only mode'''
     args = argparse.Namespace(
         distributed_backend='nccl' if torch.distributed.is_nccl_available() and torch.cuda.is_available() else 'gloo',
@@ -320,6 +320,7 @@ def _simple_init(model_parallel_size=1):
     if not torch.cuda.is_available():
         args.device = 'cpu'
     args.deepspeed = False
+    set_random_seed(seed)
         
     if initialize_distributed(args): # first time init model parallel, print warning
         print_rank0(
