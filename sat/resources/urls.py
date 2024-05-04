@@ -22,6 +22,7 @@ MODEL_URLS = {
     'clip': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fclip.zip&dl=1',
     'clip-vit-base-patch16': 'https://lfs.aminer.cn/misc/clip/clip-vit-base-patch16.zip',
     'clip-vit-large-patch14': 'https://lfs.aminer.cn/misc/clip/clip-vit-large-patch14.zip',
+    'eva-clip-4b-14-x-drop-last-layer': 'r2://eva-clip-4b-14-x-drop-last-layer.zip',
     'yolos-tiny': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fyolos-tiny.zip&dl=1',
     'mae-vit-base': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fmae-vit-base.zip&dl=1',
 
