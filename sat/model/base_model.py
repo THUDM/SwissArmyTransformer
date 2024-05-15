@@ -224,6 +224,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
                 destroy_model_parallel()
                 initialize_model_parallel(1)
                 if local_rank == 0:
+                    args.skip_init = True
                     args.use_gpu_initialization = False
                     args.device = 'cpu'
                     overwrite_args.pop('model_parallel_size')
@@ -348,6 +349,7 @@ class AutoModel():
                 destroy_model_parallel()
                 initialize_model_parallel(1)
                 if local_rank == 0:
+                    args.skip_init = True
                     args.use_gpu_initialization = False
                     args.device = 'cpu'
                     overwrite_args.pop('model_parallel_size')

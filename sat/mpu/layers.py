@@ -37,7 +37,7 @@ from .utils import VocabUtility
 
 def _initialize_affine_weight(weight, output_size, input_size,
                               per_partition_size, partition_dim, init_method,
-                              stride=1, return_master_weight=False, module=None, name=None):
+                              stride=1, return_master_weight=False, module=None, name=None, self=None):
     """Initialize affine weight for model parallel.
 
     Build the master weight on all processes and scatter
@@ -56,16 +56,12 @@ def _initialize_affine_weight(weight, output_size, input_size,
                                 requires_grad=False,
                                 device=weight.device)
     init_method(master_weight, module=module, name=name)
-
-    # Split and copy
-    per_partition_per_stride_size = divide(per_partition_size, stride)
-    weight_list = torch.split(master_weight, per_partition_per_stride_size,
-                              dim=partition_dim)
+    weight_list = self.partition(full_weight=master_weight)
     rank = get_model_parallel_rank()
-    my_weight_list = weight_list[rank::world_size]
 
     with torch.no_grad():
-        torch.cat(my_weight_list, dim=partition_dim, out=weight)
+        weight.copy_(weight_list[rank])
+    del weight_list
     if return_master_weight:
         return master_weight
     return None
@@ -110,7 +106,7 @@ class VocabParallelEmbedding(torch.nn.Module):
         if not skip_init:
             _initialize_affine_weight(
                 self.weight, self.num_embeddings, self.embedding_dim,
-                self.num_embeddings_per_partition, 0, init_method)
+                self.num_embeddings_per_partition, 0, init_method, self=self)
 
     def forward(self, input_):
         # Build the mask.
@@ -144,75 +140,31 @@ class VocabParallelEmbedding(torch.nn.Module):
             ).detach())
         del self.original_weight
 
-    def partition(self, new_model_parallel_size=None):
-        assert self.num_embeddings_per_partition == self.num_embeddings
+    def partition(self, new_model_parallel_size=None, full_weight=None):
+        assert self.num_embeddings_per_partition == self.num_embeddings or full_weight is not None
+        flag = 1
+        if full_weight is None:
+            full_weight = self.weight
+            flag = 2
         if new_model_parallel_size is None:
             new_model_parallel_size = get_model_parallel_world_size()
         new_weights = []
         for rank in range(new_model_parallel_size):
-            self.vocab_start_index, self.vocab_end_index = \
+            vocab_start_index, vocab_end_index = \
                 VocabUtility.vocab_range_from_global_vocab_size(
                     self.num_embeddings, rank,
                     new_model_parallel_size)
-            self.num_embeddings_per_partition = self.vocab_end_index - \
-                                                self.vocab_start_index
             weight = torch.clone(
-                self.weight[self.vocab_start_index:self.vocab_end_index],
+                full_weight[vocab_start_index:vocab_end_index],
                 ).detach()
             new_weights.append(weight)
-        return new_weights, []
+        if flag == 1:
+            return new_weights
+        else:
+            return new_weights, []
     
     def merge(self, new_weights, new_biases):
         self.weight.data.copy_(torch.cat(new_weights))
-
-
-class ParallelEmbedding(torch.nn.Module):
-    """Embedding parallelized in the embedding dimension.
-
-    This is mainly adapted from torch.nn.Embedding and all the default
-    values are kept.
-    Arguments:
-        num_embeddings: vocabulary size.
-        embedding_dim: size of hidden state.
-        init_method: method to initialize weights.
-    """
-    def __init__(self, num_embeddings, embedding_dim, params_dtype=torch.float, init_method=unscaled_init_method(0.02),keep_master_weight_for_test=False, skip_init=False, device=torch.device('cpu')):
-        super(ParallelEmbedding, self).__init__()
-        # Keep the input dimensions.
-        self.num_embeddings = num_embeddings
-        self.embedding_dim = embedding_dim
-        # Set some detauls for compatibility.
-        self.padding_idx = None
-        self.max_norm = None
-        self.norm_type = 2.
-        self.scale_grad_by_freq = False
-        self.sparse = False
-        self._weight = None
-        # Divide the weight matrix along the embedding dimension.
-        world_size = get_model_parallel_world_size()
-        self.embedding_dim_per_partition = divide(self.embedding_dim,
-                                                  world_size)
-
-        # Allocate weights.
-        self.weight = Parameter(torch.empty(self.num_embeddings,
-                                             self.embedding_dim_per_partition, dtype=params_dtype,
-                                             device=device))
-        self.weight.model_parallel = True
-        # And initialize.
-        if not skip_init:
-            _initialize_affine_weight(
-                self.weight, self.num_embeddings, self.embedding_dim,
-                self.embedding_dim_per_partition, 1, init_method,
-                stride=1, return_master_weight=False)
-
-    def forward(self, input_):
-        input_parallel = copy_to_model_parallel_region(input_)
-        output_parallel = F.embedding(input_parallel, self.weight,
-                                      self.padding_idx, self.max_norm,
-                                      self.norm_type, self.scale_grad_by_freq,
-                                      self.sparse)
-        output = gather_from_model_parallel_region(output_parallel)
-        return output
 
 
 class ColumnParallelLinear(torch.nn.Module):
@@ -270,7 +222,7 @@ class ColumnParallelLinear(torch.nn.Module):
             self.master_weight = _initialize_affine_weight(
                 self.weight, self.output_size, self.input_size,
                 self.output_size_per_partition, 0, init_method,
-                stride=self.stride, return_master_weight=keep_master_weight_for_test, module=module, name=name)
+                stride=self.stride, return_master_weight=keep_master_weight_for_test, module=module, name=name, self=self)
 
     def forward(self, input_):
         # Set up backprop all-reduce, and don't change the input.
@@ -328,8 +280,12 @@ class ColumnParallelLinear(torch.nn.Module):
             self.bias = torch.nn.Parameter(new_bias)
             del self.original_bias
 
-    def partition(self, new_model_parallel_size=None):
-        assert self.output_size_per_partition == self.output_size
+    def partition(self, new_model_parallel_size=None, full_weight=None):
+        assert self.output_size_per_partition == self.output_size or full_weight is not None
+        flag = 1
+        if full_weight is None:
+            full_weight = self.weight
+            flag = 2
         if new_model_parallel_size is None:
             new_model_parallel_size = get_model_parallel_world_size()
         output_size_per_partition = divide(self.output_size, new_model_parallel_size)
@@ -339,15 +295,15 @@ class ColumnParallelLinear(torch.nn.Module):
         mp_size = new_model_parallel_size
         # weight is arranged as [stride0...stride1...stride2] * [input_size], extract non-contiguous parts
         strides = [1]*self.stride if isinstance(self.stride, int) else self.stride # int means equal number of qkv, or ratios
-        assert self.weight.shape[0] % sum(strides) == 0, 'cannot divide weight evenly'
-        factor = self.weight.shape[0] // sum(strides)
+        assert full_weight.shape[0] % sum(strides) == 0, 'cannot divide weight evenly'
+        factor = full_weight.shape[0] // sum(strides)
         # decompose weight according to strides
         strided_weights, _acm = [], 0
         for i in range(len(strides)):
-            strided_weights.append(self.weight[_acm:_acm+factor*strides[i], :].detach())
+            strided_weights.append(full_weight[_acm:_acm+factor*strides[i], :].detach())
             _acm += factor*strides[i]
 
-        if self.bias is not None and self.bias.numel() != 0:
+        if flag == 2 and self.bias is not None and self.bias.numel() != 0:
             # decompose bias according to strides
             strided_biases, _acm = [], 0
             for i in range(len(strides)):
@@ -364,7 +320,7 @@ class ColumnParallelLinear(torch.nn.Module):
                 for strided_weight in strided_weights
             ], dim=0).contiguous().view(output_size_per_partition, self.input_size)
             new_weights.append(torch.clone(new_weight).detach())
-            if self.bias is not None and self.bias.numel() != 0:
+            if flag == 2 and self.bias is not None and self.bias.numel() != 0:
                 new_bias = torch.cat([
                     strided_bias[
                         (strided_bias.shape[0]//mp_size)*mp_rank:
@@ -373,7 +329,10 @@ class ColumnParallelLinear(torch.nn.Module):
                     for strided_bias in strided_biases
                 ], dim=0).contiguous().view(output_size_per_partition)
                 new_biases.append(torch.clone(new_bias).detach())
-        return new_weights, new_biases
+        if flag == 1:
+            return new_weights
+        else:
+            return new_weights, new_biases
     
     def merge(self, new_weights, new_biases):
         strides = [1]*self.stride if isinstance(self.stride, int) else self.stride # int means equal number of qkv, or ratios
@@ -457,7 +416,7 @@ class RowParallelLinear(torch.nn.Module):
             self.master_weight = _initialize_affine_weight(
                 self.weight, self.output_size, self.input_size,
                 self.input_size_per_partition, 1, init_method,
-                stride=stride, return_master_weight=keep_master_weight_for_test, module=module, name=name)
+                stride=stride, return_master_weight=keep_master_weight_for_test, module=module, name=name, self=self)
 
     def forward(self, input_):
         # Split the input vector along the last dimension.
@@ -491,8 +450,12 @@ class RowParallelLinear(torch.nn.Module):
             ).detach())
         del self.original_weight
 
-    def partition(self, new_model_parallel_size=None):
-        assert self.input_size_per_partition == self.input_size
+    def partition(self, new_model_parallel_size=None, full_weight=None):
+        assert self.input_size_per_partition == self.input_size or full_weight is not None
+        flag = 1
+        if full_weight is None:
+            full_weight = self.weight
+            flag = 2
         if new_model_parallel_size is None:
             new_model_parallel_size = get_model_parallel_world_size()
         input_size_per_partition = divide(self.input_size, new_model_parallel_size)
@@ -501,13 +464,16 @@ class RowParallelLinear(torch.nn.Module):
         for rank in range(new_model_parallel_size):
             mp_rank = rank
             weight = torch.clone(
-                self.weight[:, mp_rank*input_size_per_partition
+                full_weight[:, mp_rank*input_size_per_partition
                                 :(mp_rank+1)*input_size_per_partition],
                 ).detach()
             new_weights.append(weight)
-            if self.bias is not None and self.bias.numel() != 0:
+            if flag == 2 and self.bias is not None and self.bias.numel() != 0:
                 new_biases.append(torch.clone(self.bias.data).detach())
-        return new_weights, new_biases
+        if flag == 1:
+            return new_weights
+        else:
+            return new_weights, new_biases
     
     def merge(self, new_weights, new_biases):
         self.weight.data.copy_(torch.cat(new_weights, 1))
