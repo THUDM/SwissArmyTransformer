@@ -205,9 +205,10 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
             args = cls.get_args()
         args = update_args_with_file(args, path=os.path.join(model_path, 'model_config.json'))
         args = overwrite_args_by_dict(args, overwrite_args=overwrite_args)
+        specific_iteration = kwargs.pop('specific_iteration', None)
         model = get_model(args, cls, **kwargs)
         if not build_only:
-            load_checkpoint(model, args, load_path=model_path, prefix=prefix)
+            load_checkpoint(model, args, load_path=model_path, prefix=prefix, specific_iteration=specific_iteration)
         return model, args
     
     @classmethod

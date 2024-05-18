@@ -257,7 +257,7 @@ def get_checkpoint_iteration(load_path):
     return iteration, release, True
 
 
-def load_checkpoint(model, args, load_path=None, prefix=''):
+def load_checkpoint(model, args, load_path=None, prefix='', specific_iteration=None):
     """Load a model checkpoint."""
     if load_path is None:
         load_path = args.load
@@ -269,6 +269,11 @@ def load_checkpoint(model, args, load_path=None, prefix=''):
         args.mode = 'inference'
 
     iteration, release, success = get_checkpoint_iteration(load_path)
+    if specific_iteration is not None:
+        assert type(specific_iteration) == int and specific_iteration > 0
+        print_rank0('Overriding checkpoint iteration to {}'.format(specific_iteration))
+        iteration = specific_iteration
+        
     if not success:
         return 0
     
