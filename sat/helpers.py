@@ -164,4 +164,4 @@ def get_free_port():
     return port
 
 def check_if_zero3(args):
-    return hasattr(args, 'deepspeed_config') and (args.deepspeed_config.get('zero_optimization',{}).get('stage', 0) >= 3)
+    return hasattr(args, 'deepspeed_config') and (args.deepspeed_config is not None) and (args.deepspeed_config.get('zero_optimization',{}).get('stage', 0) >= 3)
