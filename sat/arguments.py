@@ -173,6 +173,8 @@ def add_training_args(parser):
                        help='Output directory to save checkpoints to.')
     group.add_argument('--load', type=str, default=None,
                        help='Path to a directory containing a model checkpoint.')
+    group.add_argument('--force-train', action='store_true',
+                       help='Force training even with missing keys.')
     group.add_argument('--save-interval', type=int, default=5000,
                        help='number of iterations between saves')
     group.add_argument('--no-save-rng', action='store_true',
