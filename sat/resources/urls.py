@@ -14,6 +14,7 @@ MODEL_URLS = {
     'chatglm3-6b': 'r2://chatglm3-6b.zip',
     'chatglm3-6b-base': 'r2://chatglm3-6b-base.zip',
     'chatglm3-6b-32k': 'r2://chatglm3-6b-32k.zip',
+    'glm4v-9b-chat': 'r2://glm4v-9b-chat.zip',
     'eva02_L_pt_m38m_p14': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Feva02_L_pt_m38m_p14.zip&dl=1',
     'llama-7b': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fllama-7b.zip&dl=1',
     'llama-13b': 'https://cloud.tsinghua.edu.cn/d/dd80f9d39d454bc29ce4/files/?p=%2Fllama-13b.zip&dl=1',

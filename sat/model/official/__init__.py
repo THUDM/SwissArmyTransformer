@@ -18,5 +18,7 @@ from .eva2_model import EVA2Model
 from .llama_model import LLaMAModel
 from .chatglm2_model import ChatGLM2Model
 from .chatglm3_model import ChatGLM3Model
+from .chatglm4_model import ChatGLM4Model
+from .glm4v_model import GLM4VModel
 from .mixtral_model import MixtralModel
 from .eva_clip_model import EVA2CLIPModel
