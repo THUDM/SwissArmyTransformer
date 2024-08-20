@@ -288,8 +288,11 @@ def get_optimizer_param_groups(model):
     # Add model parallel attribute if it is not set.
     for param_group in param_groups:
         for param in param_group['params']:
-            if not hasattr(param, 'model_parallel'):
+            if not hasattr(param, 'model_parallel') and not hasattr(param, 'tensor_model_parallel'):
                 param.model_parallel = False
+                param.tensor_model_parallel = False
+            else:
+                assert hasattr(param, 'model_parallel') and hasattr(param, 'tensor_model_parallel'), "model_parallel and tensor_model_parallel should both be set or unset!"
     return param_groups
 
 

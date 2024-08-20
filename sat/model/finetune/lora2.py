@@ -111,6 +111,7 @@ class LoraLinear(nn.Module):
                 nn.init.kaiming_uniform_(self.matrix_A[i], a=math.sqrt(5))
                 nn.init.zeros_(self.matrix_B[i])
                 self.matrix_B[i].model_parallel = True
+                self.matrix_B[i].tensor_model_parallel = True
         else:
             new_sizes = [original_obj.weight.shape[0] // sum(partition) * i for i in partition]
             self.matrix_A = HackParameterList([nn.Parameter(torch.empty((r, original_obj.weight.shape[1]), dtype=dtype)) for _ in partition])
@@ -119,6 +120,7 @@ class LoraLinear(nn.Module):
                 nn.init.kaiming_uniform_(self.matrix_A[i], a=math.sqrt(5))
                 nn.init.zeros_(self.matrix_B[i])
                 self.matrix_B[i].model_parallel = True
+                self.matrix_B[i].tensor_model_parallel = True
         self.partition = partition
 
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):

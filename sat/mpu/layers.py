@@ -102,6 +102,7 @@ class VocabParallelEmbedding(torch.nn.Module):
                                              self.embedding_dim, dtype=params_dtype,
                                              device=device))
         self.weight.model_parallel = True
+        self.weight.tensor_model_parallel = True
         # And initialize.
         if not skip_init:
             _initialize_affine_weight(
@@ -208,9 +209,11 @@ class ColumnParallelLinear(torch.nn.Module):
                                              self.input_size, dtype=params_dtype,
                                              device=device))
         self.weight.model_parallel = True
+        self.weight.tensor_model_parallel = True
         if bias:
             self.bias = Parameter(torch.empty(self.output_size_per_partition,dtype=params_dtype, device=device))
             self.bias.model_parallel = True
+            self.bias.tensor_model_parallel = True
             # Always initialize bias to zero.
             with torch.no_grad():
                 self.bias.zero_()
@@ -403,6 +406,7 @@ class RowParallelLinear(torch.nn.Module):
         self.weight = Parameter(torch.empty(self.output_size,
                                              self.input_size_per_partition, dtype=params_dtype, device=device))
         self.weight.model_parallel = True
+        self.weight.tensor_model_parallel = True
         if bias:
             self.bias = Parameter(torch.empty(self.output_size, dtype=params_dtype, device=device))
             # Always initialize bias to zero.
