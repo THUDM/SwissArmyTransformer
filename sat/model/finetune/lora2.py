@@ -35,25 +35,16 @@ class HackColumnParallelLinear(ColumnParallelLinear):
 
 try:
     from bitsandbytes.nn import LinearNF4
-    def copy_nested_list(src, dst):
-        for i in range(len(dst)):
-            if type(dst[i]) is torch.Tensor:
-                dst[i].copy_(src[i])
-            elif type(dst[i]) is list:
-                copy_nested_list(src[i], dst[i])
-            else:
-                dst[i] = src[i]
+    from bitsandbytes.functional import QuantState
     class HackLinearNF4(LinearNF4):
         def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
             if prefix + 'weight' in state_dict:
                 self.weight.data.copy_(state_dict[prefix+'weight'])
                 if self.weight.data.dtype == torch.uint8:
-                    copy_nested_list(state_dict[prefix+'quant_state'], self.weight.quant_state)
+                    quant_dict = {k[len(prefix+'weight.'):]: v for k,v in state_dict.items() if k.startswith(prefix+'weight.')}
+                    self.weight.quant_state = QuantState.from_dict(quant_dict, device=self.weight.data.device)
             if prefix + 'bias' in state_dict:
                 self.bias.data.copy_(state_dict[prefix+'bias'])
-        def _save_to_state_dict(self, destination, prefix, keep_vars):
-            super()._save_to_state_dict(destination, prefix, keep_vars)
-            destination[prefix+'quant_state'] = self.weight.quant_state
 except Exception as exception:
     print_all("Failed to load bitsandbytes:" + str(exception), level='WARNING')
 
