@@ -82,6 +82,7 @@ class LoraLinear(nn.Module):
         self.lora_alpha = lora_alpha
         self.scaling = self.lora_alpha / self.r
         bias = original_obj.bias is not None
+        dtype = original_obj.weight.dtype
         if qlora:
             try:
                 self.original = HackLinearNF4(in_dim, out_dim, bias=bias)
@@ -89,7 +90,6 @@ class LoraLinear(nn.Module):
                 raise Exception('Build 4bit layer failed. You need to install the latest bitsandbytes. Try `pip install bitsandbytes`. If you still meet error after installation, try running `from bitsandbytes.nn import LinearNF4` with python and fix the error.')
         else:
             base_cls, kwargs = map_cls[original_cls]
-            dtype = original_obj.weight.dtype
             if original_cls is ColumnParallelLinear:
                 kwargs['stride'] = partition
                 kwargs['skip_init'] = True
