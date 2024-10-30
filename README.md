@@ -1,7 +1,7 @@
 # Introduction
 `sat`(`SwissArmyTransformer`) is a flexible and powerful library to develop your own Transformer variants.
 
-`sat` is named after "swiss army knife", meaning that all the models (e.g. BERT, GPT, T5, GLM, CogView, ViT...) **share the same backone code** and cater for versatile usages with some extra light-weight mixins. 
+`sat` is named after "swiss army knife", meaning that all the models (e.g. BERT, GPT, T5, GLM, CogView, ViT...) **share the same backbone code** and cater for versatile usages with some extra light-weight mixins. 
 
 `sat` is powered by `deepspeed-ZeRO` and model parallelism, aiming to provide the best practice for pretraining and finetuning large models (100M\~20B parameters). 
 
