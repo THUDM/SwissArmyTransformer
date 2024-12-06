@@ -76,7 +76,6 @@ def initialize_model_parallel(model_parallel_size_, sequence_parallel_size_: int
     with a total of 16 GPUs, rank 0 to 7 belong to the first box and
     ranks 8 to 15 belong to the second box.
     """
-    print(f"aha_{model_parallel_size_=}, {sequence_parallel_size_=}, {num_multi_query_heads_=}")
     if torch.distributed.get_rank() == 0:
         print_rank0('> initializing model parallel with size {}'.format(
             model_parallel_size_))
