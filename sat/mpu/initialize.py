@@ -26,12 +26,38 @@ from sat.helpers import print_rank0
 _MODEL_PARALLEL_GROUP = None
 # Data parallel group that the current rank belongs to.
 _DATA_PARALLEL_GROUP = None
+
+_SEQUENCE_PARALLEL_GROUP = None
+_SEQUENCE_PARALLEL_WORLD_SIZE = None
+_SEQUENCE_PARALLEL_RANK = None
+
+_SEQUENCE_DATA_PARALLEL_GROUP = None
+_SEQUENCE_DATA_PARALLEL_WORLD_SIZE = None
+_SEQUENCE_DATA_PARALLEL_RANK = None
+
+_SEQUENCE_PARALLEL_GQA_GROUP = None
+_SEQUENCE_PARALLEL_GQA_WORLD_SIZE = None
+_SEQUENCE_PARALLEL_GQA_INDEX = None
+
 # Node group that current rank belongs to.
 _NODE_GROUP = None
 
 import os
 
-def initialize_model_parallel(model_parallel_size_):
+def get_gqa_group(cur_rank, num_multi_query_heads, group_ranks):
+    group_size = len(group_ranks)
+    gqa_len = group_size // num_multi_query_heads
+
+    rank_indx = group_ranks.index(cur_rank)
+    if (rank_indx + 1) % gqa_len == 0:
+        gqa_indx = (rank_indx + 1) // gqa_len
+    else:
+        gqa_indx = (rank_indx + 1) // gqa_len + 1
+    start = (gqa_indx-1) * gqa_len
+    end = gqa_indx * gqa_len
+    return start, end, gqa_indx - 1
+
+def initialize_model_parallel(model_parallel_size_, sequence_parallel_size_: int = 1, num_multi_query_heads_: int = 0):
     """
     Initialize model data parallel groups.
 
@@ -50,6 +76,7 @@ def initialize_model_parallel(model_parallel_size_):
     with a total of 16 GPUs, rank 0 to 7 belong to the first box and
     ranks 8 to 15 belong to the second box.
     """
+    print(f"aha_{model_parallel_size_=}, {sequence_parallel_size_=}, {num_multi_query_heads_=}")
     if torch.distributed.get_rank() == 0:
         print_rank0('> initializing model parallel with size {}'.format(
             model_parallel_size_))
@@ -57,17 +84,25 @@ def initialize_model_parallel(model_parallel_size_):
     assert torch.distributed.is_initialized()
     world_size = torch.distributed.get_world_size()
     model_parallel_size = min(model_parallel_size_, world_size)
-    ensure_divisibility(world_size, model_parallel_size)
+    sequence_parallel_size = max(sequence_parallel_size_, 1)
+    if model_parallel_size != 1 and sequence_parallel_size != 1:
+        raise ValueError('not support sp with tp')
+    assert world_size >= model_parallel_size * sequence_parallel_size, f"{world_size=}, {model_parallel_size=}, {sequence_parallel_size=}"
+    ensure_divisibility(world_size, model_parallel_size * sequence_parallel_size)
+    data_parallel_size = world_size // (model_parallel_size * sequence_parallel_size)
+    num_sequence_parallel_groups = world_size // sequence_parallel_size
+    num_sequence_data_parallel_groups: int = world_size // sequence_parallel_size // data_parallel_size
+
     rank = torch.distributed.get_rank()
 
     # Build the data parallel groups.
     global _DATA_PARALLEL_GROUP
     assert _DATA_PARALLEL_GROUP is None, \
         'data parallel group is already initialized'
-    for i in range(model_parallel_size):
-        ranks = range(i, world_size, model_parallel_size)
-        group = torch.distributed.new_group(ranks)
-        if i == (rank % model_parallel_size):
+    for i in range(model_parallel_size * sequence_parallel_size):
+        ranks = range(i, world_size, model_parallel_size * sequence_parallel_size)
+        group = torch.distributed.new_group(ranks, group_desc="data_parallel_group")
+        if i == (rank % (model_parallel_size * sequence_parallel_size)):
             _DATA_PARALLEL_GROUP = group
 
     # Build the model parallel groups.
@@ -77,10 +112,38 @@ def initialize_model_parallel(model_parallel_size_):
     for i in range(world_size // model_parallel_size):
         ranks = range(i * model_parallel_size,
                       (i + 1) * model_parallel_size)
-        group = torch.distributed.new_group(ranks)
+        group = torch.distributed.new_group(ranks, group_desc="model_parallel_group")
         if i == (rank // model_parallel_size):
             _MODEL_PARALLEL_GROUP = group
-    
+
+    global _SEQUENCE_PARALLEL_GROUP
+    for i in range(num_sequence_parallel_groups):
+        ranks = range(i * sequence_parallel_size,
+                      (i + 1) * sequence_parallel_size)
+        group = torch.distributed.new_group(ranks)
+        if rank in ranks:
+            _SEQUENCE_PARALLEL_GROUP = group
+
+            if num_multi_query_heads_ != 0 and num_multi_query_heads_ < sequence_parallel_size:
+                ensure_divisibility(sequence_parallel_size, num_multi_query_heads_)
+                global _SEQUENCE_PARALLEL_GQA_GROUP, _SEQUENCE_PARALLEL_GQA_INDEX
+                start, end, gqa_indx = get_gqa_group(rank, num_multi_query_heads_, ranks)
+                print(f"{rank=}, {start=}, {end=}, {gqa_indx=}")
+                _SEQUENCE_PARALLEL_GQA_GROUP = torch.distributed.new_group(ranks[start:end], group_desc="gqa_group")
+                _SEQUENCE_PARALLEL_GQA_INDEX = gqa_indx
+
+    # In backward, dp_group and seq_group params grads need to be allreduced
+    sequence_data_parallel_size: int = sequence_parallel_size * data_parallel_size
+    if sequence_parallel_size > 1:
+        for i in range(num_sequence_data_parallel_groups):
+            ranks = range(i * sequence_data_parallel_size,
+                        (i + 1) * sequence_data_parallel_size)
+            group = torch.distributed.new_group(ranks)
+            if rank in ranks:
+                _SEQUENCE_DATA_PARALLEL_GROUP = group
+    else:
+        _SEQUENCE_DATA_PARALLEL_GROUP = _DATA_PARALLEL_GROUP
+
     guess_local_world_size = world_size if world_size < 8 else 8
     local_world_size = os.environ.get('LOCAL_WORLD_SIZE', None)
     if local_world_size is None:
@@ -105,6 +168,13 @@ def model_parallel_is_initialized():
         return False
     return True
 
+def sequence_parallel_is_initialized():
+    """Check if sequence and data parallel groups are initialized."""
+    if _SEQUENCE_PARALLEL_GROUP is None or \
+        _DATA_PARALLEL_GROUP is None:
+        return False
+    return True
+
 
 def get_model_parallel_group():
     """Get the model parallel group the caller rank belongs to."""
@@ -119,6 +189,11 @@ def get_data_parallel_group():
         'data parallel group is not initialized'
     return _DATA_PARALLEL_GROUP
 
+def get_sequence_data_parallel_group():
+    """Get the sequence parallel group the caller rank belongs to."""
+    assert _SEQUENCE_DATA_PARALLEL_GROUP is not None, \
+        'sequence data parallel group is not initialized'
+    return _SEQUENCE_DATA_PARALLEL_GROUP
 
 def get_node_group():
     """Get the data parallel group the caller rank belongs to."""
@@ -141,6 +216,9 @@ def get_model_parallel_rank():
     """Return my rank for the model parallel group."""
     return torch.distributed.get_rank(group=get_model_parallel_group())
 
+def get_sequence_parallel_rank():
+    """Return my rank for the model parallel group."""
+    return torch.distributed.get_rank(group=get_sequence_parallel_group())
 
 def get_node_rank():
     """Return my rank for the node group."""
@@ -152,6 +230,13 @@ def get_model_parallel_src_rank():
     in the model parallel group."""
     global_rank = torch.distributed.get_rank()
     local_world_size = get_model_parallel_world_size()
+    return (global_rank // local_world_size) * local_world_size
+
+def get_sequence_parallel_src_rank():
+    """Calculate the global rank corresponding to a local rank zero
+    in the model parallel group."""
+    global_rank = torch.distributed.get_rank()
+    local_world_size = get_sequence_parallel_world_size()
     return (global_rank // local_world_size) * local_world_size
 
 
@@ -172,6 +257,37 @@ def get_data_parallel_rank():
     """Return my rank for the data parallel group."""
     return torch.distributed.get_rank(group=get_data_parallel_group())
 
+def get_sequence_parallel_group():
+    """Get the sequence parallel group the caller rank belongs to."""
+    assert _SEQUENCE_PARALLEL_GROUP is not None, \
+        'sequence parallel group is not initialized'
+    return _SEQUENCE_PARALLEL_GROUP
+
+def get_sequence_parallel_world_size():
+    """Return world size for the sequence parallel group."""
+    global _SEQUENCE_PARALLEL_WORLD_SIZE
+    if _SEQUENCE_PARALLEL_WORLD_SIZE is not None:
+        return _SEQUENCE_PARALLEL_WORLD_SIZE
+    return torch.distributed.get_world_size(group=get_sequence_parallel_group())
+
+def get_sequence_parallel_gqa_group():
+    """Get the sequence parallel group the caller rank belongs to."""
+    assert _SEQUENCE_PARALLEL_GQA_GROUP is not None, \
+        'sequence parallel group is not initialized'
+    return _SEQUENCE_PARALLEL_GQA_GROUP
+
+def get_sequence_parallel_gqa_index():
+    """Get the sequence parallel gqa index the caller rank belongs to."""
+    assert _SEQUENCE_PARALLEL_GQA_INDEX is not None, \
+        'sequence parallel gqa index is not initialized'
+    return _SEQUENCE_PARALLEL_GQA_INDEX
+
+def get_sequence_parallel_gqa_world_size():
+    """Return world size for the sequence parallel group."""
+    global _SEQUENCE_PARALLEL_GQA_WORLD_SIZE
+    if _SEQUENCE_PARALLEL_GQA_WORLD_SIZE is not None:
+        return _SEQUENCE_PARALLEL_GQA_WORLD_SIZE
+    return torch.distributed.get_world_size(group=get_sequence_parallel_gqa_group())
 
 def destroy_model_parallel():
     """Set the groups to none."""

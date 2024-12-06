@@ -18,8 +18,8 @@ OPTIONS_NCCL="NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2"
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
-train_data="./AdvertiseGen/train.json"
-eval_data="./AdvertiseGen/dev.json"
+train_data="/inference/liji/sat/SwissArmyTransformer/examples/chatglm3/data/AdvertiseGen/train.json"
+eval_data="/inference/liji/sat/SwissArmyTransformer/examples/chatglm3/data/AdvertiseGen/dev.json"
 
 
 gpt_options=" \
@@ -51,7 +51,7 @@ gpt_options=" \
 
               
 
-run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} deepspeed --master_port 16666 --include localhost:0 --hostfile ${HOST_FILE_PATH} finetune_chatglm2.py ${gpt_options}"
+run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} /root/.local/bin/deepspeed --master_port 16666 --include localhost:0 --hostfile ${HOST_FILE_PATH} finetune_chatglm2.py ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

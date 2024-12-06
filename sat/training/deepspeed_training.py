@@ -190,7 +190,7 @@ def setup_model_untrainable_params_and_optimizer(args, model, config_params=None
         print_rank0('Syncing initialized parameters...')
         for param_group in param_groups:
             for param in param_group['params']:
-                if not param.model_parallel:
+                if not param.model_parallel or mpu.get_model_parallel_world_size() == 1:
                     # We already keep the same random seed for different ranks
                     # However, it is not reliable. Non-model-parallel parameters could be different when initialization.
                     dist.broadcast(

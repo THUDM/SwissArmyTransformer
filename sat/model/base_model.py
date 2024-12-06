@@ -257,7 +257,7 @@ class BaseModel(torch.nn.Module, metaclass=MetaModel):
                     model_full, args_ = cls.from_pretrained_base(name, args=args, home_path=home_path, url=url, prefix=prefix, build_only=True, overwrite_args=overwrite_args, **kwargs)
                 torch.distributed.barrier()
                 destroy_model_parallel()
-                initialize_model_parallel(model_args.model_parallel_size)
+                initialize_model_parallel(model_args.model_parallel_size, model_args.sequence_parallel_size)
                 if rank == 0:
                     mp_merge_model_rank0(model, model_full)
                     model, model_args = model_full, args_

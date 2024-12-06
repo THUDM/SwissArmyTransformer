@@ -65,6 +65,8 @@ def add_model_config_args(parser):
     # TODO: fully test it, support the generation.
     group.add_argument('--model-parallel-size', type=int, default=1,
                        help='size of the model parallel. only use if you are an expert.')
+    group.add_argument('--sequence-parallel-size', type=int, default=1,
+                       help='size of the model parallel. only use if you are an expert.')
 
     group.add_argument('--skip-init', action='store_true',
                        help='skip model initialization')
@@ -519,7 +521,7 @@ def initialize_distributed(args):
     if args.device == 'cpu':
         pass
     else:
-        torch.cuda.set_device(args.device)
+        torch.cuda.set_device(f"cuda:{args.device}")
     # Call the init process
     init_method = 'tcp://'
     args.master_ip = os.getenv('MASTER_ADDR', 'localhost')
@@ -534,10 +536,10 @@ def initialize_distributed(args):
     torch.distributed.init_process_group(
         backend=args.distributed_backend,
         world_size=args.world_size, rank=args.rank,
-        init_method=init_method)
+        init_method=init_method, device_id=torch.device(f"cuda:{args.rank}"))
 
     # Set the model-parallel / data-parallel communicators.
-    mpu.initialize_model_parallel(args.model_parallel_size)
+    mpu.initialize_model_parallel(args.model_parallel_size, args.sequence_parallel_size, args.num_multi_query_heads)
     # Optional DeepSpeed Activation Checkpointing Features
     if args.deepspeed: 
         import deepspeed

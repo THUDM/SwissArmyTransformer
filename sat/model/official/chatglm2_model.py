@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import sat.mpu as mpu
 from sat.model.base_model import BaseMixin, BaseModel
 from sat.mpu.utils import split_tensor_along_last_dim
 
@@ -8,7 +9,8 @@ from sat.ops.layernorm import RMSNorm
 from sat.transformer_defaults import attention_fn_default
 from sat.model.position_embedding.triton_rotary_embeddings import FastRotaryEmbedding
 from sat.mpu.layers import ColumnParallelLinear
-
+from sat.mpu.ulysses_attn_layer import UlyssesAttention
+from functools import partial
 class ChatGLM2AttnMixin(BaseMixin):
     def __init__(self, hidden_size, num_heads, max_seq_len):
         super().__init__()
@@ -56,6 +58,60 @@ class ChatGLM2AttnMixin(BaseMixin):
             output = self.output_dropout(output)
         return output
 
+class ChatGLM2UlyssesAttnMixin(BaseMixin):
+    def __init__(self, hidden_size, num_heads, max_seq_len):
+        super().__init__()
+        rotary_dim = hidden_size // num_heads
+        self.rotary_pos_emb = FastRotaryEmbedding(rotary_dim // 2, interleaved=True)
+        self.max_seq_len = max_seq_len
+        self.dist_attn = UlyssesAttention()
+
+    def attention_forward(self, hidden_states, mask, **kw_args):
+        origin = self
+        self = self.transformer.layers[kw_args['layer_id']].attention
+        attention_fn = attention_fn_default
+        if 'attention_fn' in self.hooks:
+            attention_fn = self.hooks['attention_fn']
+
+        mixed_raw_layer = self.query_key_value(hidden_states)
+        (mixed_query_layer,
+            mixed_key_layer,
+            mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, self.stride)
+
+        dropout_fn = self.attention_dropout if self.training else None
+
+        # (b, s, np * hn) -> (b, np, s, hn)
+        query_layer = self._transpose_for_scores(mixed_query_layer)
+        key_layer = self._transpose_for_scores(mixed_key_layer)
+        value_layer = self._transpose_for_scores(mixed_value_layer)
+
+        max_seq_len = kw_args['position_ids'].max() + 1
+        query_layer, key_layer = origin.rotary_pos_emb(query_layer, key_layer, kw_args['position_ids'], max_seqlen=max_seq_len)
+
+        if kw_args.get('past_key_values', None) is not None:
+            pack = kw_args['past_key_values'][kw_args['layer_id']]
+            if pack is not None:
+                past_key, past_value = pack
+                key_layer = torch.cat((past_key, key_layer), dim=2)
+                value_layer = torch.cat((past_value, value_layer), dim=2)
+        kw_args['output_this_layer']['past_key_values'] = (key_layer, value_layer)
+        if type(attention_fn) == partial:
+            fn = partial(attention_fn.func, None, None, None, mask, dropout_fn, **attention_fn.keywords, **kw_args)
+        else:
+            fn = partial(attention_fn, None, None, None, mask, dropout_fn, **kw_args)
+
+        context_layer = origin.dist_attn(
+            query_layer, key_layer, value_layer, fa_fn=fn, need_transposed=True
+        )
+        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
+        context_layer = context_layer.view(*new_context_layer_shape)
+        output = self.dense(context_layer)
+
+        if self.training:
+            output = self.output_dropout(output)
+        return output
+
 class SwiGLUMixin(BaseMixin):
     def __init__(self, num_layers, in_features, hidden_features, bias=False):
         super().__init__()
@@ -88,7 +144,11 @@ class ChatGLM2Model(BaseModel):
         super(ChatGLM2Model, self).__init__(args, transformer=transformer, activation_func=F.silu, layernorm=RMSNorm, **kwargs)
         del self.transformer.position_embeddings
         self.add_mixin("chatglm-final", ChatGLMFinalMixin(args.vocab_size, args.hidden_size))
-        self.add_mixin("attn", ChatGLM2AttnMixin(args.hidden_size, args.num_attention_heads, args.max_sequence_length))
+        if mpu.get_sequence_parallel_world_size() > 1:
+            self.add_mixin("attn", ChatGLM2UlyssesAttnMixin(args.hidden_size, args.num_attention_heads, args.max_sequence_length))
+        else:
+            self.add_mixin("attn", ChatGLM2AttnMixin(args.hidden_size, args.num_attention_heads, args.max_sequence_length))
+
         if not (hasattr(args, 'is_gated_mlp') and args.is_gated_mlp):
             self.add_mixin("mlp", SwiGLUMixin(args.num_layers, args.hidden_size, args.inner_hidden_size, bias=args.use_bias))
 

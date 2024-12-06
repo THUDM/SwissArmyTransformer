@@ -18,7 +18,11 @@ import torch
 from .initialize import get_model_parallel_group
 from .initialize import get_model_parallel_rank
 from .initialize import get_model_parallel_src_rank
-
+from .initialize import get_sequence_parallel_group
+from .initialize import get_sequence_parallel_rank
+from .initialize import get_sequence_parallel_src_rank
+from .initialize import sequence_parallel_is_initialized
+from .initialize import get_sequence_parallel_world_size
 
 _MAX_DATA_DIM = 5
 
@@ -36,7 +40,7 @@ def _build_key_size_numel_dictionaries(keys, data):
     sizes = [0 for _ in range(max_dim) for _ in keys]
 
     # Pack the sizes on rank zero.
-    if get_model_parallel_rank() == 0:
+    if get_model_parallel_rank() == 0 or get_sequence_parallel_rank() == 0:
         offset = 0
         for key in keys:
             assert data[key].dim() < max_dim, 'you should increase MAX_DATA_DIM'
@@ -49,6 +53,8 @@ def _build_key_size_numel_dictionaries(keys, data):
     sizes_cuda = torch.tensor(sizes, dtype=torch.long, device=torch.cuda.current_device())
     torch.distributed.broadcast(sizes_cuda, get_model_parallel_src_rank(),
                                 group=get_model_parallel_group())
+    torch.distributed.broadcast(sizes_cuda, get_sequence_parallel_src_rank(),
+                                group=get_sequence_parallel_group())
 
     # Move back to cpu and unpack.
     sizes_cpu = sizes_cuda.cpu()
@@ -89,7 +95,7 @@ def broadcast_data(keys, data, datatype):
                                                                           data)
 
     # Pack on rank zero.
-    if get_model_parallel_rank() == 0:
+    if get_model_parallel_rank() == 0 or get_sequence_parallel_rank() == 0:
         # Check that all keys have the same data type.
         _check_data_types(keys, data, datatype)
         # Flatten the data associated with the keys
@@ -103,6 +109,9 @@ def broadcast_data(keys, data, datatype):
     # Boradcast
     torch.distributed.broadcast(flatten_data, get_model_parallel_src_rank(),
                                 group=get_model_parallel_group())
+    torch.distributed.broadcast(flatten_data, get_sequence_parallel_src_rank(),
+                                group=get_sequence_parallel_group())
+
 
     # Unpack
     output = {}
@@ -112,5 +121,9 @@ def broadcast_data(keys, data, datatype):
         numel = key_numel[key]
         output[key] = flatten_data.narrow(0, offset, numel).view(size)
         offset += numel
+        if sequence_parallel_is_initialized():
+            if "mask" in key or "label" in key:
+                continue
+            output[key] = torch.chunk(output[key], get_sequence_parallel_world_size(), dim=1)[get_sequence_parallel_rank()]
 
     return output
