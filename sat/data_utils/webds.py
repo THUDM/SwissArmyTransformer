@@ -233,33 +233,40 @@ def tarfile_samples_with_meta(src, meta_names, handler=reraise_exception):
 class MetaDistributedWebDataset(DataPipeline):
     '''WebDataset with meta information files
     Extra Format:
-        in webdataset (tar), for each sample there is a '.id'; 
+        in webdataset (tar), for each sample there is a '.id';
         for each tar file, there is a '.meta.jsonl' file with the same name;
         The '.meta.jsonl' file contains lines of json objects, each with a 'key' field to match '.id'.
     '''
     def __init__(self, path, process_fn, seed, *, meta_names=[], nshards=sys.maxsize, shuffle_buffer=1000, include_dirs=None):
         # os.environ['WDS_SHOW_SEED'] = '1'
-        if include_dirs is not None: # /webdatasets/A,/webdatasets/C
-            other_paths = []
-            include_dirs = include_dirs.split(',')
-            for include_dir in include_dirs:
-                if '*' in include_dir:
-                    include_dir, n = include_dir.split('*')
-                    n = int(n)
+        import torch
+        if torch.distributed.get_rank() == 0:
+            if include_dirs is not None:  # /webdatasets/A,/webdatasets/C
+                other_paths = []
+                include_dirs = include_dirs.split(',')
+                for include_dir in include_dirs:
+                    if '*' in include_dir:
+                        include_dir, n = include_dir.split('*')
+                        n = int(n)
+                    else:
+                        n = 1
+                    for cur_dir, dirs, files in os.walk(include_dir):
+                        for f in files:
+                            if f.endswith('tar') and os.path.getsize(os.path.join(cur_dir, f)) > 0:
+                                # other_paths.append(os.path.join(cur_dir,f))
+                                other_paths.extend([os.path.join(cur_dir, f)] * n)
+                # print(f'Adding dataset paths {",".join(other_paths)}')
+                from braceexpand import braceexpand
+                if len(path) > 0:  # not ""
+                    path = list(braceexpand(path)) + other_paths
                 else:
-                    n = 1
-                for cur_dir, dirs, files in os.walk(include_dir):
-                    for f in files:
-                        if f.endswith('tar') and os.path.getsize(os.path.join(cur_dir,f)) > 0:
-                            # other_paths.append(os.path.join(cur_dir,f))
-                            other_paths.extend([os.path.join(cur_dir,f)]*n)
-            # print(f'Adding dataset paths {",".join(other_paths)}')
-            from braceexpand import braceexpand
-            if len(path) > 0: # not "" 
-                path = list(braceexpand(path)) + other_paths
-            else:
-                path = other_paths
-        
+                    path = other_paths
+            path = [path]
+        else:
+            path = [None, ]
+        torch.distributed.broadcast_object_list(path, src=0)
+        path = path[0]
+
         tarfile_samples = partial(tarfile_samples_with_meta, meta_names=meta_names)
         tarfile_to_samples = pipelinefilter(tarfile_samples)
 

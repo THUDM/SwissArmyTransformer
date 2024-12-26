@@ -247,7 +247,7 @@ class MLP(torch.nn.Module):
             self.inner_hidden_size,
             gather_output=False,
             init_method=init_method,
-            bias=False,
+            bias=True,
             params_dtype=params_dtype,
             module=self,
             name="dense_h_to_4h_gate",

@@ -21,8 +21,8 @@ OPTIONS_NCCL=""
 HOST_FILE_PATH="hostfile"
 HOST_FILE_PATH="hostfile_single"
 
-train_data="/inference/liji/sat/SwissArmyTransformer/examples/chatglm3/data/AdvertiseGen/train.json"
-eval_data="/inference/liji/sat/SwissArmyTransformer/examples/chatglm3/data/AdvertiseGen/dev.json"
+train_data="/workspace/ckpt/yzy/AdvertiseGen/train.json"
+eval_data="/workspace/ckpt/yzy/AdvertiseGen/dev.json"
 
 
 gpt_options=" \
@@ -60,7 +60,7 @@ export ENV_LOGGING_DIR=${ENV_LOGGING_DIR:-${ENV_OUTPUT_PATH}/logs}
 mkdir -p ${ENV_LOGGING_DIR}
 # run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} /root/.local/bin/deepspeed --num_gpus ${NUM_GPUS_PER_WORKER} --master_port 16666 --include localhost:0 --hostfile ${HOST_FILE_PATH} finetune_chatglm2.py ${gpt_options}"
 # run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} /root/.local/bin/deepspeed --num_gpus ${NUM_GPUS_PER_WORKER} --include localhost:2,3 finetune_chatglm2.py ${gpt_options} 2>&1 | tee ${ENV_LOGGING_DIR}/train-${ENV_BASE_MODEL_TYPE}-$(date +"%m-%d-%H-%M-%S").log"
-run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} /root/.local/bin/deepspeed --hostfile ${HOST_FILE_PATH} --master_port 16666 --include localhost:2,3,4,5 finetune_chatglm3.py ${gpt_options} 2>&1 | tee ${ENV_LOGGING_DIR}/train-${ENV_BASE_MODEL_TYPE}-$(date +"%m-%d-%H-%M-%S").log"
+run_cmd="${OPTIONS_NCCL} ${OPTIONS_SAT} /usr/local/bin/deepspeed --hostfile ${HOST_FILE_PATH} --master_port 16666 --include localhost:2,3,4,5 finetune_chatglm3.py ${gpt_options} 2>&1 | tee ${ENV_LOGGING_DIR}/train-${ENV_BASE_MODEL_TYPE}-$(date +"%m-%d-%H-%M-%S").log"
 echo ${run_cmd}
 eval ${run_cmd}
 
